@@ -1,5 +1,12 @@
 module PhyloGaussianBeliefProp
 
-# Write your package code here.
+using Graphs
+using MetaGraphsNext
+
+import PhyloNetworks as PN
+import PhyloNetworks: HybridNetwork, getparents, getparent, getchild, getchildren
+
+
+include("clustergraph.jl")
 
 end
