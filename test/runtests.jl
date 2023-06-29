@@ -1,5 +1,6 @@
 using PhyloGaussianBeliefProp
 
+using DataFrames
 using Graphs, MetaGraphsNext
 using PhyloNetworks
 using Test

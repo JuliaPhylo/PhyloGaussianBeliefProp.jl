@@ -115,7 +115,7 @@ e.g. using [`triangulate_minfill!`](@ref).
 - Each node in `U` is a maximal clique of `g` whose data is the tuple of vectors
   (node_labels, node_data) using the labels and data from `g`, with nodes sorted
   by decreasing data.
-  If `g` was originally built from a phylogenetic network using [`moralize`](ref),
+  If `g` was originally built from a phylogenetic network using [`moralize`](@ref),
   then the nodes' data are their preorder index, making them sorted in postorder
   within in each clique.
   The clique label is the concatenation of the node labels.
