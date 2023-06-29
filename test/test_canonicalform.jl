@@ -11,11 +11,13 @@ ne(ct), nv(ct)
 [(n.name, n.number) for n in net.nodes_changed]
 =#
 
-b1 = PhyloGaussianBeliefProp.ClusterBelief(Int8[5,6], 3)
+nm = BitArray(undef, 3,2); fill!(nm, true); nm[2,1]=false
+b1 = PhyloGaussianBeliefProp.ClusterBelief(Int8[5,6], 3, nm, PhyloGaussianBeliefProp.bclustertype, 1)
+
 @test PhyloGaussianBeliefProp.nodelabels(b1) == [5,6]
-@test size(b1.nonmissing) == (6,6)
-@test length(b1.μ) == 6
-@test size(b1.J) == (6,6)
+@test size(b1.nonmissing) == (3,2)
+@test length(b1.μ) == 5
+@test size(b1.J) == (5,5)
 
 df = DataFrame(taxon=["A","B1","B2","C"],
   x=[10,  10,missing,  0],
