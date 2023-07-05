@@ -16,21 +16,35 @@ function isdegenerate(node::PN.Node)
 end
 
 """
+    ishybridsinglepositivechild(node)
+
+`true` if `node` is a hybrid node with a single child edge of positive length.
+If it [`isdegenerate`](@ref)) (all its parent edges have length 0) and
+if its child is a tree node, then it could be removed from scope:
+see [`unscope`](@ref).
+"""
+ishybridsinglepositivechild(v::PN.Node) = v.hybrid && hassinglechild(v) && getchildedge(v).length > 0.0
+
+"""
     unscope(node)
 
-`true` if `node` is a hybrid node with all parent edges of length 0
-(see [`isdegenerate`](@ref)) and has a single child of positive length.
+`true` if `node` is a hybrid node with a single child edge of positive length,
+and if its child node is a tree node.
+If it [`isdegenerate`](@ref)) (all its parent edges have length 0) then it
+could be removed from scope:
+see [`addtreenode_belowdegeneratehybrid!`](@ref).
 """
-function unscope(node::PN.Node)
-    (node.hybrid && isdegenerate(node)) || return false
-    nchildren = 0
-    for e in node.edge # loop over child edges
-        getparent(e) === node || continue
-        nchildren += 1
-        e.length > 0.0 || return false
-    end
-    return nchildren == 1 # true unless 1 edge of >0 length
-end
+unscope(v::PN.Node) = ishybridsinglepositivechild(v) && !(getchild(v).hybrid)
+
+"""
+    hasdegenerate(net)
+
+`true` if degenerate nodes remain in scope, that is, if there exists a tree
+edge of length 0, or if there exists a hybrid node with all parent edges of
+length 0 and with 2 or more children edges, or with 1 child edge of length 0.
+"""
+hasdegenerate(net::HybridNetwork) = any(isdegenerate(v) && !unscope(v) for v in net.node)
+
 
 """
     parentinformation(node, net)
@@ -77,6 +91,34 @@ function shrinkdegenerate_treeedges(net::HybridNetwork)
             end
         end
         redo = false
+    end
+    return net
+end
+
+"""
+    addtreenode_belowdegeneratehybrid!(net::HybridNetwork)
+
+If a degenerate hybrid node h1 has 1 child edge of length t>0 to a hybrid child h2:
+break the edge by adding a tree node at distance t from h1 and 0 from h2.
+That way, h1 may be removed from scope.
+This is done iteratively, as h2 may become degenerate after this operation.
+See [`shrinkdegenerate_treeedges`](@ref) to remove degenerate internal tree nodes,
+and [`hasdegenerate`](@ref) to check if `net` still has degenerate nodes.
+"""
+function addtreenode_belowdegeneratehybrid!(net::HybridNetwork)
+    restart = true
+    while restart
+        for hyb in net.hybrid
+            (isdegenerate(hyb) && ishybridsinglepositivechild(hyb)) || continue
+            che = getchildedge(hyb)
+            getchild(che).hybrid || continue
+            t = che.length
+            _,newe = PN.breakedge!(che, net) # hyb --newe--> newv --che--> hybridchild
+            newe.length = t
+            che.length = 0.0 # the hybrid child may now be degenerate, so restart
+            break
+        end
+        restart=false
     end
     return net
 end
