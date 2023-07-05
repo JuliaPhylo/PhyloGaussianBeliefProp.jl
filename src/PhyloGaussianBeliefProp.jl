@@ -14,6 +14,7 @@ import PhyloNetworks as PN
 import PhyloNetworks: HybridNetwork, getparents, getparent, getchild, getchildren
 
 
+include("utils.jl")
 include("clustergraph.jl")
 include("evomodels.jl")
 include("canonicalnormal.jl")

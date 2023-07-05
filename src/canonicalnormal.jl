@@ -47,7 +47,8 @@ end
 """
     ClusterBelief(nodelabels, nvar, nonmissing, belieftype, metadata)
 
-Constructor to allocate memory for one cluter, without initializing it.
+Constructor to allocate memory for one cluster, and initialize objects with 0s
+to initilize the belief with the constant function exp(0)=1.
 """
 function ClusterBelief(nl::AbstractVector{Tlabel}, nvar::Integer, nonmissing::BitArray, belief, metadata) where Tlabel<:Integer
     nnodes = length(nl)
@@ -55,14 +56,25 @@ function ClusterBelief(nl::AbstractVector{Tlabel}, nvar::Integer, nonmissing::Bi
     size(nonmissing) == (nvar,nnodes) || error("nonmissing of the wrong size")
     cldim = sum(nonmissing)
     T = Float64
-    μ = MVector{cldim,T}(undef)       # zeros(T, cldim)
-    h = MVector{cldim,T}(undef)
+    μ = MVector{cldim,T}(zero(T) for _ in 1:cldim)  # zeros(T, cldim)
+    h = MVector{cldim,T}(zero(T) for _ in 1:cldim)
     J = MMatrix{cldim,cldim,T}(undef) # Matrix{T}(LinearAlgebra.I, cldim, cldim)
+    fill!(J, zero(T))
     g = MVector{1,Float64}(0.0)
     ClusterBelief{typeof(nodelabels),T,typeof(J),typeof(h),typeof(metadata)}(
         nodelabels,nvar,nonmissing,μ,h,J,g,belief,metadata)
 end
 
+"""
+    init_beliefs_allocate(tbl::Tables.ColumnTable, net, clustergraph)
+
+Vector of beliefs, initialized to the constant function exp(0)=1,
+one for each cluster then one for each sepset in `clustergraph`.
+`tbl` is used to know which leaf in `net` has data for which variable,
+so as to remove from the scope each variable without data below it.
+Also removed from scope is any hybrid node that is degenerate and who has
+a single child edge of positive length.
+"""
 function init_beliefs_allocate(tbl::Tables.ColumnTable, net::HybridNetwork, clustergraph)
     nvar = length(tbl)
     taxa = PN.tipLabels(net)
@@ -99,12 +111,17 @@ function init_beliefs_allocate(tbl::Tables.ColumnTable, net::HybridNetwork, clus
     'has partial information and non-degenerate variance or precision?' =
     - 'hasdata?' at internal nodes (assumes non-degenerate transitions)
     - false at tips (assumes all data are at tips)
+    - false at degenerate hybrid node with 1 child edge of positive length
     =#
     function build_nonmissing(set_nodeindices)
         nonmissing = BitArray(undef, nvar, length(set_nodeindices))
         for (i,i_node) in enumerate(set_nodeindices)
-            if net.nodes_changed[i_node].leaf fill!(nonmissing[:,i], false)
-            else nonmissing[:,i] .= hasdata[:,i_node]; end
+            node = net.nodes_changed[i_node]
+            if node.leaf || unscope(node)
+                fill!(nonmissing[:,i], false)
+            else
+                nonmissing[:,i] .= hasdata[:,i_node]
+            end
         end
         return nonmissing
     end
@@ -122,8 +139,26 @@ function init_beliefs_allocate(tbl::Tables.ColumnTable, net::HybridNetwork, clus
     return beliefs
 end
 
-# todo: assign each factor to a belief
-function init_beliefs_assignfactors!(beliefs, model, net::HybridNetwork, clustergraph)
+"""
+    init_beliefs_assignfactors!(fixit)
+
+Initialize cluster beliefs prior to belief propagation, by assigning each
+factor to one cluster. There is one factor for each node v in the network:
+distribution of X_v conditional on its parent X_pa(v) if v is not the root,
+and prior distribution for x_root.
+
+Assumptions:
+- `net` is already preordered, and belief node labels contain the index of
+  each node in `net.nodes_changed`.
+fixit
+"""
+function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
+        net::HybridNetwork, clustergraph)
+    for i_node in reverse(eachindex(net.nodes_changed))
+        node = net.nodes_changed[i_node]
+        nodelab = node.name
+        # todo: if tree node
+    end
     return beliefs
 end
 

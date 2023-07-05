@@ -4,6 +4,8 @@ abstract type EvolutionaryModel end
 modelname(obj::EvolutionaryModel) = string(typeof(obj))
 variancename(obj::EvolutionaryModel) = "variance"
 varianceparam(obj::EvolutionaryModel) = "error: 'varianceparam' not implemented"
+# requires all models to have a field named μ
+dimension(obj::EvolutionaryModel) = length(obj.μ)
 
 function Base.show(io::IO, obj::EvolutionaryModel)
     disp = modelname(obj) * "\n" * variancename(obj) * " = $(varianceparam(obj))"
@@ -30,12 +32,6 @@ function UnivariateBrownianMotion(σ2, μ, v=Float64(0.0))
     σ2 > 0.0 || error("evolutionary variance rate σ2 = $(σ2) must be positive")
     v >= 0.0 || error("root variance v=$v must be non-negative")
     UnivariateBrownianMotion{Float64}(σ2, 1/σ2, μ, v, -(log2π + log(σ2))/2)
-end
-function factor_treenode(m::UnivariateBrownianMotion, x0, x1, len, delta)
-    J = SMatrix{2,2}(m.J,-m.J, -m.J,m.J)
-    h0 = m.J * delta
-    h = SVector{2}(h0, -h0)
-    g = m.g0 + x1^2 * m.J/2
 end
 
 struct MvDiagBrownianMotion{T<:Real, V<:AbstractVector{T}} <: EvolutionaryModel
@@ -103,3 +99,37 @@ function MvFullBrownianMotion(R, μ, v=nothing)
     MvFullBrownianMotion{T, SP, SV}(R, J, SV(μ), SP(v), -(nvar * log2π + log(LinearAlgebra.det(R)))/2)
 end
 
+# factor for [X_child,X_parent] from a
+# univariate Brownian motion along an edge of length t, q=I, ω=0
+function factor_treeedge(m::UnivariateBrownianMotion, t::Real)
+    j = m.J/t
+    J = SMatrix{2,2}(j,-j, -j,j)
+    μ = SVector{2, Float64}(0.0, 0.0)
+    h = SVector{2, Float64}(0.0, 0.0)
+    g = m.g0 - dimension(m) * log(t)/2
+    return(μ,h,J,g)
+end
+
+# factor for [X_hybrid,X_parents...] if hybrid node has
+# at least 1 parent edge of positive length
+function factor_hybridnode(m::UnivariateBrownianMotion, t::AbstractVector, γ::AbstractVector)
+    t0 = sum(γ.^2 .* t) # >0 if hybrid node is not degenerate
+    factor_tree_degeneratehybrid(m, t0, γ)
+end
+function factor_tree_degeneratehybrid(m::UnivariateBrownianMotion, t0::Real, γ::AbstractVector)
+    j = m.J/t0
+    nparents = length(γ); nn = 1 + nparents
+    γj = -γ .* j; pushfirst!(γj, j)
+    J = SMatrix{nn,nn, Float64}(x*y for x in γj for y in γj)
+    μ = SVector{nn, Float64}(0.0 for _ in 1:nn)
+    h = SVector{nn, Float64}(0.0 for _ in 1:nn)
+    g = m.g0 - dimension(m) * log(t0)/2
+    return(μ,h,J,g)
+end
+
+function factor_root(m::UnivariateBrownianMotion)
+    j = 1/m.v # 0 with improper prior v=Inf, Inf with fixed root v=0
+    g = (j == 0.0 || j == Inf ? 0.0 : -(log2π + log(m.v) + m.μ^2 * j)/2)
+    # todo: how to handle h = m.μ*j under a fixed-root model v=0, j=Inf?
+    return(m.μ, m.μ*j, j, g)
+end
