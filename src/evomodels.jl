@@ -133,9 +133,3 @@ function factor_root(m::UnivariateBrownianMotion)
     # todo: how to handle h = m.μ*j under a fixed-root model v=0, j=Inf?
     return(m.μ, m.μ*j, j, g)
 end
-
-# absorb evidence at leaf: tbl[v][row] for variable v
-function factor_leaf(m::EvolutionaryModel, t::Real, row::Integer, tbl)
-    # fixit
-    factor_treeedge(m, t)
-end

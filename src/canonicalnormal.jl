@@ -180,14 +180,11 @@ function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
     prenodes = net.nodes_changed # nodes in pre-order
     visited = falses(length(prenodes))
     for (i_node,node) in enumerate(prenodes)
-        visited[i_node] && continue # skip tree child of unscoped degenerate hybrid
-        visited[i_node] = true
+        visited[i_node] && continue # skip child of unscoped degenerate hybrid
         nodelab = node.name
         if i_node == 1 # root
             i_b = findfirst(x -> 1 ∈ x, nodelabels(b) for b in beliefs)
             isnothing(i_b) && error("no cluster containing the root, number $(node.number).")
-            be = beliefs[i_b]
-            be.type == bclustertype || error("belief $(be.metadata) is of type $(be.type)")
             i_inscope = (1,)
             μ,h,J,g = factor_root(model)
         elseif node.hybrid
@@ -196,33 +193,33 @@ function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
             if isdegenerate(node) && unscope(node)
                 ch = getchild(node)
                 i_child = findfirst(n -> n===ch, prenodes)
-                i_inscope = (i_child, i_parents...)
                 visited[i_child] = true
-                # todo: do something with child to handle degenerate case
+                μ,h,J,g = factor_tree_degeneratehybrid(model, e.length, [p.gamma for p in pae])
+                if ch.leaf
+                    i_datarow = findfirst(isequal(ch.name), taxa)
+                    # todo: absorb evidence
+                    i_inscope = (i_parents...,)
+                else
+                    i_inscope = (i_child, i_parents...)
+                end
             else
                 i_inscope = (i_node, i_parents...)
+                μ,h,J,g = factor_hybridnode(model, [e.length for e in pae], [p.gamma for p in pae])
             end
-            i_b = findfirst(x -> i_node  ∈ x && all(i_parents .∈ x), nodelabels(b) for b in beliefs)
-            isnothing(i_b) && error("no cluster containing hybrid node $(node.number) and its parents.")
-            # todo: get μ,h,J,g
+            i_b = findfirst(x -> all(i_inscope .∈ x), nodelabels(b) for b in beliefs)
+            isnothing(i_b) && error("no cluster containing the scope for hybrid $(node.number).")
         else
             e = getparentedge(node)
             pa = getparent(e)
             i_parent = findfirst(n -> n===pa, prenodes)
-            i_b = findfirst(x -> i_parent ∈ x && i_node  ∈ x, nodelabels(b) for b in beliefs)
+            i_b = findfirst(x -> i_parent ∈ x && i_node ∈ x, nodelabels(b) for b in beliefs)
             isnothing(i_b) && error("no cluster containing nodes $(node.number) and $(pa.number).")
-            be = beliefs[i_b]
-            be.type == bclustertype || error("belief $(be.metadata) is of type $(be.type)")
-            pa_vscope = view(be.inscope, :, findfirst(isequal(i_parent), be.nodelabels))
-            # todo: case when node is a leaf and its parent is a hybrid removed from scope
+            μ,h,J,g = factor_treeedge(model, e.length)
             if node.leaf
-                all(.!pa_vscope) && error("internal tree node without any data below")
                 i_datarow = findfirst(isequal(nodelab), taxa)
-                μ,h,J,g = factor_leaf(model, e.length, i_datarow, tbl)
+                # todo: absorb evidence
                 i_inscope = (i_parent,)
-                # todo: check that i_parent is in fact not fully out of scope
-            else # internal tree node
-                μ,h,J,g = factor_treeedge(model, e.length)
+            else
                 i_inscope = (i_node,i_parent)
             end
         end

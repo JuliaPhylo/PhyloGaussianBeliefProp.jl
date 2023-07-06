@@ -18,5 +18,6 @@ include("utils.jl")
 include("clustergraph.jl")
 include("evomodels.jl")
 include("canonicalnormal.jl")
+include("beliefupdates.jl")
 
 end
