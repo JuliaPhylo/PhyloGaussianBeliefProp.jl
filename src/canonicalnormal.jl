@@ -61,8 +61,7 @@ function ClusterBelief(nl::AbstractVector{Tlabel}, nvar::Integer, inscope::BitAr
     T = Float64
     μ = MVector{cldim,T}(zero(T) for _ in 1:cldim)  # zeros(T, cldim)
     h = MVector{cldim,T}(zero(T) for _ in 1:cldim)
-    J = MMatrix{cldim,cldim,T}(undef) # Matrix{T}(LinearAlgebra.I, cldim, cldim)
-    fill!(J, zero(T))
+    J = LinearAlgebra.Symmetric(MMatrix{cldim,cldim,T}(zero(T) for _ in 1:(cldim*cldim)))
     g = MVector{1,Float64}(0.0)
     ClusterBelief{typeof(nodelabels),T,typeof(J),typeof(h),typeof(metadata)}(
         nodelabels,nvar,inscope,μ,h,J,g,belief,metadata)

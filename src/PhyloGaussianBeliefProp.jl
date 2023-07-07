@@ -11,7 +11,7 @@ using StatsFuns
 using Tables
 
 import PhyloNetworks as PN
-import PhyloNetworks: HybridNetwork, getparents, getparent, getchild, getchildren, getchildedge, hassinglechild
+using PhyloNetworks: HybridNetwork, getparents, getparent, getchild, getchildren, getchildedge, hassinglechild
 
 
 include("utils.jl")

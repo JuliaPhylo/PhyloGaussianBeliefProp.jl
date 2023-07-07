@@ -66,15 +66,15 @@ function MvDiagBrownianMotion(R, μ, v=nothing)
     MvDiagBrownianMotion{T, SV}(R, J, SV(μ), SV(v), -(nvar * log2π + sum(log.(R)))/2)
 end
 
-struct MvFullBrownianMotion{T<:Real, P<:AbstractMatrix{T}, V<:AbstractVector{T}} <: EvolutionaryModel
+struct MvFullBrownianMotion{T<:Real, P1<:AbstractMatrix{T}, V<:AbstractVector{T}, P2<:AbstractMatrix{T}} <: EvolutionaryModel
     "variance rate matrix"
-    R::P
+    R::P1
     "inverse variance (precision) rate matrix"
-    J::P
+    J::P1
     "prior mean vector at the root"
     μ::V
     "prior variance/covariance matrix at the root"
-    v::P
+    v::P2
     "g0: -log(det(2πR))/2"
     g0::T
 end
@@ -85,25 +85,24 @@ function MvFullBrownianMotion(R, μ, v=nothing)
     nvar = length(μ)
     T = Float64 # promote_type(eltype(R), eltype(μ))
     SV = SVector{nvar, T}
-    SP = SMatrix{nvar,nvar,T}
     size(R) == (nvar,nvar) || error("R and μ have conflicting sizes")
-    R = SP(R)
-    J = inv(R)
-    # to do: check that R is symmetric positive definite. perhaps store PDMat instead
+    R = PDMat(R)
+    J = inv(R) # uses cholesky. fails if not symmetric positive definite
     if isnothing(v)
-        v = SP(zero(T) for i in 1:nvar for j in 1:nvar)
+        v = LinearAlgebra.Symmetric(SMatrix{nvar,nvar,T}(zero(T) for _ in 1:(nvar*nvar)))
     else
         size(v) == (nvar,nvar) || error("v and μ have conflicting sizes")
-        # to do: check that v is symmetric positive semi-definite
+        v = LinearAlgebra.Symmetric(SMatrix{nvar,nvar,T}(v))
+        # to do: check that v is symmetric (Symmetric doesn't check) positive semi-definite
     end
-    MvFullBrownianMotion{T, SP, SV}(R, J, SV(μ), SP(v), -(nvar * log2π + log(LinearAlgebra.det(R)))/2)
+    MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, -(nvar * log2π + LinearAlgebra.logdet(R))/2)
 end
 
 # factor for [X_child,X_parent] from a
 # univariate Brownian motion along an edge of length t, q=I, ω=0
 function factor_treeedge(m::UnivariateBrownianMotion, t::Real)
-    j = m.J/t
-    J = SMatrix{2,2}(j,-j, -j,j)
+    j = m.J / t
+    J = LinearAlgebra.Symmetric(SMatrix{2,2}(j,-j, -j,j))
     μ = SVector{2, Float64}(0.0, 0.0)
     h = SVector{2, Float64}(0.0, 0.0)
     g = m.g0 - dimension(m) * log(t)/2
@@ -117,10 +116,10 @@ function factor_hybridnode(m::UnivariateBrownianMotion, t::AbstractVector, γ::A
     factor_tree_degeneratehybrid(m, t0, γ)
 end
 function factor_tree_degeneratehybrid(m::UnivariateBrownianMotion, t0::Real, γ::AbstractVector)
-    j = m.J/t0
+    j = m.J / t0
     nparents = length(γ); nn = 1 + nparents
     γj = -γ .* j; pushfirst!(γj, j)
-    J = SMatrix{nn,nn, Float64}(x*y for x in γj for y in γj)
+    J = LinearAlgebra.Symmetric(SMatrix{nn,nn, Float64}(x*y for x in γj for y in γj))
     μ = SVector{nn, Float64}(0.0 for _ in 1:nn)
     h = SVector{nn, Float64}(0.0 for _ in 1:nn)
     g = m.g0 - dimension(m) * log(t0)/2
