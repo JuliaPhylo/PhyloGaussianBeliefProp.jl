@@ -98,19 +98,61 @@ function MvFullBrownianMotion(R, μ, v=nothing)
     MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, -(nvar * log2π + LinearAlgebra.logdet(R))/2)
 end
 
-# factor for [X_child,X_parent] from a
-# univariate Brownian motion along an edge of length t, q=I, ω=0
+"""
+    factor_treeedge(evolutionarymodel, edge_length)
+
+Canonical parameters `h,J,g` of factor ϕ(X0,X1) from the given evolutionary model
+along one edge, where X0 is the state of the child node and X1 the state of the
+parent node. In `h` and `J`, the first p coordinates are for the child and the
+last p for the parent, where p is the number of traits (determined by the model).
+
+Under the most general linear Gaussian model, X0 given X1 is Gaussian with
+conditional mean q X1 + ω and conditional variance independent of X1.
+
+Under a Brownian motion, se have q=I, ω=0, and conditional variance tR
+where R is the model's variance rate.
+"""
 function factor_treeedge(m::UnivariateBrownianMotion, t::Real)
     j = m.J / t
     J = LinearAlgebra.Symmetric(SMatrix{2,2}(j,-j, -j,j))
-    μ = SVector{2, Float64}(0.0, 0.0)
+    # μ = SVector{2, Float64}(0.0, 0.0)
     h = SVector{2, Float64}(0.0, 0.0)
     g = m.g0 - dimension(m) * log(t)/2
-    return(μ,h,J,g)
+    return(h,J,g)
 end
 
-# factor for [X_hybrid,X_parents...] if hybrid node has
-# at least 1 parent edge of positive length
+"""
+    factor_hybridnode(evolutionarymodel, ts::AbstractVector, γs)
+    factor_tree_degeneratehybrid(model,  t0::Real,           γs)
+
+Canonical parameters `h,J,g` of factor ϕ(X0, X1,X2,...) from the evolutionary model
+for a hybrid node: where X0 is the state at the hybrid node and X1,X2,... the
+states of the parent nodes.
+It is assumed that the conditional mean is a simple weighted average:
+
+``X0 = \\sum_k \\gamma_k Xk = q vec(X1,X2,...) + \\omega``
+
+where q has one block for each parent, and each block is diagonal scalar:
+``\\gamma_k I_p``.
+More complex models could consider adding a shift ω.
+
+If all the parent hybrid edges edges have length 0, then it is assumed that
+the model gives a degenerate distribution, with 0 conditional variance.
+More complex models could consider adding a hybrid conditional variance.
+
+- The first form assumes that at least 1 parent edge length is positive,
+  with conditional variance ``\\sum_k \\gamma_k^2 V_k`` where ``V_k`` is
+  the conditional variance from the kth parent edge.
+- The second form can be used in case all parent edges have 0 length,
+  to integrate out the hybrid node state and the factor ϕ(X0, X1,X2,...)
+  when X0 is its **child** state, along an edge of length `t0` between
+  the hybrid node and its child. This second form is appropriate when
+  this hybrid's child is a tree node, and `t0>0`.`
+
+In `h` and `J`, the first p coordinates are for the hybrid (or its child) and
+the last coordinates for the parents, in the same order in which
+the edge lengths and γs are given.
+"""
 function factor_hybridnode(m::UnivariateBrownianMotion, t::AbstractVector, γ::AbstractVector)
     t0 = sum(γ.^2 .* t) # >0 if hybrid node is not degenerate
     factor_tree_degeneratehybrid(m, t0, γ)
@@ -120,15 +162,17 @@ function factor_tree_degeneratehybrid(m::UnivariateBrownianMotion, t0::Real, γ:
     nparents = length(γ); nn = 1 + nparents
     γj = -γ .* j; pushfirst!(γj, j)
     J = LinearAlgebra.Symmetric(SMatrix{nn,nn, Float64}(x*y for x in γj for y in γj))
-    μ = SVector{nn, Float64}(0.0 for _ in 1:nn)
+    # μ = SVector{nn, Float64}(0.0 for _ in 1:nn)
     h = SVector{nn, Float64}(0.0 for _ in 1:nn)
     g = m.g0 - dimension(m) * log(t0)/2
-    return(μ,h,J,g)
+    return(h,J,g)
 end
 
 function factor_root(m::UnivariateBrownianMotion)
+    m.v > 0.0 || error("fixed root: absorb the evidence instead please")
+    # todo: for a fixed-root model (v=0, j=Inf), absorb the evidence instead
     j = 1/m.v # 0 with improper prior v=Inf, Inf with fixed root v=0
     g = (j == 0.0 || j == Inf ? 0.0 : -(log2π + log(m.v) + m.μ^2 * j)/2)
-    # todo: how to handle h = m.μ*j under a fixed-root model v=0, j=Inf?
-    return(m.μ, m.μ*j, j, g)
+    # todo: is that corect?
+    return(m.μ*j, j, g) # m.μ
 end
