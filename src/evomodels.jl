@@ -5,7 +5,9 @@ modelname(obj::EvolutionaryModel) = string(typeof(obj))
 variancename(obj::EvolutionaryModel) = "variance"
 varianceparam(obj::EvolutionaryModel) = "error: 'varianceparam' not implemented"
 # requires all models to have a field named μ
-dimension(obj::EvolutionaryModel) = length(obj.μ)
+rootpriormeanvector(obj::EvolutionaryModel) = obj.μ
+dimension(obj::EvolutionaryModel) = length(rootpriormeanvector(obj))
+
 
 function Base.show(io::IO, obj::EvolutionaryModel)
     disp = modelname(obj) * "\n" * variancename(obj) * " = $(varianceparam(obj))"
@@ -28,6 +30,8 @@ end
 modelname(m::UnivariateBrownianMotion) = "Univariate Brownian motion"
 variancename(m::UnivariateBrownianMotion) = "evolutionary variance rate σ2"
 varianceparam(m::UnivariateBrownianMotion) = m.σ2
+rootpriormeanvector(m::UnivariateBrownianMotion) = [m.μ]
+isrootfixed(m::UnivariateBrownianMotion) = m.v == 0
 function UnivariateBrownianMotion(σ2, μ, v=Float64(0.0))
     σ2 > 0.0 || error("evolutionary variance rate σ2 = $(σ2) must be positive")
     v >= 0.0 || error("root variance v=$v must be non-negative")
@@ -49,21 +53,22 @@ end
 modelname(m::MvDiagBrownianMotion) = "Multivariate Diagonal Brownian motion"
 variancename(m::MvDiagBrownianMotion) = "evolutionary variance rates (diagonal values in the rate matrix): R"
 varianceparam(m::MvDiagBrownianMotion) = m.R
+isrootfixed(m::MvDiagBrownianMotion) = all(m.v .== 0)
 function MvDiagBrownianMotion(R, μ, v=nothing)
-    nvar = length(μ)
-    length(R) == nvar || error("R and μ have different lengths")
+    numt = length(μ) # number of traits
+    length(R) == numt || error("R and μ have different lengths")
     T = Float64 # promote_type(eltype(R), eltype(μ))
-    SV = SVector{nvar, T}
+    SV = SVector{numt, T}
     all(R .> 0.0) || error("evolutionary variance rates R = $R must all be positive")
     if isnothing(v)
-        v = SV(zero(T) for _ in 1:nvar)
+        v = SV(zero(T) for _ in 1:numt)
     else
-        length(v) == nvar || error("v and μ have different lengths")
+        length(v) == numt || error("v and μ have different lengths")
         all(v .>= 0.0) || error("root variances v=$v must all be non-negative")
     end
     R = SV(R)
     J = 1 ./R
-    MvDiagBrownianMotion{T, SV}(R, J, SV(μ), SV(v), -(nvar * log2π + sum(log.(R)))/2)
+    MvDiagBrownianMotion{T, SV}(R, J, SV(μ), SV(v), -(numt * log2π + sum(log.(R)))/2)
 end
 
 struct MvFullBrownianMotion{T<:Real, P1<:AbstractMatrix{T}, V<:AbstractVector{T}, P2<:AbstractMatrix{T}} <: EvolutionaryModel
@@ -81,21 +86,26 @@ end
 modelname(m::MvFullBrownianMotion) = "Multivariate Brownian motion"
 variancename(m::MvFullBrownianMotion) = "evolutionary variance rate matrix: R"
 varianceparam(m::MvFullBrownianMotion) = m.R
+isrootfixed(m::MvFullBrownianMotion) = all(m.v .== 0)
 function MvFullBrownianMotion(R, μ, v=nothing)
-    nvar = length(μ)
+    numt = length(μ)
     T = Float64 # promote_type(eltype(R), eltype(μ))
-    SV = SVector{nvar, T}
-    size(R) == (nvar,nvar) || error("R and μ have conflicting sizes")
+    SV = SVector{numt, T}
+    size(R) == (numt,numt)       || error("R and μ have conflicting sizes")
+    LA.issymmetric(R) || error("R should be symmetric")
     R = PDMat(R)
     J = inv(R) # uses cholesky. fails if not symmetric positive definite
     if isnothing(v)
-        v = LinearAlgebra.Symmetric(SMatrix{nvar,nvar,T}(zero(T) for _ in 1:(nvar*nvar)))
+        v = LA.Symmetric(SMatrix{numt,numt,T}(zero(T) for _ in 1:(numt*numt)))
     else
-        size(v) == (nvar,nvar) || error("v and μ have conflicting sizes")
-        v = LinearAlgebra.Symmetric(SMatrix{nvar,nvar,T}(v))
-        # to do: check that v is symmetric (Symmetric doesn't check) positive semi-definite
+        size(v) == (numt,numt)       || error("v and μ have conflicting sizes")
+        LA.issymmetric(v) || error("v should be symmetric")
+        v = LA.Symmetric(SMatrix{numt,numt,T}(v))
+        λ = LA.eigvals(v)
+        @show λ
+        all(λ .>= 0)                 || error("v is not positive semi-definite")
     end
-    MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, -(nvar * log2π + LinearAlgebra.logdet(R))/2)
+    MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, -(numt * log2π + LA.logdet(R))/2)
 end
 
 """
@@ -114,7 +124,7 @@ where R is the model's variance rate.
 """
 function factor_treeedge(m::UnivariateBrownianMotion, t::Real)
     j = m.J / t
-    J = LinearAlgebra.Symmetric(SMatrix{2,2}(j,-j, -j,j))
+    J = LA.Symmetric(SMatrix{2,2}(j,-j, -j,j))
     # μ = SVector{2, Float64}(0.0, 0.0)
     h = SVector{2, Float64}(0.0, 0.0)
     g = m.g0 - dimension(m) * log(t)/2
@@ -161,18 +171,28 @@ function factor_tree_degeneratehybrid(m::UnivariateBrownianMotion, t0::Real, γ:
     j = m.J / t0
     nparents = length(γ); nn = 1 + nparents
     γj = -γ .* j; pushfirst!(γj, j)
-    J = LinearAlgebra.Symmetric(SMatrix{nn,nn, Float64}(x*y for x in γj for y in γj))
+    J = LA.Symmetric(SMatrix{nn,nn, Float64}(x*y for x in γj, y in γj))
     # μ = SVector{nn, Float64}(0.0 for _ in 1:nn)
     h = SVector{nn, Float64}(0.0 for _ in 1:nn)
     g = m.g0 - dimension(m) * log(t0)/2
     return(h,J,g)
 end
 
+"""
+    factor_root(m::EvolutionaryModel)
+
+Canonical parameters `h,J,g` of the prior density at the root, from model `m`.
+Assumes that `isrootfixed(m)` returns `false` (in which case the root value
+should be absorbed as evidence and the root removed from scope).
+More strongly, the root variance is assumed to be invertible, in particular,
+traits are all non-fixed at the root.
+
+The prior is improper if the prior variance is infinite. In this case this prior
+is not a distribution (total probability ≠ 1) but is taken as the constant
+function 1, which corresponds to h,J,g all 0 (and an irrelevant mean).
+"""
 function factor_root(m::UnivariateBrownianMotion)
-    m.v > 0.0 || error("fixed root: absorb the evidence instead please")
-    # todo: for a fixed-root model (v=0, j=Inf), absorb the evidence instead
-    j = 1/m.v # 0 with improper prior v=Inf, Inf with fixed root v=0
-    g = (j == 0.0 || j == Inf ? 0.0 : -(log2π + log(m.v) + m.μ^2 * j)/2)
-    # todo: is that corect?
+    j = 1/m.v # improper prior: j=0, v=Inf, factor ≡ 1: h,J,g all 0
+    g = (j == 0.0 ? 0.0 : -(log2π + log(m.v) + m.μ^2 * j)/2)
     return(m.μ*j, j, g) # m.μ
 end

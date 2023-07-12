@@ -4,14 +4,15 @@ import Base: show
 using Graphs
 using MetaGraphsNext
 using Distributions: MvNormalCanon, MvNormal, AbstractMvNormal
-import LinearAlgebra
+import LinearAlgebra as LA
 using PDMats
 using StaticArrays
 using StatsFuns
 using Tables
 
 import PhyloNetworks as PN
-using PhyloNetworks: HybridNetwork, getparents, getparent, getchild, getchildren, getchildedge, hassinglechild
+using PhyloNetworks: HybridNetwork, getparents, getparent, getparentedge,
+        getchild, getchildren, getchildedge, hassinglechild
 
 
 include("utils.jl")

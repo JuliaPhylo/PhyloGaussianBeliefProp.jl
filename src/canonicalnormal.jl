@@ -3,20 +3,20 @@
 abstract type AbstractBelief end
 
 nodelabels(b::AbstractBelief) = b.nodelabel
-nvar(b::AbstractBelief)       = b.nvar
+ntraits(b::AbstractBelief) = b.ntraits
 inscope(b::AbstractBelief) = b.inscope
 nodedimensions(b::AbstractBelief) = map(sum, eachslice(inscope(b), dims=2))
 dimension(b::AbstractBelief)  = sum(inscope(b))
-mvnormcanon(b::AbstractBelief) = MvNormalCanon(b.μ, b.h, PDMat(LinearAlgebra.Symmetric(b.J)))
+mvnormcanon(b::AbstractBelief) = MvNormalCanon(b.μ, b.h, PDMat(LA.Symmetric(b.J)))
 
 struct ClusterBelief{Vlabel<:AbstractVector,T<:Real,P<:AbstractMatrix{T},V<:AbstractVector{T},M} <: AbstractBelief
     "Integer label for nodes in the cluster"
     nodelabel::Vlabel # StaticVector{N,Tlabel}
-    "Total number of variables at each node"
-    nvar::Int
-    """Matrix inscope[i,j] is `false` if variable `i` at node `j` is / will be
+    "Total number of traits at each node"
+    ntraits::Int
+    """Matrix inscope[i,j] is `false` if trait `i` at node `j` is / will be
     removed from scope, to avoid issues from 0 precision or infinite variance; or
-    when there is no data for variable `i` below node `j` (in which case tracking
+    when there is no data for trait `i` below node `j` (in which case tracking
     this variable is only good for prediction, not for learning parameters).
     """
     inscope::BitArray
@@ -38,41 +38,53 @@ end
 
 function Base.show(io::IO, b::ClusterBelief)
     disp = "belief for " * (b.type == bclustertype ? "Cluster" : "SepSet") * " $(b.metadata),"
-    disp *= " $(nvar(b)) variables × $(length(nodelabels(b))) nodes, dimension $(dimension(b)).\n"
+    disp *= " $(ntraits(b)) traits × $(length(nodelabels(b))) nodes, dimension $(dimension(b)).\n"
     disp *= "Node labels: "
     print(io, disp)
     print(io, nodelabels(b))
-    print(io, "\nvariable × node matrix of non-degenerate beliefs:\n")
+    print(io, "\ntrait × node matrix of non-degenerate beliefs:\n")
     show(io, inscope(b))
     print(io, "\nexponential quadratic belief, parametrized by\nμ: $(b.μ)\nh: $(b.h)\nJ: $(b.J)\ng: $(b.g[1])\n")
 end
 
 """
-    ClusterBelief(nodelabels, nvar, inscope, belieftype, metadata)
+    ClusterBelief(nodelabels, numtraits, inscope, belieftype, metadata)
 
 Constructor to allocate memory for one cluster, and initialize objects with 0s
 to initilize the belief with the constant function exp(0)=1.
 """
-function ClusterBelief(nl::AbstractVector{Tlabel}, nvar::Integer, inscope::BitArray, belief, metadata) where Tlabel<:Integer
+function ClusterBelief(nl::AbstractVector{Tlabel}, numtraits::Integer,
+            inscope::BitArray, belief, metadata) where Tlabel<:Integer
     nnodes = length(nl)
     nodelabels = SVector{nnodes}(nl)
-    size(inscope) == (nvar,nnodes) || error("inscope of the wrong size")
+    size(inscope) == (numtraits,nnodes) || error("inscope of the wrong size")
     cldim = sum(inscope)
     T = Float64
     μ = MVector{cldim,T}(zero(T) for _ in 1:cldim)  # zeros(T, cldim)
     h = MVector{cldim,T}(zero(T) for _ in 1:cldim)
-    J = LinearAlgebra.Symmetric(MMatrix{cldim,cldim,T}(zero(T) for _ in 1:(cldim*cldim)))
+    J = MMatrix{cldim,cldim,T}(zero(T) for _ in 1:(cldim*cldim))
     g = MVector{1,Float64}(0.0)
     ClusterBelief{typeof(nodelabels),T,typeof(J),typeof(h),typeof(metadata)}(
-        nodelabels,nvar,inscope,μ,h,J,g,belief,metadata)
+        nodelabels,numtraits,inscope,μ,h,J,g,belief,metadata)
 end
 
+"""
+    scopeindex(node_labels, belief)
+
+Indices in the belief's μ,h,J vectors and matrices of the variables
+for nodes labelled `node_labels`. The belief's `inscope` matrix of
+booleans says which node (row) and trait (column) is in the belief's scope.
+These variables are vectorized by stacking up columns, that is,
+listing all in-scope traits of the first node, then all in-scope traits of
+the second node etc.
+"""
 function scopeindex(node_labels, belief::AbstractBelief)
-    inscope = inscope(belief)
+    binscope = inscope(belief)
     node_j = indexin(node_labels, nodelabels(belief))
-    node_dims = map(sum, eachslice(inscope, dims=2))
+    any(isnothing.(node_j)) && error("some label is not in the belief's node labels")
+    node_dims = map(sum, eachslice(binscope, dims=2))
     node_cumsum = cumsum(node_dims)
-    res = Vector{Int}(undef, node_cumsum[end])
+    res = Vector{Int}(undef, sum(node_dims[node_j]))
     i0=0
     for jj in node_j
         k0 = (jj==1 ? 0 : node_cumsum[jj-1])
@@ -85,42 +97,46 @@ function scopeindex(node_labels, belief::AbstractBelief)
 end
 
 """
-    init_beliefs_allocate(tbl::Tables.ColumnTable, taxa, net, clustergraph)
+    init_beliefs_allocate(tbl::Tables.ColumnTable, taxa, net, clustergraph,
+                          fixedroot=false)
 
 Vector of beliefs, initialized to the constant function exp(0)=1,
 one for each cluster then one for each sepset in `clustergraph`.
-`tbl` is used to know which leaf in `net` has data for which variable,
+`tbl` is used to know which leaf in `net` has data for which trait,
 so as to remove from the scope each variable without data below it.
 `taxa` should be a vector with taxon names in the same order as they come in
 the table of data `tbl`.
+The root is removed from scope if `fixedroot` is true: so as to use the model's
+fixed root value as data if the root as zero prior variance.
 Also removed from scope is any hybrid node that is degenerate and who has
 a single child edge of positive length.
 """
 function init_beliefs_allocate(tbl::Tables.ColumnTable, taxa::AbstractVector,
-        net::HybridNetwork, clustergraph)
-    nvar = length(tbl)
+        net::HybridNetwork, clustergraph, fixedroot=false::Bool)
+    numtraits = length(tbl)
     nnodes = length(net.nodes_changed)
     nnodes > 0 ||
         error("the network should have been pre-ordered, with indices used in cluster graph")
     #= hasdata: to know, for each node, whether that node has a descendant
-                with data, for each variable.
-    If not: that node can be removed from all clusters & sepsets (true??).
-    If yes and the node is a tip: the evidence should be used later.
-    If yes for all variables and tip: remove tip after the evidence is absorbed.
+                with data, for each trait.
+    If not: that node can be removed from all clusters & sepsets.
+    If yes and the node is a tip: the evidence should be used later,
+      then the tip can be removed the evidence is absorbed.
     =#
-    hasdata = falses(nvar, nnodes)
+    hasdata = falses(numtraits, nnodes)
     for i_node in reverse(eachindex(net.nodes_changed))
         node = net.nodes_changed[i_node]
         nodelab = node.name
         i_row = findfirst(isequal(nodelab), taxa)
         if !isnothing(i_row) # the node has data: it should be a tip!
             node.leaf || error("A node with data is internal, should be a leaf")
-            for v in 1:nvar
+            for v in 1:numtraits
               hasdata[v,i_node] = !ismissing(tbl[v][i_row])
             end
         end
         if node.leaf
-            all(!hasdata[v,i_node] for v in 1:nvar) && @error("tip $nodelab in network without any data")
+            all(!hasdata[v,i_node] for v in 1:numtraits) &&
+                @error("tip $nodelab in network without any data")
             continue
         end
         for e in node.edge
@@ -130,19 +146,22 @@ function init_beliefs_allocate(tbl::Tables.ColumnTable, taxa::AbstractVector,
             isempty(i_child) && error("oops, child (number $(ch.number)) not found in nodes_changed")
             hasdata[:,i_node] .|= hasdata[:,i_child] # bitwise or
         end
-        all(!hasdata[v,i_node] for v in 1:nvar) && @error("internal node $nodelab without any data below")
+        all(!hasdata[v,i_node] for v in 1:numtraits) &&
+            @error("internal node $nodelab without any data below")
     end
     #= next: create a belief for each cluster and sepset. inscope =
     'has partial information and non-degenerate variance or precision?' =
+    - false at the root if "fixedroot", else:
     - 'hasdata?' at internal nodes (assumes non-degenerate transitions)
     - false at tips (assumes all data are at tips)
     - false at degenerate hybrid node with 1 tree child edge of positive length
     =#
     function build_inscope(set_nodeindices)
-        inscope = falses(nvar, length(set_nodeindices)) # remove from scope by default
+        inscope = falses(numtraits, length(set_nodeindices)) # remove from scope by default
         for (i,i_node) in enumerate(set_nodeindices)
             node = net.nodes_changed[i_node]
             (node.leaf || (isdegenerate(node) && unscope(node))) && continue # inscope[:,i] already false
+            fixedroot && i_node==1 && continue # keep 'false' at the root if fixed
             inscope[:,i] .= hasdata[:,i_node]
         end
         return inscope
@@ -151,61 +170,86 @@ function init_beliefs_allocate(tbl::Tables.ColumnTable, taxa::AbstractVector,
     for cllab in labels(clustergraph)
         nodeindices = clustergraph[cllab][2]
         inscope = build_inscope(nodeindices)
-        push!(beliefs, ClusterBelief(nodeindices, nvar, inscope, bclustertype, cllab))
+        push!(beliefs, ClusterBelief(nodeindices, numtraits, inscope, bclustertype, cllab))
     end
     for sslab in edge_labels(clustergraph)
         nodeindices = clustergraph[sslab...]
         inscope = build_inscope(nodeindices)
-        push!(beliefs, ClusterBelief(nodeindices, nvar, inscope, bsepsettype, sslab))
+        push!(beliefs, ClusterBelief(nodeindices, numtraits, inscope, bsepsettype, sslab))
     end
     return beliefs
 end
 
 """
-    init_beliefs_assignfactors!(fixit)
+    init_beliefs_assignfactors!(beliefs, evolutionarymodel, columntable, taxa,
+                                nodevector_preordered)
 
-Initialize cluster beliefs prior to belief propagation, by assigning each
-factor to one cluster. There is one factor for each node v in the network:
-distribution of X_v conditional on its parent X_pa(v) if v is not the root,
-and prior distribution for x_root.
+Initialize cluster beliefs prior to belief propagation, by assigning each factor
+to one cluster. There is one factor for each node `v` in the vector of nodes:
+the density of X_v conditional on its parent X_pa(v) if v is not the root,
+and prior density for X_root.
+- for each leaf, the factor is reduced by absorbing the evidence for that leaf,
+  that is, the data found in the `columntable`, whose rows are supposed to
+  correspond to taxa in the same order in which they are listed in `taxa`.
+- for each leaf, missing trait values are removed from scope.
+- for each internal node, any trait not in scope (e.g. if all descendant leaves
+  are missing a value for this trait) is marginalized out of the factor.
 
 Assumptions:
-- `net` is already preordered, and belief node labels contain the index of
-  each node in `net.nodes_changed`.
-fixit
+- In vector `nodevector_preordered`, nodes are assumed to be preordered.
+  Typically, this vector is `net.nodes_changed` after the network is preordered.
+- Belief node labels correspond to the index of each node in `nodevector_preordered`.
+- In `beliefs`, cluster beliefs come first and sepset beliefs come last,
+  as when created by [`init_beliefs_allocate`](@ref)
+
+Output: `beliefs` vector. Each belief is modified in place.
 """
 function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
-        tbl::Tables.ColumnTable, taxa::AbstractVector, net::HybridNetwork, clustergraph)
-    prenodes = net.nodes_changed # nodes in pre-order
+        tbl::Tables.ColumnTable, taxa::AbstractVector, prenodes::Vector{PN.Node})
+    numtraits = dimension(model)
     visited = falses(length(prenodes))
     for (i_node,node) in enumerate(prenodes)
         visited[i_node] && continue # skip child of unscoped degenerate hybrid
         nodelab = node.name
         if i_node == 1 # root
-            i_b = findfirst(x -> 1 ∈ x, nodelabels(b) for b in beliefs)
+            isrootfixed(model) && continue # h,J,g all 0: nothing to do
+            i_b = findfirst(b -> 1 ∈ nodelabels(b), beliefs)
             isnothing(i_b) && error("no cluster containing the root, number $(node.number).")
             i_inscope = (1,)
-            μ,h,J,g = factor_root(model)
+            h,J,g = factor_root(model)
         elseif node.hybrid
-            pa = getparents(node)
-            i_parents = indexin(pa, prenodes)
+            pae = PN.Edge[] # collect parent edges, parent nodes, and their
+            pa  = PN.Node[] # preorder indices, sorted in postorder
+            i_parents = Int[]
+            for e in node.edge # loop over parent edges
+                getchild(e) === node || continue
+                pn = getparent(e) # parent node
+                pi = findfirst(n -> n===pn, prenodes) # parent index
+                ii = findfirst(i_parents .< pi) # i_parents is reverse-sorted
+                if isnothing(ii) ii = length(i_parents) + 1; end
+                insert!(i_parents, ii, pi)
+                insert!(pa, ii, pn)
+                insert!(pae, ii, e)
+            end
             if isdegenerate(node) && unscope(node)
-                ch = getchild(node)
+                che = getchildedge(node)
+                ch = getchild(che)
                 i_child = findfirst(n -> n===ch, prenodes)
                 visited[i_child] = true
-                μ,h,J,g = factor_tree_degeneratehybrid(model, e.length, [p.gamma for p in pae])
+                h,J,g = factor_tree_degeneratehybrid(model, che.length, [p.gamma for p in pae])
                 if ch.leaf
                     i_datarow = findfirst(isequal(ch.name), taxa)
-                    # todo: absorb evidence
+                    h,J,g = absorbleaf!(h,J,g, i_datarow, tbl)
                     i_inscope = (i_parents...,)
                 else
                     i_inscope = (i_child, i_parents...)
                 end
             else
                 i_inscope = (i_node, i_parents...)
-                μ,h,J,g = factor_hybridnode(model, [e.length for e in pae], [p.gamma for p in pae])
+                h,J,g = factor_hybridnode(model, [e.length for e in pae], [p.gamma for p in pae])
+                @debug "node $(node.name), lengths $([e.length for e in pae]), gammas $([p.gamma for p in pae])\nh=$h, J=$J, g=$g"
             end
-            i_b = findfirst(x -> all(i_inscope .∈ x), nodelabels(b) for b in beliefs)
+            i_b = findfirst(b -> issubset(i_inscope, nodelabels(b)), beliefs)
             isnothing(i_b) && error("no cluster containing the scope for hybrid $(node.number).")
         else
             e = getparentedge(node)
@@ -213,10 +257,10 @@ function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
             i_parent = findfirst(n -> n===pa, prenodes)
             i_b = findfirst(x -> i_parent ∈ x && i_node ∈ x, nodelabels(b) for b in beliefs)
             isnothing(i_b) && error("no cluster containing nodes $(node.number) and $(pa.number).")
-            μ,h,J,g = factor_treeedge(model, e.length)
+            h,J,g = factor_treeedge(model, e.length)
             if node.leaf
                 i_datarow = findfirst(isequal(nodelab), taxa)
-                # todo: absorb evidence
+                h,J,g = absorbleaf!(h,J,g, i_datarow, tbl)
                 i_inscope = (i_parent,)
             else
                 i_inscope = (i_node,i_parent)
@@ -224,16 +268,41 @@ function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
         end
         be = beliefs[i_b]
         be.type == bclustertype || error("belief $(be.metadata) is of type $(be.type)")
-        canonind = scopeindex(i_inscope, be)
-        view(be.h, canonind) .+= h
-        view(be.J, canonind) .+= J
-        be.g += g
-        # todo: assign μ,h,J,g to belief 'be' with correct indices
+        if isrootfixed(model) && 1 ∈ i_inscope # the node's parents include the root
+            1 == i_inscope[end] || error("expected the root to be listed last (postorder)")
+            i_inscope = i_inscope[1:(end-1)] # remove last entry '1'
+            rootindex = (length(h) - numtraits + 1):length(h)
+            h,J,g = absorbevidence!(h,J,g, rootindex, rootpriormeanvector(model))
+        end
+        factorind = scopeindex(i_inscope, be)
+        @debug """
+        factor for node $(node.name), nodes in scope have preorder $i_inscope,
+        cluster $i_b with labels $(nodelabels(be)), inscope: $(inscope(be)),
+        their variable belief indices $factorind.
+        before marginalizing: h=$h, J=$J, g=$g
+        """ 
+        if length(factorind) != numtraits * length(i_inscope)
+            # then marginalize variables not in scope, e.g. bc no data below
+            var_inscope = view(inscope(be), :, indexin(i_inscope, nodelabels(be)))
+            keep_index = LinearIndices(var_inscope)[var_inscope]
+            h,J,g = marginalizebelief(h,J,g, keep_index)
+        end
+        view(be.h, factorind) .+= h
+        view(be.J, factorind, factorind) .+= J
+        be.g[1] += g
+        # @show be.h,be.J,be.g[1]
     end
-    # todo: update be.μ after all factors have been assign to the cluster?
+    for be in beliefs # sanity check: each cluster belief should non-zero
+        be.type == bclustertype || break # sepsets untouched and listed last
+        @debug "cluster $(be.metadata), node labels $(nodelabels(be)), inscope: $(inscope(be)),\nμ: $(be.μ)\nh: $(be.h)\nJ: $(be.J)\ng: $(be.g[1])"
+        any(be.J .!= 0.0) ||
+            error("belief for nodes $(nodelabels(be)) was not assigned any non-zero factor")
+        # do NOT update μ = J^{-1} h because J often singular before propagation
+        # be.μ .= PDMat(LA.Symmetric(be.J)) \ be.h
+    end
     return beliefs
 end
 
-# todo: absorb data at tips
+
 # todo: integrate beliefs
 # todo: propagate belief
