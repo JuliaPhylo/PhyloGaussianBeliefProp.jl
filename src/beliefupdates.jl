@@ -1,4 +1,28 @@
+"""
+    marginalizebelief(belief::AbstractBelief, keep_index)
+    marginalizebelief(h,J,g, keep_index)
+    marginalizebelief(h,J,g, keep_index, integrate_index)
+
+Canonical form (h,J,g) of the input belief, in which variables at indices
+`keep_index` have been integrated out. If we use `I` and `S` subscripts
+to denote subvectors and submatrices at indices to integrate out
+(I: `integrate_index`) and indices to keep (S: save for sepset, `keep_index`)
+then the returned belief parameters are:
+
+``h_S - J_{S,I} J_I^{-1} h_I``
+
+``J_S - J_{S,I} J_I^{-1} J_{I,S}``
+
+and
+
+``g + (\\log|2\\pi J_I^{-1}| + h_I^{T} J_I^{-1} h_I)/2 .``
+
+These operations fail if the Cholesky decomposition of ``J_I`` fails.
+"""
+marginalizebelief(b::AbstractBelief, keepind) =
+    marginalizebelief(b.h, b.J, b.g[1], keepind)
 function marginalizebelief(h,J,g, keep_index)
+    # todo: if isempty(keep_index) call different function to avoid work for an empty messageJ
     integrate_index = setdiff(1:length(h), keep_index)
     marginalizebelief(h,J,g, keep_index, integrate_index)
 end
@@ -6,8 +30,8 @@ function marginalizebelief(h,J,g, keep_index, integrate_index)
     isempty(integrate_index) && return (h,J,g)
     ni = length(integrate_index)
     Ji = PDMat(view(J, integrate_index, integrate_index)) # fails if cholesky fails, e.g. if J=0
-    Jk = view(J, keep_index, keep_index)
-    Jki = view(J, integrate_index, keep_index)
+    Jk  = view(J, keep_index, keep_index)
+    Jki = view(J, keep_index, integrate_index)
     hi = view(h, integrate_index)
     hk = view(h, keep_index)
     messageJ = Jk - X_invA_Xt(Ji, Jki) # Jk - Jki Ji^{-1} Jki'

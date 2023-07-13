@@ -102,7 +102,6 @@ function MvFullBrownianMotion(R, μ, v=nothing)
         LA.issymmetric(v) || error("v should be symmetric")
         v = LA.Symmetric(SMatrix{numt,numt,T}(v))
         λ = LA.eigvals(v)
-        @show λ
         all(λ .>= 0)                 || error("v is not positive semi-definite")
     end
     MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, -(numt * log2π + LA.logdet(R))/2)

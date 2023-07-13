@@ -69,7 +69,7 @@ function ClusterBelief(nl::AbstractVector{Tlabel}, numtraits::Integer,
 end
 
 """
-    scopeindex(node_labels, belief)
+    scopeindex(node_labels, belief::AbstractBelief)
 
 Indices in the belief's μ,h,J vectors and matrices of the variables
 for nodes labelled `node_labels`. The belief's `inscope` matrix of
@@ -78,7 +78,7 @@ These variables are vectorized by stacking up columns, that is,
 listing all in-scope traits of the first node, then all in-scope traits of
 the second node etc.
 """
-function scopeindex(node_labels, belief::AbstractBelief)
+function scopeindex(node_labels::Union{Tuple,AbstractVector}, belief::AbstractBelief)
     binscope = inscope(belief)
     node_j = indexin(node_labels, nodelabels(belief))
     any(isnothing.(node_j)) && error("some label is not in the belief's node labels")
@@ -95,6 +95,37 @@ function scopeindex(node_labels, belief::AbstractBelief)
     end
     return res
 end
+
+"""
+    scopeindex(sepset::AbstractBelief, cluster::AbstractBelief)
+
+Indices `ind`, in the cluster in-scope variables (that is, in the cluster's μ,h,J
+vectors and matrices) of the sepset in-scope variables, such that
+`cluster.μ[ind]` correspond to the same variables as `sepset.μ`, for example.
+These sepset in-scope variables can be a subset of traits for each node in the
+sepset, as indicated by `inscope(sepset)`.
+
+Warning: the labels in the sepset are assumed to be ordered as in the cluster.
+
+An error is returned if `sepset` contains labels not in the `cluster`,
+or if a variable in the `sepset`'s scope is not in scope in the `cluster`.
+"""
+scopeindex(sep::AbstractBelief, clu::AbstractBelief) =
+    scopeindex(nodelabels(sep), inscope(sep), nodelabels(clu), inscope(clu))
+function scopeindex(subset_labels::AbstractVector, subset_inscope::BitArray,
+                    belief_labels::AbstractVector, belief_inscope::BitArray)
+    node_index = indexin(subset_labels, belief_labels)
+    issorted(node_index) || error("subset labels come in a different order in the belief")
+    any(isnothing.(node_index)) && error("subset_labels not a subset of belief_labels")
+    any(subset_inscope .&& .!view(belief_inscope,:,node_index)) &&
+        error("some variable(s) in subset's scope yet not in full belief's scope")
+    subset_inclusterscope = falses(size(belief_inscope))
+    subset_inclusterscope[:,node_index] .= subset_inscope
+    return findall(subset_inclusterscope[belief_inscope])
+end
+
+# fixit: add option to turn off checks, and
+# add function to run these checks once between all incident sepset-cluster
 
 """
     init_beliefs_allocate(tbl::Tables.ColumnTable, taxa, net, clustergraph,
@@ -304,5 +335,31 @@ function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
 end
 
 
-# todo: integrate beliefs
-# todo: propagate belief
+"""
+    propagate_belief!(cluster_from, sepset, cluster_to)
+
+Update the canonical parameters of the beliefs in `cluster_to` and in `sepset`,
+by marginalizing the belief in `cluster_from` to the sepset's variable and
+passing that message.
+Warning: only the `h`, `J` and `g` parameters are updated, not `μ`.
+Does not check that `cluster_from` and `cluster_to` are of cluster type,
+or that `sepset` is of sepset type, but does check that the labels and scope
+of `sepset` are included in each cluster.
+"""
+function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
+                           cluster_from::AbstractBelief)
+    # 1. compute message: marginalize cluster_from to variables in sepset
+    #    requires cluster_from.J[keep,keep] to be invertible
+    keepind = scopeindex(sepset, cluster_from)
+    h,J,g = marginalizebelief(cluster_from, keepind)
+    # 2. extend message to scope of cluster_to and propagate
+    upind = scopeindex(sepset, cluster_to) # indices to be updated
+    view(cluster_to.h, upind)       .+= h .- sepset.h
+    view(cluster_to.J, upind,upind) .+= J .- sepset.J
+    cluster_to.g[1]                  += g  - sepset.g[1]
+    # 3. update sepset belief
+    sepset.h   .= h
+    sepset.J   .= J
+    sepset.g[1] = g
+    return sepset
+end
