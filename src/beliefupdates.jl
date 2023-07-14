@@ -21,12 +21,12 @@ These operations fail if the Cholesky decomposition of ``J_I`` fails.
 """
 marginalizebelief(b::AbstractBelief, keepind) =
     marginalizebelief(b.h, b.J, b.g[1], keepind)
-function marginalizebelief(h,J,g, keep_index)
+function marginalizebelief(h,J,g::Real, keep_index)
     # todo: if isempty(keep_index) call different function to avoid work for an empty messageJ
     integrate_index = setdiff(1:length(h), keep_index)
     marginalizebelief(h,J,g, keep_index, integrate_index)
 end
-function marginalizebelief(h,J,g, keep_index, integrate_index)
+function marginalizebelief(h,J,g::Real, keep_index, integrate_index)
     isempty(integrate_index) && return (h,J,g)
     ni = length(integrate_index)
     Ji = PDMat(view(J, integrate_index, integrate_index)) # fails if cholesky fails, e.g. if J=0
@@ -39,6 +39,28 @@ function marginalizebelief(h,J,g, keep_index, integrate_index)
     messageh = hk - Jki * μi
     messageg = g + (ni*log2π + LA.logdet(Ji) + sum(hi .* μi))/2
     return (messageh, messageJ, messageg)
+end
+
+"""
+    integratebelief!(belief::AbstractBelief)
+    integratebelief(h,J,g)
+
+(μ,g) from fully integrating the belief, that is:
+``μ = J^{-1} h`` and
+``g + (\\log|2\\pi J^{-1}| + h^{T} J^{-1} h)/2 .``
+The first form updates `belief.μ`.
+"""
+function integratebelief!(b::AbstractBelief)
+    μ, g = integratebelief(b.h, b.J, b.g[1])
+    b.μ .= μ
+    return (μ,g)
+end
+function integratebelief(h,J,g::Real)
+    ni = length(h)
+    Ji = PDMat(J) # fails if cholesky fails, e.g. if J=0
+    μi = Ji \ h
+    messageg = g + (ni*log2π + LA.logdet(Ji) + sum(h .* μi))/2
+    return (μi, messageg)
 end
 
 """

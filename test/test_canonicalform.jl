@@ -75,16 +75,20 @@ ct = PGBP.cliquetree(g)
 m = PGBP.UnivariateBrownianMotion(2, 3, 0) # 0 root prior variance: fixed root
 b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, true);
 PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed)
-#=
-["$(be.type): $(be.nodelabel)" for be in b]
-=#
+# ["$(be.type): $(be.nodelabel)" for be in b]
+
 PGBP.propagate_belief!(b[1], b[7+1], b[2]) # 7 clusters, so b[7+1] = first sepset
 PGBP.propagate_belief!(b[1], b[7+2], b[3])
 PGBP.propagate_belief!(b[4], b[7+3], b[1])
 PGBP.propagate_belief!(b[4], b[7+5], b[6])
 PGBP.propagate_belief!(b[4], b[7+6], b[7])
 PGBP.propagate_belief!(b[5], b[7+4], b[4]) # tree traversed once to cluster 5 as root
+PGBP.integratebelief!(b[5])
 
+#= likelihood using PN.vcv and matrix inversion
+Σnet = Matrix(vcv(net)[!,Symbol.(df.taxon)])
+loglikelihood(MvNormal(repeat([m.μ],4), m.σ2 .* Σnet), tbl.y) # -10.732857817537196
+=#
 end # of non-degenerate testset
 
 end
