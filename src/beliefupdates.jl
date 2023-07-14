@@ -37,7 +37,7 @@ function marginalizebelief(h,J,g::Real, keep_index, integrate_index)
     messageJ = Jk - X_invA_Xt(Ji, Jki) # Jk - Jki Ji^{-1} Jki'
     μi = Ji \ hi
     messageh = hk - Jki * μi
-    messageg = g + (ni*log2π + LA.logdet(Ji) + sum(hi .* μi))/2
+    messageg = g + (ni*log2π - LA.logdet(Ji) + sum(hi .* μi))/2
     return (messageh, messageJ, messageg)
 end
 
@@ -59,7 +59,7 @@ function integratebelief(h,J,g::Real)
     ni = length(h)
     Ji = PDMat(J) # fails if cholesky fails, e.g. if J=0
     μi = Ji \ h
-    messageg = g + (ni*log2π + LA.logdet(Ji) + sum(h .* μi))/2
+    messageg = g + (ni*log2π - LA.logdet(Ji) + sum(h .* μi))/2
     return (μi, messageg)
 end
 
@@ -83,11 +83,11 @@ function absorbevidence!(h,J,g, dataindex, datavalues)
     data_nm = view(datavalues, hasdata) # non-missing data values
     length(absorb_ind) + length(keep_ind) == nvar ||
         error("data indices go beyond belief size")
-    Jkk = view(J, keep_ind,   keep_ind) # avoid copying
-    Jka = view(J, keep_ind, absorb_ind)
-    Jdata = Jka * data_nm
-    g  += sum(view(h, absorb_ind) .* data_nm) - sum(Jdata .* data_nm)/2
-    hk = view(h, keep_ind) .- Jdata # modifies h in place for a subset of indices
+    Jkk = view(J, keep_ind,     keep_ind) # avoid copying
+    Jk_data = view(J, keep_ind,   absorb_ind) * data_nm
+    Ja_data = view(J, absorb_ind, absorb_ind) * data_nm
+    g  += sum(view(h, absorb_ind) .* data_nm) - sum(Ja_data .* data_nm)/2
+    hk = view(h, keep_ind) .- Jk_data # modifies h in place for a subset of indices
     return hk, Jkk, g, missingdata_indices
 end
 

@@ -137,6 +137,8 @@ end
 Canonical parameters `h,J,g` of factor ϕ(X0, X1,X2,...) from the evolutionary model
 for a hybrid node: where X0 is the state at the hybrid node and X1,X2,... the
 states of the parent nodes.
+**Warning:** `γs` is modified in placed, changed to `[1 -γs]`.
+
 It is assumed that the conditional mean is a simple weighted average:
 
 ``X0 = \\sum_k \\gamma_k Xk = q vec(X1,X2,...) + \\omega``
@@ -169,9 +171,9 @@ end
 function factor_tree_degeneratehybrid(m::UnivariateBrownianMotion, t0::Real, γ::AbstractVector)
     j = m.J / t0
     nparents = length(γ); nn = 1 + nparents
-    γj = -γ .* j; pushfirst!(γj, j)
-    J = LA.Symmetric(SMatrix{nn,nn, Float64}(x*y for x in γj, y in γj))
-    # μ = SVector{nn, Float64}(0.0 for _ in 1:nn)
+    # modifies γ in place below, to get longer vector: [1 -γ]
+    γ .= -γ; pushfirst!(γ, one(eltype(γ)))
+    J = LA.Symmetric(SMatrix{nn,nn, Float64}(j*x*y for x in γ, y in γ))
     h = SVector{nn, Float64}(0.0 for _ in 1:nn)
     g = m.g0 - dimension(m) * log(t0)/2
     return(h,J,g)

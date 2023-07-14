@@ -74,8 +74,28 @@ ct = PGBP.cliquetree(g)
 
 m = PGBP.UnivariateBrownianMotion(2, 3, 0) # 0 root prior variance: fixed root
 b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, true);
-PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed)
+PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
 # ["$(be.type): $(be.nodelabel)" for be in b]
+@test b[1].J ≈ m.J/net.edge[4].length .* [1 -1; -1 1]
+@test b[1].h == [0,0]
+@test b[1].g[1] ≈ -log(2π * net.edge[4].length * m.σ2)/2
+bp = m.J/net.edge[3].length
+@test b[2].J ≈ bp .* [1;;] # external edge to B2
+@test b[2].h ≈ bp * [tbl_y.y[3]]
+@test b[2].g[1] ≈ -(log(2π/bp) + bp*tbl_y.y[3]^2)/2
+bp = m.J/net.edge[2].length
+@test b[3].J ≈ bp .* [1;;] # external edge to B1
+@test b[3].h ≈ bp * [tbl_y.y[2]]
+@test b[3].g[1] ≈ -(log(2π/bp) + bp*tbl_y.y[2]^2)/2
+bp = m.J/(net.edge[7].gamma^2 * net.edge[7].length + net.edge[5].gamma^2 * net.edge[5].length)
+@test b[4].J ≈ bp .* [1 -.9 -.1;-.9 .81 .09;-.1 .09 .01]
+@test b[4].h ≈ [0,0,0]
+@test b[4].g[1] ≈ -log(2π/bp)/2
+# 3 factors in b[5]: 1->4, 1->2, root 1: N(μ, l4 σ2) x N(μ, l2 σ2)
+bp = m.J ./[net.edge[6].length, net.edge[9].length]
+@test b[5].J ≈ [bp[1] 0; 0 bp[2]] # LinearAlgebra.diagm(bp)
+@test b[5].h ≈ bp .* [m.μ, m.μ]
+@test b[5].g[1] ≈ - (sum(log.(2π ./ bp) .+  bp .* m.μ^2))/2
 
 PGBP.propagate_belief!(b[1], b[7+1], b[2]) # 7 clusters, so b[7+1] = first sepset
 PGBP.propagate_belief!(b[1], b[7+2], b[3])
@@ -83,11 +103,13 @@ PGBP.propagate_belief!(b[4], b[7+3], b[1])
 PGBP.propagate_belief!(b[4], b[7+5], b[6])
 PGBP.propagate_belief!(b[4], b[7+6], b[7])
 PGBP.propagate_belief!(b[5], b[7+4], b[4]) # tree traversed once to cluster 5 as root
-PGBP.integratebelief!(b[5])
+rootstate, dataloglik = PGBP.integratebelief!(b[5])
+@test dataloglik ≈ -10.732857817537196
 
 #= likelihood using PN.vcv and matrix inversion
-Σnet = Matrix(vcv(net)[!,Symbol.(df.taxon)])
-loglikelihood(MvNormal(repeat([m.μ],4), m.σ2 .* Σnet), tbl.y) # -10.732857817537196
+Σnet = m.σ2 .* Matrix(vcv(net)[!,Symbol.(df.taxon)])
+loglikelihood(MvNormal(repeat([m.μ],4), Σnet), tbl.y) # -10.732857817537196
+r = tbl.y .- m.μ; - transpose(r) * inv(Σnet) * r /2 - logdet(2π .* Σnet)/2
 =#
 end # of non-degenerate testset
 
