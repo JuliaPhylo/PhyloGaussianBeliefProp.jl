@@ -200,3 +200,25 @@ function cliquetree(graph::AbstractGraph{T}) where T
     end
     return mg
 end
+
+"""
+    spanningtree_clusterlist(clustergraph, nodevector_preordered)
+
+Fixit.
+Node labels correspond to the index of each node in `nodevector_preordered`
+In vector `nodevector_preordered`, nodes are assumed to be preordered.
+Typically, this vector is `net.nodes_changed` after the network is preordered.
+"""
+function spanningtree_clusterlist(cgraph, prenodes::Vector{PN.Node})
+    # to root the spanning tree, find a cluster that contains the network's root.
+    # if multiple clusters contain the root, pick one with fewest leaves
+    cscore = lab -> begin
+        nodelabs = ct[lab][2]
+        (1 ∈ nodelabs ? sum(prenodes[i].leaf for i in nodelabs) : Inf)
+    end
+    rootj = argmin(cscore(lab) for lab in labels(cgraph))
+    rootl = cgraph.vertex_labels[rootj]
+    spt = dfs_tree(cgraph.graph, rootj)
+    @show rootl, spt.fadjlist
+    return topological_sort(spt)
+end
