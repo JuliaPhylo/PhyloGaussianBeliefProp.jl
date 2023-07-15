@@ -202,23 +202,44 @@ function cliquetree(graph::AbstractGraph{T}) where T
 end
 
 """
-    spanningtree_clusterlist(clustergraph, nodevector_preordered)
+    spanningtree_clusterlist(clustergraph, nodevector_preordered, root_index=nothing)
 
-Fixit.
-Node labels correspond to the index of each node in `nodevector_preordered`
-In vector `nodevector_preordered`, nodes are assumed to be preordered.
+Build the depth-first search spanning tree of the cluster graph, starting from
+the node indexed `root_index` in the underlying simple graph;
+find the associated topological ordering of the clusters (preorder); then
+return a tuple of these four vectors:
+1. `parent_labels`: labels of the parents' child clusters. The first one is the root.
+2. `child_labels`: labels of clusters in pre-order, except for the cluster
+    choosen to be the root.
+3. `parent_indices`: indices of the parent clusters
+4. `child_indices`: indices of the child clusters, listed in preorder as before.
+
+For cluster with label `:lab`, its property `clustergraph[:lab][2]`
+should list the nodes in the cluster, by the index of each node in
+`nodevector_preordered` such that `1` corresponds to the network's root.
 Typically, this vector is `net.nodes_changed` after the network is preordered.
+
+If `root_index` is not provided, then the root of the spanning tree is chosen
+to be a cluster that contains the network's root. If multiple clusters contain
+the network's root, then one is chosen with the smallest number of taxa
+(leaves in the network).
 """
-function spanningtree_clusterlist(cgraph, prenodes::Vector{PN.Node})
-    # to root the spanning tree, find a cluster that contains the network's root.
-    # if multiple clusters contain the root, pick one with fewest leaves
-    cscore = lab -> begin
-        nodelabs = ct[lab][2]
+function spanningtree_clusterlist(cgraph, prenodes::Vector{PN.Node},
+            rootj=nothing::Union{Nothing,Integer})
+    if isnothing(rootj)
+      hasroot = lab -> begin   # Inf if the cluster does not contain the root 1
+        nodelabs = cgraph[lab][2]  # number of taxa in the cluster otherwise
         (1 ∈ nodelabs ? sum(prenodes[i].leaf for i in nodelabs) : Inf)
+      end
+      rootj = argmin(hasroot(lab) for lab in labels(cgraph))
     end
-    rootj = argmin(cscore(lab) for lab in labels(cgraph))
     rootl = cgraph.vertex_labels[rootj]
-    spt = dfs_tree(cgraph.graph, rootj)
-    @show rootl, spt.fadjlist
-    return topological_sort(spt)
+    par = dfs_parents(cgraph.graph, rootj)
+    spt = Graphs.tree(par) # or directly: spt = dfs_tree(cgraph.graph, rootj)
+    # spt.fadjlist # forward adjacency list: sepsets, but edges not indexed
+    childclust_j = topological_sort(spt)[2:end] # cluster in preorder, excluding the root cluster
+    parentclust_j = par[childclust_j] # parent of each cluster in spanning tree
+    childclust_lab  = [cgraph.vertex_labels[j] for j in childclust_j]
+    parentclust_lab = [cgraph.vertex_labels[j] for j in parentclust_j]
+    return parentclust_lab, childclust_lab, parentclust_j, childclust_j
 end
