@@ -79,7 +79,7 @@ PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
 @test b[1].J ≈ m.J/net.edge[4].length .* [1 -1; -1 1]
 @test b[1].h == [0,0]
 @test b[1].g[1] ≈ -log(2π * net.edge[4].length * m.σ2)/2
-bp = m.J/net.edge[3].length
+bp = m.J/net.edge[3].length # bp for Belief Precision
 @test b[2].J ≈ bp .* [1;;] # external edge to B2
 @test b[2].h ≈ bp * [tbl_y.y[3]]
 @test b[2].g[1] ≈ -(log(2π/bp) + bp*tbl_y.y[3]^2)/2

@@ -224,7 +224,7 @@ to be a cluster that contains the network's root. If multiple clusters contain
 the network's root, then one is chosen with the smallest number of taxa
 (leaves in the network).
 """
-function spanningtree_clusterlist(cgraph, prenodes::Vector{PN.Node},
+function spanningtree_clusterlist(cgraph::MetaGraph, prenodes::Vector{PN.Node},
             rootj=nothing::Union{Nothing,Integer})
     if isnothing(rootj)
       hasroot = lab -> begin   # Inf if the cluster does not contain the root 1
@@ -233,7 +233,6 @@ function spanningtree_clusterlist(cgraph, prenodes::Vector{PN.Node},
       end
       rootj = argmin(hasroot(lab) for lab in labels(cgraph))
     end
-    rootl = cgraph.vertex_labels[rootj]
     par = dfs_parents(cgraph.graph, rootj)
     spt = Graphs.tree(par) # or directly: spt = dfs_tree(cgraph.graph, rootj)
     # spt.fadjlist # forward adjacency list: sepsets, but edges not indexed
