@@ -202,7 +202,8 @@ function cliquetree(graph::AbstractGraph{T}) where T
 end
 
 """
-    spanningtree_clusterlist(clustergraph, nodevector_preordered, root_index=nothing)
+    spanningtree_clusterlist(clustergraph, root_index)
+    spanningtree_clusterlist(clustergraph, nodevector_preordered)
 
 Build the depth-first search spanning tree of the cluster graph, starting from
 the node indexed `root_index` in the underlying simple graph;
@@ -214,25 +215,16 @@ return a tuple of these four vectors:
 3. `parent_indices`: indices of the parent clusters
 4. `child_indices`: indices of the child clusters, listed in preorder as before.
 
-For cluster with label `:lab`, its property `clustergraph[:lab][2]`
-should list the nodes in the cluster, by the index of each node in
-`nodevector_preordered` such that `1` corresponds to the network's root.
-Typically, this vector is `net.nodes_changed` after the network is preordered.
-
-If `root_index` is not provided, then the root of the spanning tree is chosen
-to be a cluster that contains the network's root. If multiple clusters contain
-the network's root, then one is chosen with the smallest number of taxa
-(leaves in the network).
+In the second version in which `root_index` is not provided, the root of the
+spanning tree is chosen to be a cluster that contains the network's root. If
+multiple clusters contain the network's root, then one is chosen containing the
+smallest number of taxa: see [`default_rootcluster`](@ref).
 """
-function spanningtree_clusterlist(cgraph::MetaGraph, prenodes::Vector{PN.Node},
-            rootj=nothing::Union{Nothing,Integer})
-    if isnothing(rootj)
-      hasroot = lab -> begin   # Inf if the cluster does not contain the root 1
-        nodelabs = cgraph[lab][2]  # number of taxa in the cluster otherwise
-        (1 ∈ nodelabs ? sum(prenodes[i].leaf for i in nodelabs) : Inf)
-      end
-      rootj = argmin(hasroot(lab) for lab in labels(cgraph))
-    end
+function spanningtree_clusterlist(cgraph::MetaGraph, prenodes::Vector{PN.Node})
+    rootj = default_rootcluster(cgraph, prenodes)
+    spanningtree_clusterlist(cgraph, rootj)
+end
+function spanningtree_clusterlist(cgraph::MetaGraph, rootj::Integer)
     par = dfs_parents(cgraph.graph, rootj)
     spt = Graphs.tree(par) # or directly: spt = dfs_tree(cgraph.graph, rootj)
     # spt.fadjlist # forward adjacency list: sepsets, but edges not indexed
@@ -241,4 +233,25 @@ function spanningtree_clusterlist(cgraph::MetaGraph, prenodes::Vector{PN.Node},
     childclust_lab  = [cgraph.vertex_labels[j] for j in childclust_j]
     parentclust_lab = [cgraph.vertex_labels[j] for j in parentclust_j]
     return parentclust_lab, childclust_lab, parentclust_j, childclust_j
+end
+
+"""
+    default_rootcluster(clustergraph, nodevector_preordered)
+
+Index of a cluster that contains the network's root, whose label is assumed to
+be `1` (preorder index). If multiple clusters contain the network's root,
+then one is chosen with the smallest number of taxa (leaves in the network).
+
+For cluster with label `:lab`, its property `clustergraph[:lab][2]`
+should list the nodes in the cluster, by the index of each node in
+`nodevector_preordered` such that `1` corresponds to the network's root.
+Typically, this vector is `net.nodes_changed` after the network is preordered.
+"""
+function default_rootcluster(cgraph::MetaGraph, prenodes::Vector{PN.Node})
+    hasroot = lab -> begin   # Inf if the cluster does not contain the root 1
+        nodelabs = cgraph[lab][2]  # number of taxa in the cluster otherwise
+        (1 ∈ nodelabs ? sum(prenodes[i].leaf for i in nodelabs) : Inf)
+    end
+    rootj = argmin(hasroot(lab) for lab in labels(cgraph))
+    return rootj
 end

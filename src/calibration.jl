@@ -39,8 +39,6 @@ function sepsetindex(clustlabel1, clustlabel2, sepsetdict)
     sepsetdict[Set((clustlabel1, clustlabel2))]
 end
 
-integratebelief!(obj::ClusterGraphBelief, rootindex) = integratebelief!(obj.belief[rootindex])
-
 function ClusterGraphBelief(beliefs)
     i = findfirst(b -> b.type == bsepsettype, beliefs)
     nc = (isnothing(i) ? length(beliefs) : i-1)
@@ -61,6 +59,35 @@ end
 
 
 """
+    integratebelief!(obj, beliefindex)
+    integratebelief!(obj)
+    integratebelief!(obj::ClusterGraphBelief, clustergraph, nodevector_preordered)
+
+(μ,g) from fully integrating the object belief indexed `beliefindex`.
+The second form uses the first sepset containing a single node. This is valid
+if the beliefs are fully calibrated (including a pre-order traversal), but
+invalid otherwise.
+The third form uses the default cluster containing the root,
+see [`default_rootcluster`](@ref). This is valid if the same cluster was used
+as the root of the cluster graph, if this graph is a clique tree, and after
+a post-order traversal to start the calibration.
+"""
+function integratebelief!(obj::ClusterGraphBelief, cgraph::MetaGraph, prenodes)
+    integratebelief!(obj, default_rootcluster(cgraph, prenodes))
+end
+integratebelief!(b::ClusterGraphBelief) = integratebelief!(b, default_sepset1(b))
+integratebelief!(b::ClusterGraphBelief, j::Integer) = integratebelief!(b.belief[j])
+
+# first sepset containing a single node
+default_sepset1(b::ClusterGraphBelief) = default_sepset1(b.belief, nclusters(b)+1)
+function default_sepset1(beliefs::AbstractBelief, n::Integer)
+    j = findnext(b -> length(nodelabels(b)) == 1, beliefs, n)
+    isnothing(j) && error("no sepset with a single node") # should not occur: degree-1 taxa
+    return j
+end
+
+
+"""
     calibrate!(beliefs::ClusterGraphBelief, clustergraph,
               nodevector_preordered, niterations=10)
 
@@ -68,7 +95,7 @@ fixit
 `niterations` is ignored and set to 1 if the cluster graph is a clique tree.
 """
 function calibrate!(beliefs::ClusterGraphBelief, cgraph, prenodes::Vector{PN.Node},
-                    niter=10)
+                    niter=10::Integer)
     niter = (cgraph.graph_data == :cliquetree || is_tree(cgraph) ? 1 : niter)
     for _ in 1:niter
         spt = spanningtree_clusterlist(cgraph, prenodes)
@@ -106,11 +133,6 @@ function propagate_1treetraversal_postorder!(beliefs, spt)
         propagate_belief!(b[pa_j[i]], b[ss_j], b[ch_j[i]])
     end
 end
-function propagate_1treetraversal_postorder!(beliefs::ClusterGraphBelief, cgraph, prenodes::Vector{PN.Node})
-    # cgraph.graph_data == :cliquetree || error("the graph is not a clique tree")
-    spt = spanningtree_clusterlist(cgraph, prenodes)
-    propagate_1treetraversal_postorder!(beliefs, spt)
-end
 
 function propagate_1treetraversal_preorder!(beliefs, spt)
     pa_lab, ch_lab, pa_j, ch_j = spt
@@ -119,5 +141,27 @@ function propagate_1treetraversal_preorder!(beliefs, spt)
     for i in 1:length(pa_lab)
         ss_j = sepsetindex(pa_lab[i], ch_lab[i], beliefs)
         propagate_belief!(b[ch_j[i]], b[ss_j], b[pa_j[i]])
+    end
+end
+
+#------ parameter optimization. fixit: place in some other file? ------#
+function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
+        cgraph, prenodes::Vector{PN.Node})
+    # cgraph.graph_data == :cliquetree || error("the graph is not a clique tree")
+    spt = spanningtree_clusterlist(cgraph, prenodes)
+    rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
+    #= fixit
+    - use the data as input
+    - correct function of parameter set below
+    - use autodiff to calculate gradient
+    - optimize parameters
+    - or, if BM: avoid optimization bc there exists an exact alternative
+    =#
+    function score(params)
+        init_beliefs_reset!(beliefs.belief)
+        init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
+        propagate_1treetraversal_postorder!(beliefs, spt)
+        _, res = integratebelief!(beliefs, rootj) # drop conditional mean
+        return res
     end
 end

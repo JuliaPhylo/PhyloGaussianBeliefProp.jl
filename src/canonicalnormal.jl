@@ -212,6 +212,21 @@ function init_beliefs_allocate(tbl::Tables.ColumnTable, taxa::AbstractVector,
 end
 
 """
+    init_beliefs_reset!(beliefs)
+
+Reset cluster and sepset beliefs to h=0, J=0, g=0 (μ unchanged) so they can
+later be re-initialized with factors from different model parameters,
+then re-calibrated.
+"""
+function init_beliefs_reset!(beliefs)
+    for be in beliefs
+        be.h .= 0.0
+        be.J .= 0.0
+        be.g[1] = 0.0
+    end
+end
+
+"""
     init_beliefs_assignfactors!(beliefs, evolutionarymodel, columntable, taxa,
                                 nodevector_preordered)
 
@@ -237,6 +252,7 @@ Output: `beliefs` vector. Each belief is modified in place.
 """
 function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
         tbl::Tables.ColumnTable, taxa::AbstractVector, prenodes::Vector{PN.Node})
+    init_beliefs_reset!(beliefs)
     numtraits = dimension(model)
     visited = falses(length(prenodes))
     for (i_node,node) in enumerate(prenodes)
