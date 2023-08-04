@@ -80,7 +80,7 @@ integratebelief!(b::ClusterGraphBelief, j::Integer) = integratebelief!(b.belief[
 
 # first sepset containing a single node
 default_sepset1(b::ClusterGraphBelief) = default_sepset1(b.belief, nclusters(b)+1)
-function default_sepset1(beliefs::AbstractBelief, n::Integer)
+function default_sepset1(beliefs::AbstractVector, n::Integer)
     j = findnext(b -> length(nodelabels(b)) == 1, beliefs, n)
     isnothing(j) && error("no sepset with a single node") # should not occur: degree-1 taxa
     return j
@@ -101,19 +101,22 @@ of the first edge is taken to be the root of the schedule tree.
 The default of 1 iteration is sufficient for exact calibration if
 the schedule tree is a clique tree for the graphical model.
 """
-function calibrate!(beliefs::ClusterGraphBelief, schedule, niter=1::Integer)
+function calibrate!(beliefs::ClusterGraphBelief, schedule::AbstractVector, niter=1::Integer)
     for _ in 1:niter
         # spt = spanningtree_clusterlist(cgraph, prenodes)
         for spt in schedule
-            propagate_1traversal_postorder!(beliefs, spt)
-            propagate_1traversal_preorder!(beliefs, spt)
+            calibrate!(beliefs, spt)
         end
     end
 end
+function calibrate!(beliefs::ClusterGraphBelief, spt::Tuple)
+    propagate_1traversal_postorder!(beliefs, spt...)
+    propagate_1traversal_preorder!(beliefs, spt...)
+end
 
 """
-    propagate_1traversal_postorder!(beliefs::ClusterGraphBelief, spanningtree)
-    propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,  spanningtree)
+    propagate_1traversal_postorder!(beliefs::ClusterGraphBelief, spanningtree...)
+    propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,  spanningtree...)
 
 Messages are propagated from the tips to the root of the tree by default,
 or from the root to the tips if `postorder` is false.
@@ -126,8 +129,8 @@ should correspond to indices in `beliefs`.
 This condition holds if beliefs are produced on a given cluster graph and if the
 tree is produced by [`spanningtree_clusterlist`](@ref) on the same graph.
 """
-function propagate_1traversal_postorder!(beliefs::ClusterGraphBelief, spt)
-    pa_lab, ch_lab, pa_j, ch_j = spt
+function propagate_1traversal_postorder!(beliefs::ClusterGraphBelief,
+            pa_lab, ch_lab, pa_j, ch_j)
     b = beliefs.belief
     # (parent <- sepset <- child) in postorder
     for i in reverse(1:length(pa_lab))
@@ -136,8 +139,8 @@ function propagate_1traversal_postorder!(beliefs::ClusterGraphBelief, spt)
     end
 end
 
-function propagate_1traversal_preorder!(beliefs::ClusterGraphBelief, spt)
-    pa_lab, ch_lab, pa_j, ch_j = spt
+function propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,
+            pa_lab, ch_lab, pa_j, ch_j)
     b = beliefs.belief
     # (child <- sepset <- parent) in preorder
     for i in 1:length(pa_lab)
@@ -158,22 +161,29 @@ The calibration does a postorder of the clique tree only, to get loglikelihood
 at the root *without* the conditional distribution at all nodes.
 """
 function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
-        cgraph, prenodes::Vector{PN.Node})
+        cgraph, prenodes::Vector{PN.Node},
+        tbl::Tables.ColumnTable, taxa::AbstractVector,
+        evomodelfun, # constructor function
+        evomodelparams)
     # cgraph.graph_data == :cliquetree || error("the graph is not a clique tree")
     spt = spanningtree_clusterlist(cgraph, prenodes)
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     #= fixit
-    - use the data as input
-    - correct function of parameter set below
-    - use autodiff to calculate gradient
+    - interface for parameter transformations to get unconstrained params,
+      e.g. log(σ2) for univariate or diagonal BM variances
+    - define score function with uncontrained parameters
     - optimize parameters
     - or, if BM: avoid optimization bc there exists an exact alternative
     =#
     function score(params)
+        model = evomodelfun(params...)
         init_beliefs_reset!(beliefs.belief)
         init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
-        propagate_1traversal_postorder!(beliefs, spt)
+        propagate_1traversal_postorder!(beliefs, spt...)
         _, res = integratebelief!(beliefs, rootj) # drop conditional mean
-        return res
+        return -res # score to be minimized (not maximized)
     end
+    # autodiff does not currently work with ForwardDiff, ReverseDiff of Zygote,
+    # because they cannot differentiate array mutation, as in: view(be.h, factorind) .+= h
+    score(evomodelparams)
 end

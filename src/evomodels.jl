@@ -1,4 +1,4 @@
-abstract type EvolutionaryModel end
+abstract type EvolutionaryModel{T} end
 
 # generic methods
 modelname(obj::EvolutionaryModel) = string(typeof(obj))
@@ -15,7 +15,7 @@ function Base.show(io::IO, obj::EvolutionaryModel)
     print(io, disp)
 end
 
-struct UnivariateBrownianMotion{T<:Real} <: EvolutionaryModel
+struct UnivariateBrownianMotion{T<:Real} <: EvolutionaryModel{T}
     "variance rate"
     σ2::T
     "inverse variance (precision) rate"
@@ -32,13 +32,15 @@ variancename(m::UnivariateBrownianMotion) = "evolutionary variance rate σ2"
 varianceparam(m::UnivariateBrownianMotion) = m.σ2
 rootpriormeanvector(m::UnivariateBrownianMotion) = [m.μ]
 isrootfixed(m::UnivariateBrownianMotion) = m.v == 0
-function UnivariateBrownianMotion(σ2, μ, v=Float64(0.0))
-    σ2 > 0.0 || error("evolutionary variance rate σ2 = $(σ2) must be positive")
-    v >= 0.0 || error("root variance v=$v must be non-negative")
-    UnivariateBrownianMotion{Float64}(σ2, 1/σ2, μ, v, -(log2π + log(σ2))/2)
+function UnivariateBrownianMotion(σ2, μ, v=nothing)
+    T = promote_type(Float64, typeof(σ2), typeof(μ))
+    if isnothing(v) v = zero(T); end
+    σ2 > 0 || error("evolutionary variance rate σ2 = $(σ2) must be positive")
+    v >= 0 || error("root variance v=$v must be non-negative")
+    UnivariateBrownianMotion{T}(σ2, 1/σ2, μ, v, -(log2π + log(σ2))/2)
 end
 
-struct MvDiagBrownianMotion{T<:Real, V<:AbstractVector{T}} <: EvolutionaryModel
+struct MvDiagBrownianMotion{T<:Real, V<:AbstractVector{T}} <: EvolutionaryModel{T}
     "diagonal entries of the diagonal variance rate matrix"
     R::V
     "inverse variance rates (precision) on the diagonal inverse rate matrix"
@@ -57,7 +59,7 @@ isrootfixed(m::MvDiagBrownianMotion) = all(m.v .== 0)
 function MvDiagBrownianMotion(R, μ, v=nothing)
     numt = length(μ) # number of traits
     length(R) == numt || error("R and μ have different lengths")
-    T = Float64 # promote_type(eltype(R), eltype(μ))
+    T = promote_type(Float64, eltype(R), eltype(μ))
     SV = SVector{numt, T}
     all(R .> 0.0) || error("evolutionary variance rates R = $R must all be positive")
     if isnothing(v)
@@ -71,7 +73,7 @@ function MvDiagBrownianMotion(R, μ, v=nothing)
     MvDiagBrownianMotion{T, SV}(R, J, SV(μ), SV(v), -(numt * log2π + sum(log.(R)))/2)
 end
 
-struct MvFullBrownianMotion{T<:Real, P1<:AbstractMatrix{T}, V<:AbstractVector{T}, P2<:AbstractMatrix{T}} <: EvolutionaryModel
+struct MvFullBrownianMotion{T<:Real, P1<:AbstractMatrix{T}, V<:AbstractVector{T}, P2<:AbstractMatrix{T}} <: EvolutionaryModel{T}
     "variance rate matrix"
     R::P1
     "inverse variance (precision) rate matrix"
@@ -89,7 +91,7 @@ varianceparam(m::MvFullBrownianMotion) = m.R
 isrootfixed(m::MvFullBrownianMotion) = all(m.v .== 0)
 function MvFullBrownianMotion(R, μ, v=nothing)
     numt = length(μ)
-    T = Float64 # promote_type(eltype(R), eltype(μ))
+    T = promote_type(Float64, eltype(R), eltype(μ))
     SV = SVector{numt, T}
     size(R) == (numt,numt)       || error("R and μ have conflicting sizes")
     LA.issymmetric(R) || error("R should be symmetric")
@@ -121,11 +123,10 @@ conditional mean q X1 + ω and conditional variance independent of X1.
 Under a Brownian motion, se have q=I, ω=0, and conditional variance tR
 where R is the model's variance rate.
 """
-function factor_treeedge(m::UnivariateBrownianMotion, t::Real)
-    j = m.J / t
+function factor_treeedge(m::UnivariateBrownianMotion{T}, t::Real) where T
+    j = T(m.J / t)
     J = LA.Symmetric(SMatrix{2,2}(j,-j, -j,j))
-    # μ = SVector{2, Float64}(0.0, 0.0)
-    h = SVector{2, Float64}(0.0, 0.0)
+    h = SVector{2,T}(zero(T), zero(T))
     g = m.g0 - dimension(m) * log(t)/2
     return(h,J,g)
 end
@@ -164,17 +165,17 @@ In `h` and `J`, the first p coordinates are for the hybrid (or its child) and
 the last coordinates for the parents, in the same order in which
 the edge lengths and γs are given.
 """
-function factor_hybridnode(m::UnivariateBrownianMotion, t::AbstractVector, γ::AbstractVector)
-    t0 = sum(γ.^2 .* t) # >0 if hybrid node is not degenerate
+function factor_hybridnode(m::UnivariateBrownianMotion{T}, t::AbstractVector, γ::AbstractVector) where T
+    t0 = T(sum(γ.^2 .* t)) # >0 if hybrid node is not degenerate
     factor_tree_degeneratehybrid(m, t0, γ)
 end
-function factor_tree_degeneratehybrid(m::UnivariateBrownianMotion, t0::Real, γ::AbstractVector)
-    j = m.J / t0
+function factor_tree_degeneratehybrid(m::UnivariateBrownianMotion{T}, t0::Real, γ::AbstractVector) where T
+    j = T(m.J / t0)
     nparents = length(γ); nn = 1 + nparents
     # modifies γ in place below, to get longer vector: [1 -γ]
     γ .= -γ; pushfirst!(γ, one(eltype(γ)))
-    J = LA.Symmetric(SMatrix{nn,nn, Float64}(j*x*y for x in γ, y in γ))
-    h = SVector{nn, Float64}(0.0 for _ in 1:nn)
+    J = LA.Symmetric(SMatrix{nn,nn, T}(j*x*y for x in γ, y in γ))
+    h = SVector{nn,T}(zero(T) for _ in 1:nn)
     g = m.g0 - dimension(m) * log(t0)/2
     return(h,J,g)
 end
@@ -192,8 +193,8 @@ The prior is improper if the prior variance is infinite. In this case this prior
 is not a distribution (total probability ≠ 1) but is taken as the constant
 function 1, which corresponds to h,J,g all 0 (and an irrelevant mean).
 """
-function factor_root(m::UnivariateBrownianMotion)
-    j = 1/m.v # improper prior: j=0, v=Inf, factor ≡ 1: h,J,g all 0
-    g = (j == 0.0 ? 0.0 : -(log2π + log(m.v) + m.μ^2 * j)/2)
+function factor_root(m::UnivariateBrownianMotion{T}) where T
+    j = T(1/m.v) # improper prior: j=0, v=Inf, factor ≡ 1: h,J,g all 0
+    g = (j == 0.0 ? zero(T) : -(log2π + log(m.v) + m.μ^2 * j)/2)
     return(m.μ*j, j, g) # m.μ
 end

@@ -29,7 +29,7 @@ struct ClusterBelief{Vlabel<:AbstractVector,T<:Real,P<:AbstractMatrix{T},V<:Abst
     μ::V
     h::V
     J::P
-    g::MVector{1,Float64} # mutable
+    g::MVector{1,T} # mutable
     "belief type: cluster (node in cluster grahp) or sepset (edge in cluster graph)"
     type::BeliefType
     "metadata, e.g. index in cluster graph"
@@ -48,22 +48,21 @@ function Base.show(io::IO, b::ClusterBelief)
 end
 
 """
-    ClusterBelief(nodelabels, numtraits, inscope, belieftype, metadata)
+    ClusterBelief(nodelabels, numtraits, inscope, belieftype, metadata,T=Float64)
 
 Constructor to allocate memory for one cluster, and initialize objects with 0s
 to initilize the belief with the constant function exp(0)=1.
 """
 function ClusterBelief(nl::AbstractVector{Tlabel}, numtraits::Integer,
-            inscope::BitArray, belief, metadata) where Tlabel<:Integer
+            inscope::BitArray, belief, metadata,T=Float64::Type) where Tlabel<:Integer
     nnodes = length(nl)
     nodelabels = SVector{nnodes}(nl)
     size(inscope) == (numtraits,nnodes) || error("inscope of the wrong size")
     cldim = sum(inscope)
-    T = Float64
     μ = MVector{cldim,T}(zero(T) for _ in 1:cldim)  # zeros(T, cldim)
     h = MVector{cldim,T}(zero(T) for _ in 1:cldim)
     J = MMatrix{cldim,cldim,T}(zero(T) for _ in 1:(cldim*cldim))
-    g = MVector{1,Float64}(0.0)
+    g = MVector{1,T}(0)
     ClusterBelief{typeof(nodelabels),T,typeof(J),typeof(h),typeof(metadata)}(
         nodelabels,numtraits,inscope,μ,h,J,g,belief,metadata)
 end
@@ -129,7 +128,7 @@ end
 
 """
     init_beliefs_allocate(tbl::Tables.ColumnTable, taxa, net, clustergraph,
-                          fixedroot=false)
+                          evolutionarymodel)
 
 Vector of beliefs, initialized to the constant function exp(0)=1,
 one for each cluster then one for each sepset in `clustergraph`.
@@ -137,17 +136,18 @@ one for each cluster then one for each sepset in `clustergraph`.
 so as to remove from the scope each variable without data below it.
 `taxa` should be a vector with taxon names in the same order as they come in
 the table of data `tbl`.
-The root is removed from scope if `fixedroot` is true: so as to use the model's
-fixed root value as data if the root as zero prior variance.
+The root is removed from scope if the evolutionary model has a fixed root: so as
+to use the model's fixed root value as data if the root as zero prior variance.
 Also removed from scope is any hybrid node that is degenerate and who has
 a single child edge of positive length.
 """
 function init_beliefs_allocate(tbl::Tables.ColumnTable, taxa::AbstractVector,
-        net::HybridNetwork, clustergraph, fixedroot=false::Bool)
+        net::HybridNetwork, clustergraph, model::EvolutionaryModel{T}) where T
     numtraits = length(tbl)
     nnodes = length(net.nodes_changed)
     nnodes > 0 ||
         error("the network should have been pre-ordered, with indices used in cluster graph")
+    fixedroot = isrootfixed(model)
     #= hasdata: to know, for each node, whether that node has a descendant
                 with data, for each trait.
     If not: that node can be removed from all clusters & sepsets.
@@ -201,12 +201,12 @@ function init_beliefs_allocate(tbl::Tables.ColumnTable, taxa::AbstractVector,
     for cllab in labels(clustergraph)
         nodeindices = clustergraph[cllab][2]
         inscope = build_inscope(nodeindices)
-        push!(beliefs, ClusterBelief(nodeindices, numtraits, inscope, bclustertype, cllab))
+        push!(beliefs, ClusterBelief(nodeindices, numtraits, inscope, bclustertype, cllab,T))
     end
     for sslab in edge_labels(clustergraph)
         nodeindices = clustergraph[sslab...]
         inscope = build_inscope(nodeindices)
-        push!(beliefs, ClusterBelief(nodeindices, numtraits, inscope, bsepsettype, sslab))
+        push!(beliefs, ClusterBelief(nodeindices, numtraits, inscope, bsepsettype, sslab,T))
     end
     return beliefs
 end
