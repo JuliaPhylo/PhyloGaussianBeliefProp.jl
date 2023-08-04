@@ -88,43 +88,45 @@ end
 
 
 """
-    calibrate!(beliefs::ClusterGraphBelief, clustergraph,
-              nodevector_preordered, niterations=10)
+    calibrate!(beliefs::ClusterGraphBelief, schedule, niterations=1)
 
-fixit
-`niterations` is ignored and set to 1 if the cluster graph is a clique tree.
+Propagate messages for each tree in the `schedule` list,
+in postorder then in preorder, and repeats this for `niterations`.
+Each schedule "tree" should be a tuple of 4 vectors as output by
+[`spanningtree_clusterlist`](@ref), where each vector provides the
+parent/child label/index of an edge along which to pass a message,
+and where these edges are listed in preorder. For example, the parent
+of the first edge is taken to be the root of the schedule tree.
+
+The default of 1 iteration is sufficient for exact calibration if
+the schedule tree is a clique tree for the graphical model.
 """
-function calibrate!(beliefs::ClusterGraphBelief, cgraph, prenodes::Vector{PN.Node},
-                    niter=10::Integer)
-    niter = (cgraph.graph_data == :cliquetree || is_tree(cgraph) ? 1 : niter)
+function calibrate!(beliefs::ClusterGraphBelief, schedule, niter=1::Integer)
     for _ in 1:niter
-        spt = spanningtree_clusterlist(cgraph, prenodes)
-        # fixit: pick a *random* spanning tree instead, for a general cluster graph
-        propagate_1treetraversal_postorder!(beliefs, spt)
-        propagate_1treetraversal_preorder!(beliefs, spt)
+        # spt = spanningtree_clusterlist(cgraph, prenodes)
+        for spt in schedule
+            propagate_1traversal_postorder!(beliefs, spt)
+            propagate_1traversal_preorder!(beliefs, spt)
+        end
     end
 end
 
 """
-    propagate_1treetraversal!(beliefs::ClusterGraphBelief, spanningtree,
-                              postorder=true::Bool)
+    propagate_1traversal_postorder!(beliefs::ClusterGraphBelief, spanningtree)
+    propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,  spanningtree)
 
 Messages are propagated from the tips to the root of the tree by default,
 or from the root to the tips if `postorder` is false.
 
-All nodes (resp. edges) in the `spanningtree` should correspond to clusters
-(resp. sepsets) in `beliefs`: labels and indices in the spanning tree information
+The "spanning tree" should be a tuple of 4 vectors as output by
+[`spanningtree_clusterlist`](@ref), meant to list edges in preorder.
+Its nodes (resp. edges) should correspond to clusters (resp. sepsets) in
+`beliefs`: labels and indices in the spanning tree information
 should correspond to indices in `beliefs`.
 This condition holds if beliefs are produced on a given cluster graph and if the
 tree is produced by [`spanningtree_clusterlist`](@ref) on the same graph.
-
-fixit API, to:
-do postorder only, to get loglikelihood at the root *without* the conditional
-distribution at all nodes.
-No need to recalculate the spanning tree for different parameter values.
-get the log-likelihood
 """
-function propagate_1treetraversal_postorder!(beliefs, spt)
+function propagate_1traversal_postorder!(beliefs::ClusterGraphBelief, spt)
     pa_lab, ch_lab, pa_j, ch_j = spt
     b = beliefs.belief
     # (parent <- sepset <- child) in postorder
@@ -134,7 +136,7 @@ function propagate_1treetraversal_postorder!(beliefs, spt)
     end
 end
 
-function propagate_1treetraversal_preorder!(beliefs, spt)
+function propagate_1traversal_preorder!(beliefs::ClusterGraphBelief, spt)
     pa_lab, ch_lab, pa_j, ch_j = spt
     b = beliefs.belief
     # (child <- sepset <- parent) in preorder
@@ -145,6 +147,16 @@ function propagate_1treetraversal_preorder!(beliefs, spt)
 end
 
 #------ parameter optimization. fixit: place in some other file? ------#
+"""
+    calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief, clustergraph,
+        nodevector_preordered, fixit)
+
+Optimize model parameters for data `fixit`, using belief propagation along
+`clustergraph`, assumed to be a clique tree for the input network, whose
+nodes in preorder are `nodevector_preordered`.
+The calibration does a postorder of the clique tree only, to get loglikelihood
+at the root *without* the conditional distribution at all nodes.
+"""
 function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
         cgraph, prenodes::Vector{PN.Node})
     # cgraph.graph_data == :cliquetree || error("the graph is not a clique tree")
@@ -160,7 +172,7 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     function score(params)
         init_beliefs_reset!(beliefs.belief)
         init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
-        propagate_1treetraversal_postorder!(beliefs, spt)
+        propagate_1traversal_postorder!(beliefs, spt)
         _, res = integratebelief!(beliefs, rootj) # drop conditional mean
         return res
     end
