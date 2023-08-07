@@ -202,6 +202,195 @@ function cliquetree(graph::AbstractGraph{T}) where T
 end
 
 """
+    AbstractClusterGraphMethod
+
+Abstract type for method of cluster graph construction.
+"""
+abstract type AbstractClusterGraphMethod end
+
+# generic methods
+clustergraphmethod(obj::AbstractClusterGraphMethod) = obj.code
+
+"""
+    Bethe
+
+Bethe cluster graph (also known as factor graph).
+"""
+struct Bethe <: AbstractClusterGraphMethod
+    code::Symbol
+    Bethe(code) = (code != :Bethe) ? error("Set code to :Bethe") : new(:Bethe)
+end
+Bethe() = Bethe(:Bethe)
+
+"""
+    LTRIP
+
+*Layered Trees Running Intersection Property* algorithm of Streicher & du Preez
+(2017).
+
+## References:
+
+S. Streicher and J. du Preez. Graph Coloring: Comparing Cluster Graphs to Factor
+Graphs. In *Proceedings of the ACM Multimedia 2017 Workshop on South African
+Academic Participation, pages 35-42, 2017. doi: 10.1145/3132711.3132717.
+"""
+struct LTRIP <: AbstractClusterGraphMethod
+    code::Symbol
+    # todo: add another field for edge-weight function?
+    LTRIP(code) = (code != :ltrip) ? error("Set code to :ltrip") : new(:ltrip)
+end
+LTRIP() = LTRIP(:ltrip)
+
+"""
+    JoinGraphStr
+
+*Join-graph structuring* algorithm of Mateescu et al. (2010).
+
+## References:
+
+R. Mateescu, K. Kask, V.Gogate, and R. Dechter. Join-graph propagation algorithms.
+*Journal of Artificial Intelligence Research*, 37:279-328,
+2010. doi:10.1613/jair.2842.
+"""
+struct JoinGraphStr <: AbstractClusterGraphMethod
+    code::Symbol
+    JoinGraphStr(code) = (code != jgstr) ? error("Set code to :jgstr") : new(:jgstr)
+end
+JoinGraphStr() = JoinGraphStr(:jgstr)
+
+"""
+    clustergraph(graph, method, clusters)
+    clustergraph(graph, clustergraph, method, clusters)
+
+For Bethe, you don't need to specify anything (the clusters correspond to the
+individual node families and variables).
+(i) provide graphical model and indicate Bethe specification
+(ii) generate clusters then add edges
+
+For LTRIP, you must specify the clusters and the edge-weight function.
+When initializing the cluster beliefs, one would need to check if the set of
+clusters provided is family-preserving.
+(i) provide graphical model, indicate LTRIP specification, provide clusters and
+edge-weight function
+(ii) add edges based on clusters and edge-weight function
+"""
+function clustergraph(graph::AbstractGraph{T},
+    method::AbstractClusterGraphMethod,
+    clusters::Union{Vector{Vector{T}},Nothing}=nothing) where T
+
+    isnothing(clusters) && (clustergraphmethod(method) == LTRIP) ||
+    error("LTRIP method requires user-specified clusters")
+    
+    clustergraph = MetaGraph(
+        Graph{T}(0),
+        Symbol, # vertex label
+        Tuple{Vector{Symbol}, Vector{T}}, # vertex data: nodes in cluster
+        Vector{T}, # edge data: nodes in sepset
+        clustergraphmethod(method), # tag for the whole graph
+        edge_data -> T(length(edge_data)),
+        zero(T))
+
+    clustergraph(graph, clustergraph, method, clusters)
+end
+
+function clustergraph(graph::AbstractGraph{T}, clustergraph::AbstractGraph{T},
+    method::Bethe, _) where T
+
+    is_directed(graph) || error("`graph` must be directed")
+
+    node2cluster = Dict{T, (Symbol, Vector{T})}() # for joining clusters later
+    for (code, lab) in enumerate(labels(graph))
+        vdat = [lab; inneighbor_labels(graph, lab)]
+        nodeindlist = [graph[l] for l in vdat] # preorder index
+        o = sortperm(nodeindlist, rev=true) # order to list nodes in postorder
+        vdat .= vdat[o]
+        # cluster data: (node labels, node preorder index), sorted in postorder
+        # add factor clusters
+        add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
+        if length(nodeindlist) > 1 # non-root node of graph
+            for ni in nodeindlist
+                if haskey(node2cluster, ni)
+                    push!(node2cluster[ni][2], T(code))
+                else node2cluster[ni] = (lab, [T(code)])
+                end
+            end
+        end
+    end
+
+    for node in sort!(collect(keys(node2cluster)), rev=true)
+        # sepsets will be sorted by nodes' postorder
+        lab, clusterlist = node2cluster[node]
+        if length(clusterlist) > 1
+            # add variable cluster only if there are > 1 clusters with this node
+            add_vertex!(clustergraph, lab, ([lab], [node]))
+            # connect variable cluster to factor clusters that contain this node
+            for code in clusterlist
+                lab2 = label_for(clustergraph, code)
+                add_edge!(clustergraph, lab, lab2, [node])
+            end
+        end
+    end
+    return clustergraph
+end
+
+function clustergraph(graph::AbstractGraph{T}, clustergraph::AbstractGraph{T},
+    method::LTRIP, clusters::Vector{Vector{T}}) where T
+    
+    is_directed(graph) || error("`graph` must be directed")
+    # todo: check if family-preserving
+
+    node2cluster = Dict{T, Vector{T}}() # for joining clusters later
+    for (code, cl) in enumerate(clusters)
+        nodeindlist = [graph[label_for(graph, u)] for u in cl] # preorder index
+        o = sortperm(nodeindlist, rev=true) # order to list nodes in postorder
+        vdat = [label_for(graph, cl[i]) for i in o]
+        nodeindlist .= nodeindlist[o]
+        # cluster data: (node labels, node preorder index), sorted in postorder
+        add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
+        for ni in nodeindlist
+            if haskey(node2cluster, ni)
+                push!(node2cluster[ni], T(code))
+            else node2cluster[ni] = [T(code)]
+            end
+        end
+    end
+
+    # compute edge weights on copy of cluster graph
+    cg = deepcopy(clustergraph)
+    cg.weight_function = (edge_data -> edge_data) # todo: check if this works
+    for node in sort!(collect(keys(node2cluster)), rev=true)
+        clusterlist = node2cluster[node]
+        for (i1, cl1) in enumerate(clusterlist)
+            lab1 = label_for(cg, cl1)
+            for i2 in 1:(i1-1)
+                cl2 = clusterlist[i2]
+                lab2 = label_for(cg, cl2)
+                # todo: change with ltrip weight
+                w = length(intersect(cg[lab1], cg[lab2]))
+                add_edge!(cg, lab1, lab2, w)
+            end
+        end
+        mst_edges = kruskal_mst(cg, minimize=false)
+        
+        # overlay spanning trees on original cluster graph
+        for e in mst_edges
+            cl1, cl2 = src(e), dst(e)
+            lab1, lab2 = label_for(clustergraph, cl1), label_for(clustergraph, cl2)
+            if has_edge(clustergraph, cl1, cl2)
+                elabs = MetaGraphsNext.arrange(clustergraph, lab1, lab2)
+                haskey(clustergraph.edge_data, elabs) ||
+                    error("clustergraph.graph has the edge, but clustergraph has
+                    no edge data")
+                push!(clustergraph.edge_data[elabs], node)
+            else
+                add_edge!(clustergraph, lab1, lab2, [node])
+            end
+        end
+    end
+    return clustergraph
+end
+
+"""
     spanningtree_clusterlist(clustergraph, root_index)
     spanningtree_clusterlist(clustergraph, nodevector_preordered)
 
