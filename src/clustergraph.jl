@@ -281,72 +281,74 @@ function clustergraph(graph::AbstractGraph{T},
     isnothing(clusters) && (clustergraphmethod(method) == LTRIP) ||
     error("LTRIP method requires user-specified clusters")
     
-    clustergraph = MetaGraph(
-        Graph{T}(0),
-        Symbol, # vertex label
-        Tuple{Vector{Symbol}, Vector{T}}, # vertex data: nodes in cluster
-        Vector{T}, # edge data: nodes in sepset
-        clustergraphmethod(method), # tag for the whole graph
-        edge_data -> T(length(edge_data)),
-        zero(T))
-
-    clustergraph(graph, clustergraph, method, clusters)
+    clustergraph = init_clustergraph(T, method)
+    return clustergraph(graph, clustergraph, method, clusters)
 end
 
-function clustergraph(graph::AbstractGraph{T}, clustergraph::AbstractGraph{T},
-    method::Bethe, _) where T
-
-    is_directed(graph) || error("`graph` must be directed")
+"""
+    betheclustergraph(net)
+"""
+function betheclustergraph(net::HybridNetwork)
+    T = vgraph_eltype(net)
+    clustergraph = init_clustergraph(T, Bethe())
 
     node2cluster = Dict{T, (Symbol, Vector{T})}() # for joining clusters later
-    for (code, lab) in enumerate(labels(graph))
-        vdat = [lab; inneighbor_labels(graph, lab)]
-        nodeindlist = [graph[l] for l in vdat] # preorder index
-        o = sortperm(nodeindlist, rev=true) # order to list nodes in postorder
-        vdat .= vdat[o]
+    preordernames = [n.name for n in net.nodes_changed]
+    # iterate through network nodes in preorder
+    for (code, n) in enumerate(net.nodes_changed)
+        ns = Symbol(n.name)
+        vt = T(code)
+        o = sort!(indexin(getparents(n).name, preordernames), rev=true)
+        # vdat and nodeindlist are sorted in postorder
+        vdat = [ns; [Symbol(n.name) for n in net.nodes_changed[o]]] # node indices
+        nodeindlist = [vt; T[o;]] # preorder indices
         # cluster data: (node labels, node preorder index), sorted in postorder
         # add factor clusters
         add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
         if length(nodeindlist) > 1 # non-root node of graph
             for ni in nodeindlist
                 if haskey(node2cluster, ni)
-                    push!(node2cluster[ni][2], T(code))
-                else node2cluster[ni] = (lab, [T(code)])
+                    push!(node2cluster[ni][2], vt)
+                else node2cluster[ni] = (ns, [vt])
                 end
             end
         end
     end
 
-    for node in sort!(collect(keys(node2cluster)), rev=true)
+    for ni in sort!(collect(keys(node2cluster)), rev=true)
         # sepsets will be sorted by nodes' postorder
-        lab, clusterlist = node2cluster[node]
+        ns, clusterlist = node2cluster[ni]
         if length(clusterlist) > 1
             # add variable cluster only if there are > 1 clusters with this node
-            add_vertex!(clustergraph, lab, ([lab], [node]))
+            add_vertex!(clustergraph, ns, ([ns], [ni]))
             # connect variable cluster to factor clusters that contain this node
             for code in clusterlist
-                lab2 = label_for(clustergraph, code)
-                add_edge!(clustergraph, lab, lab2, [node])
+                lab = label_for(clustergraph, code)
+                add_edge!(clustergraph, ns, lab, [ni])
             end
         end
     end
     return clustergraph
 end
 
-function clustergraph(graph::AbstractGraph{T}, clustergraph::AbstractGraph{T},
-    method::LTRIP, clusters::Vector{Vector{T}}) where T
-    
-    is_directed(graph) || error("`graph` must be directed")
-    # todo: check if family-preserving
+"""
+    ltripclustergraph(net, clusters)
+
+Assume that clusters are specified in terms of preorder indices.
+"""
+function ltripclustergraph(net::HybridNetwork, clusters::Vector{Vector{T}}) where T
+    clustergraph = init_clustergraph(T, LTRIP())
+    cg = init_clustergraph(T, LTRIP(), edge_weight -> edge_weight)
+    isa(vgraph_eltype(net), T) || error("Type mismatch")
 
     node2cluster = Dict{T, Vector{T}}() # for joining clusters later
-    for (code, cl) in enumerate(clusters)
-        nodeindlist = [graph[label_for(graph, u)] for u in cl] # preorder index
+    for (code, nodeindlist) in enumerate(clusters)
         o = sortperm(nodeindlist, rev=true) # order to list nodes in postorder
-        vdat = [label_for(graph, cl[i]) for i in o]
-        nodeindlist .= nodeindlist[o]
+        nodeindlist .= nodeindlist[o] # preorder indices
+        vdat = [Symbol(n.name) for n in net.nodes_changed[nodeindlist]]
         # cluster data: (node labels, node preorder index), sorted in postorder
         add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
+        add_vertex!(cg, Symbol(vdat...), (vdat, nodeindlist))
         for ni in nodeindlist
             if haskey(node2cluster, ni)
                 push!(node2cluster[ni], T(code))
@@ -355,38 +357,49 @@ function clustergraph(graph::AbstractGraph{T}, clustergraph::AbstractGraph{T},
         end
     end
 
-    # compute edge weights on copy of cluster graph
-    cg = deepcopy(clustergraph)
-    cg.weight_function = (edge_data -> edge_data) # todo: check if this works
-    for node in sort!(collect(keys(node2cluster)), rev=true)
-        clusterlist = node2cluster[node]
-        for (i1, cl1) in enumerate(clusterlist)
-            lab1 = label_for(cg, cl1)
+     # compute edge weights
+     for ni in sort!(collect(keys(node2cluster)), rev=true)
+        # sepsets will be sorted by nodes' postorder
+        clusterindlist = node2cluster[ni]
+        sg, _ = induced_subgraph(cg, clusterindlist)
+        for (i1, cl1) in enumerate(clusterindlist)
+            lab1 = label_for(clustergraph, cl1)
             for i2 in 1:(i1-1)
-                cl2 = clusterlist[i2]
-                lab2 = label_for(cg, cl2)
-                # todo: change with ltrip weight
-                w = length(intersect(cg[lab1], cg[lab2]))
-                add_edge!(cg, lab1, lab2, w)
+                cl2 = clusterindlist[i2]
+                lab2 = label_for(clustergraph, cl2)
+                # todo: replace with ltrip weight
+                w = length(intersect(sg[lab1], sg[lab2]))
+                add_edge!(sg, lab1, lab2, w)
             end
         end
-        mst_edges = kruskal_mst(cg, minimize=false)
-        
-        # overlay spanning trees on original cluster graph
+        mst_edges = kruskal_mst(sg, minimize=false)
+
         for e in mst_edges
-            cl1, cl2 = src(e), dst(e)
-            lab1, lab2 = label_for(clustergraph, cl1), label_for(clustergraph, cl2)
-            if has_edge(clustergraph, cl1, cl2)
-                elabs = MetaGraphsNext.arrange(clustergraph, lab1, lab2)
-                haskey(clustergraph.edge_data, elabs) ||
-                    error("clustergraph.graph has the edge, but clustergraph has
-                    no edge data")
-                push!(clustergraph.edge_data[elabs], node)
+            lab1 = label_for(sg, src(e))
+            lab2 = label_for(sg, dst(e))
+            if haskey(clustergraph, lab1, lab2) # if has edge {lab1, lab2}
+                clustergraph[lab1, lab2] = push!(clustergraph[lab1, lab2], ni)
             else
-                add_edge!(clustergraph, lab1, lab2, [node])
+                addedge!(clustergraph, lab1, lab2, [ni])
             end
         end
     end
+    return clustergraph
+end
+
+"""
+    init_clustergraph
+"""
+function init_clustergraph(T::DataType, method::AbstractClusterGraphMethod,
+    weightfunction::Function=edge_weight -> T(length(edge_weight)))
+    clustergraph = MetaGraph(
+        Graph{T}(0),
+        Symbol, # vertex label
+        Tuple{Vector{Symbol}, Vector{T}}, # vertex data: nodes in cluster
+        Vector{T}, # edge data: nodes in sepset
+        clustergraphmethod(method), # tag for the whole graph
+        weightfunction,
+        zero(T))
     return clustergraph
 end
 
