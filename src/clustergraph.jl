@@ -208,19 +208,12 @@ Abstract type for method of cluster graph construction.
 """
 abstract type AbstractClusterGraphMethod end
 
-# generic methods
-clustergraphmethod(obj::AbstractClusterGraphMethod) = obj.code
-
 """
     Bethe
 
 Bethe cluster graph (also known as factor graph).
 """
-struct Bethe <: AbstractClusterGraphMethod
-    code::Symbol
-    Bethe(code) = (code != :Bethe) ? error("Set code to :Bethe") : new(:Bethe)
-end
-Bethe() = Bethe(:Bethe)
+struct Bethe <: AbstractClusterGraphMethod end
 
 """
     LTRIP
@@ -234,12 +227,7 @@ S. Streicher and J. du Preez. Graph Coloring: Comparing Cluster Graphs to Factor
 Graphs. In *Proceedings of the ACM Multimedia 2017 Workshop on South African
 Academic Participation, pages 35-42, 2017. doi: 10.1145/3132711.3132717.
 """
-struct LTRIP <: AbstractClusterGraphMethod
-    code::Symbol
-    # todo: add another field for edge-weight function?
-    LTRIP(code) = (code != :ltrip) ? error("Set code to :ltrip") : new(:ltrip)
-end
-LTRIP() = LTRIP(:ltrip)
+struct LTRIP <: AbstractClusterGraphMethod end
 
 """
     JoinGraphStr
@@ -252,45 +240,59 @@ R. Mateescu, K. Kask, V.Gogate, and R. Dechter. Join-graph propagation algorithm
 *Journal of Artificial Intelligence Research*, 37:279-328,
 2010. doi:10.1613/jair.2842.
 """
-struct JoinGraphStr <: AbstractClusterGraphMethod
-    code::Symbol
-    JoinGraphStr(code) = (code != jgstr) ? error("Set code to :jgstr") : new(:jgstr)
+struct JoinGraphStr <: AbstractClusterGraphMethod end
+
+"""
+    clustergraph(net, method::AbstractClusterGraphMethod, clusters)
+    clustergraph(net, method::Bethe, clusters)
+    clustergraph(net, method::LTRIP, clusters)
+
+Cluster graph `U` for an input network `net`, a `method` of cluster graph
+construction, and (possibly) a set of `clusters` specified in terms of the
+preorder indices for `net`.
+
+**Warning**: does *not* check that the clusters provided are *family-preserving*
+with respect to `net`.
+
+The following methods for cluster graph construction are supported:
+    - Bethe cluster graph (i.e. `method=Bethe()`)
+    - LTRIP (i.e. `method=LTRIP()`)
+"""
+function clustergraph(net::HybridNetwork, method::AbstractClusterGraphMethod,
+    clusters::Union{Vector{Vector{T}}, Nothing}=nothing) where T
+
+    isa(T, Type{vgraph_eltype(net)}) || Vector{Vector{T}}(clusters) ||
+    error("Check that clusters are specified in terms of preorder indices")
+
+    # put these 2 preprocessing steps here for now (also called by moralize!)
+    PN.preorder!(net)
+    PN.nameinternalnodes!(net, "I")
+    return clustergraph(net, method, clusters)
 end
-JoinGraphStr() = JoinGraphStr(:jgstr)
 
-"""
-    clustergraph(graph, method, clusters)
-    clustergraph(graph, clustergraph, method, clusters)
+function clustergraph(net::HybridNetwork, method::Bethe, clusters)
+    notnothing(clusters) || @info "Bethe method does not use user-provided clusters"
+    return betheclustergraph(net)
+end
 
-For Bethe, you don't need to specify anything (the clusters correspond to the
-individual node families and variables).
-(i) provide graphical model and indicate Bethe specification
-(ii) generate clusters then add edges
-
-For LTRIP, you must specify the clusters and the edge-weight function.
-When initializing the cluster beliefs, one would need to check if the set of
-clusters provided is family-preserving.
-(i) provide graphical model, indicate LTRIP specification, provide clusters and
-edge-weight function
-(ii) add edges based on clusters and edge-weight function
-"""
-function clustergraph(graph::AbstractGraph{T},
-    method::AbstractClusterGraphMethod,
-    clusters::Union{Vector{Vector{T}},Nothing}=nothing) where T
-
-    isnothing(clusters) && (clustergraphmethod(method) == LTRIP) ||
-    error("LTRIP method requires user-specified clusters")
-    
-    clustergraph = init_clustergraph(T, method)
-    return clustergraph(graph, clustergraph, method, clusters)
+function clustergraph(net::HybridNetwork, method::LTRIP, clusters)
+    notnothing(clusters) || error("LTRIP method requires user-specified clusters")
+    return ltripclustergraph(net, clusters)
 end
 
 """
     betheclustergraph(net)
+
+Constructs a Bethe cluster graph, which comprises of:
+    - a factor-cluster for each node-family (except for the singleton {root}) in
+    `net`
+    - a variable-cluster for each node in `net`
+
+See [`Bethe`](@ref)
 """
 function betheclustergraph(net::HybridNetwork)
     T = vgraph_eltype(net)
-    clustergraph = init_clustergraph(T, Bethe())
+    clustergraph = init_clustergraph(T, :Bethe)
 
     node2cluster = Dict{T, (Symbol, Vector{T})}() # for joining clusters later
     preordernames = [n.name for n in net.nodes_changed]
@@ -334,12 +336,25 @@ end
 """
     ltripclustergraph(net, clusters)
 
-Assume that clusters are specified in terms of preorder indices.
+Assumes that:
+    - clusters are specified in terms of preorder indices
+    - edge-weights are defined as in
+
+See [`LTRIP`](@ref)
 """
 function ltripclustergraph(net::HybridNetwork, clusters::Vector{Vector{T}}) where T
-    clustergraph = init_clustergraph(T, LTRIP())
-    cg = init_clustergraph(T, LTRIP(), edge_weight -> edge_weight)
     isa(vgraph_eltype(net), T) || error("Type mismatch")
+    clustergraph = init_clustergraph(T, :ltrip)
+    
+    # only used for ltrip, so doesn't count as code duplication
+    # auxiliary metagraph 
+    cg = MetaGraph(Graph{T}(0),
+        Symbol, # vertex label
+        Tuple{Vector{Symbol}, Vector{T}}, # vertex data: nodes in cluster
+        T, # edge data holds edge weight
+        :auxiliary, # tag for the whole graph
+        edge_data -> edge_data,
+        zero(T)) # default weight
 
     node2cluster = Dict{T, Vector{T}}() # for joining clusters later
     for (code, nodeindlist) in enumerate(clusters)
@@ -357,7 +372,7 @@ function ltripclustergraph(net::HybridNetwork, clusters::Vector{Vector{T}}) wher
         end
     end
 
-     # compute edge weights
+     # compute edge weights using auxiliary metagraph
      for ni in sort!(collect(keys(node2cluster)), rev=true)
         # sepsets will be sorted by nodes' postorder
         clusterindlist = node2cluster[ni]
@@ -388,18 +403,28 @@ function ltripclustergraph(net::HybridNetwork, clusters::Vector{Vector{T}}) wher
 end
 
 """
-    init_clustergraph
+    init_clustergraph(vertex_type, clustergraph_method)
+
+Construct empty `MetaGraph` based on an empty `Graph`. Metadata types are
+initialized as follows:
+    - `label_type::Symbol`
+    - `vertex_data_type::Tuple{Vector{Symbol}, Vector{T}}`
+    - `edge_data_type::Vector{T}`
+Metadata for `Graph` as a whole is `method::Symbol`.
+
+Note: const Graph = Graphs.SimpleGraphs.SimpleGraph
+Note: SimpleGraph{T}(n=0) constructs an empty SimpleGraph{T} with n vertices and
+0 edges. If not specified, the element type `T` is the type of `n`.
 """
-function init_clustergraph(T::DataType, method::AbstractClusterGraphMethod,
-    weightfunction::Function=edge_weight -> T(length(edge_weight)))
+function init_clustergraph(T::DataType, method::Symbol)
     clustergraph = MetaGraph(
         Graph{T}(0),
         Symbol, # vertex label
         Tuple{Vector{Symbol}, Vector{T}}, # vertex data: nodes in cluster
         Vector{T}, # edge data: nodes in sepset
-        clustergraphmethod(method), # tag for the whole graph
-        weightfunction,
-        zero(T))
+        method, # tag for the whole graph
+        edge_data -> T(length(edge_data)),
+        zero(T)) # default weight
     return clustergraph
 end
 
