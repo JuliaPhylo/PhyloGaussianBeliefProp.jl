@@ -339,10 +339,11 @@ function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
         be.g[1] += g
         # @show be.h,be.J,be.g[1]
     end
-    for be in beliefs # sanity check: each cluster belief should non-zero
+    for be in beliefs # sanity check: each cluster belief should be non-zero
+        # unless one variable was completely removed from the scope (e.g. leaf without any data)
         be.type == bclustertype || break # sepsets untouched and listed last
         @debug "cluster $(be.metadata), node labels $(nodelabels(be)), inscope: $(inscope(be)),\nμ: $(be.μ)\nh: $(be.h)\nJ: $(be.J)\ng: $(be.g[1])"
-        any(be.J .!= 0.0) ||
+        any(be.J .!= 0.0) || any(sum(inscope(be), dims = 1) .== 0) ||
             error("belief for nodes $(nodelabels(be)) was not assigned any non-zero factor")
         # do NOT update μ = J^{-1} h because J often singular before propagation
         # be.μ .= PDMat(LA.Symmetric(be.J)) \ be.h

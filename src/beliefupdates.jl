@@ -84,6 +84,9 @@ function absorbevidence!(h,J,g, dataindex, datavalues)
     length(absorb_ind) + length(keep_ind) == nvar ||
         error("data indices go beyond belief size")
     Jkk = view(J, keep_ind,     keep_ind) # avoid copying
+    if isempty(absorb_ind)
+        return h, Jkk, g, missingdata_indices
+    end
     Jk_data = view(J, keep_ind,   absorb_ind) * data_nm
     Ja_data = view(J, absorb_ind, absorb_ind) * data_nm
     g  += sum(view(h, absorb_ind) .* data_nm) - sum(Ja_data .* data_nm)/2

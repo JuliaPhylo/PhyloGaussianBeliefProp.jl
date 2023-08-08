@@ -8,6 +8,12 @@ varianceparam(obj::EvolutionaryModel) = "error: 'varianceparam' not implemented"
 rootpriormeanvector(obj::EvolutionaryModel) = obj.μ
 dimension(obj::EvolutionaryModel) = length(rootpriormeanvector(obj))
 
+"""
+    params(d::EvolutionaryModel)
+
+Tuple of parameters, the same that can be used to construct the evolutionary model.
+"""
+params(d::EvolutionaryModel) # extends StatsAPI.params
 
 function Base.show(io::IO, obj::EvolutionaryModel)
     disp = modelname(obj) * "\n" * variancename(obj) * " = $(varianceparam(obj))"
@@ -39,6 +45,9 @@ function UnivariateBrownianMotion(σ2, μ, v=nothing)
     v >= 0 || error("root variance v=$v must be non-negative")
     UnivariateBrownianMotion{T}(σ2, 1/σ2, μ, v, -(log2π + log(σ2))/2)
 end
+params(m::UnivariateBrownianMotion) = isrootfixed(m) ? (m.σ2, m.μ) : (m.σ2, m.μ, m.v)
+params_optimize(m::UnivariateBrownianMotion) = [-2*m.g0 - log2π, m.μ] # log(σ2),μ
+params_original(m::UnivariateBrownianMotion, logσ2, μ) = (exp(logσ2), μ, m.v)
 
 struct MvDiagBrownianMotion{T<:Real, V<:AbstractVector{T}} <: EvolutionaryModel{T}
     "diagonal entries of the diagonal variance rate matrix"
@@ -72,6 +81,9 @@ function MvDiagBrownianMotion(R, μ, v=nothing)
     J = 1 ./R
     MvDiagBrownianMotion{T, SV}(R, J, SV(μ), SV(v), -(numt * log2π + sum(log.(R)))/2)
 end
+params(m::MvDiagBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v)
+params_optimize(m::MvDiagBrownianMotion) = [log.(m.R), m.μ]
+params_original(m::MvDiagBrownianMotion, logR, μ) = (exp.(logR), μ, m.v)
 
 struct MvFullBrownianMotion{T<:Real, P1<:AbstractMatrix{T}, V<:AbstractVector{T}, P2<:AbstractMatrix{T}} <: EvolutionaryModel{T}
     "variance rate matrix"
@@ -108,6 +120,7 @@ function MvFullBrownianMotion(R, μ, v=nothing)
     end
     MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, -(numt * log2π + LA.logdet(R))/2)
 end
+params(m::MvFullBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v)
 
 """
     factor_treeedge(evolutionarymodel, edge_length)

@@ -1,10 +1,11 @@
 module PhyloGaussianBeliefProp
 
 import Base: show
-using Graphs
-using MetaGraphsNext
 using Distributions: MvNormalCanon, MvNormal, AbstractMvNormal
+using Graphs
 import LinearAlgebra as LA
+using MetaGraphsNext
+using Optim
 using PDMats
 using StaticArrays
 using StatsFuns
