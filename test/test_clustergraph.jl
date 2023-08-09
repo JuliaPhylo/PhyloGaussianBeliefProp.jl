@@ -63,5 +63,55 @@ metaplot(ct)
     (:I4, :I4I5), (:I4, :I3I4), (:I4, :I1I4),
     (:I5, :DI5), (:I5, :I4I5)])
 end
+
+@testset "LTRIP cluster graph" begin
+    netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
+    net = readTopology(netstr)
+    T = PGBP.vgraph_eltype(net)
+    # each cluster is specified a vector of preorder indices corresponding to
+    # the nodes of net
+    # the clusters used here correspond to the node families in net, except {root}
+    clusters = Vector{T}[
+        [11, 8], [10, 9], [7, 6], [5, 4], [2, 1],
+        [9, 8, 6], [8, 3], [6, 4], [4, 3], [3, 1]]
+    cg = PGBP.clustergraph(net, PGBP.LTRIP(), clusters)
+    @test nv(cg) == length(clusters)
     
+    # arrange cluster labels in order of insertion (i.e. the order in `clusters`)
+    o = sortperm([v[1] for v in values(cg.vertex_properties)])
+    @test collect(keys(cg.vertex_properties))[o] == [
+        :AI1, :BH1, :CI2, :C2I3, :DI5,
+        :H1I1I2, :I1I4, :I2I3, :I3I4, :I4I5]
+
+    # since the edges added for each (variable-specific) spanning tree depends
+    # on how `kruskal_mst` is implemented, we focus on checking, for each
+    # variable, if the subgraph induced by the clusters and edges containing that
+    # variable is a tree
+
+    # sub(cluster)graphs induced by clusters containing node label [...]
+    sgI1, _ = induced_subgraph(cg, [1, 6, 7]) # :I1
+    sgI2, _ = induced_subgraph(cg, [3, 6, 8]) # :I2
+    sgI3, _ = induced_subgraph(cg, [4, 8, 9]) # :I3
+    sgI4, _ = induced_subgraph(cg, [7, 9, 10]) # :I4
+    sgI5, _ = induced_subgraph(cg, [5, 10]) # :I5
+    sgH1, _ = induced_subgraph(cg, [2, 6]) # :H1
+
+    res = falses(6)
+    for (i, (nl, sg)) in enumerate([(:I1, sgI1), (:I2, sgI2), (:I3, sgI3),
+        (:I4, sgI4), (:I5, sgI5), (:H1, sgH1)])
+        # loop through edges of induced subgraph `sg`, and delete any that do not
+        # contain the variable of interest `nl`
+        for e in collect(keys(sg.edge_data))
+            cl1, cl2 = e[1], e[2]
+            nodelabs1 = sg[cl1][1]
+            nodelabs2 = sg[cl2][1]
+            if (nl ∉ nodelabs1) & (nl ∉ nodelabs2)
+                delete!(sg, cl1, cl2)
+            end
+        end
+        res[i] = is_tree(sg) # check if the subgraph remaining is a (spanning) tree
+    end
+    @test all(res)
+end
+
 end

@@ -243,7 +243,6 @@ R. Mateescu, K. Kask, V.Gogate, and R. Dechter. Join-graph propagation algorithm
 struct JoinGraphStr <: AbstractClusterGraphMethod end
 
 """
-    clustergraph(net, method::AbstractClusterGraphMethod, clusters)
     clustergraph(net, method::Bethe, clusters)
     clustergraph(net, method::LTRIP, clusters)
 
@@ -258,18 +257,6 @@ The following methods for cluster graph construction are supported:
     - Bethe cluster graph (i.e. `method=Bethe()`)
     - LTRIP (i.e. `method=LTRIP()`)
 """
-# function clustergraph(net::HybridNetwork, method::AbstractClusterGraphMethod,
-#     clusters::Union{Vector{Vector{T}}, Nothing}=nothing) where T
-
-#     isa(T, Type{vgraph_eltype(net)}) || Vector{Vector{T}}(clusters) ||
-#     error("Check that clusters are specified in terms of preorder indices")
-
-#     # put these 2 preprocessing steps here for now (also called by moralize!)
-#     PN.preorder!(net)
-#     PN.nameinternalnodes!(net, "I")
-#     return clustergraph(net, method, clusters)
-# end
-
 function clustergraph(net::HybridNetwork, method::Bethe, clusters)
     isnothing(clusters) || @info "Bethe method does not use user-provided clusters"
     # to remove later
@@ -278,8 +265,16 @@ function clustergraph(net::HybridNetwork, method::Bethe, clusters)
     return betheclustergraph(net)
 end
 
-function clustergraph(net::HybridNetwork, method::LTRIP, clusters)
+function clustergraph(net::HybridNetwork, method::LTRIP,
+    clusters::Vector{Vector{T}}) where {T <: Integer}
     !isnothing(clusters) || error("LTRIP method requires user-specified clusters")
+    
+    # remove later
+    isa(T, Type{vgraph_eltype(net)}) ||
+    (Vector{Vector{T}}(clusters) && (clusters = Vector{Vector{T}}(clusters))) ||
+    error("Check that clusters are specified in terms of preorder indices")
+    PN.preorder!(net)
+    PN.nameinternalnodes!(net, "I")
     return ltripclustergraph(net, clusters)
 end
 
@@ -345,7 +340,7 @@ Assumes that:
 See [`LTRIP`](@ref)
 """
 function ltripclustergraph(net::HybridNetwork, clusters::Vector{Vector{T}}) where T
-    isa(vgraph_eltype(net), T) || error("Type mismatch")
+    isa(vgraph_eltype(net), Type{T}) || error("Type mismatch")
     clustergraph = init_clustergraph(T, :ltrip)
     
     # only used for ltrip, so doesn't count as code duplication
@@ -397,7 +392,7 @@ function ltripclustergraph(net::HybridNetwork, clusters::Vector{Vector{T}}) wher
             if haskey(clustergraph, lab1, lab2) # if has edge {lab1, lab2}
                 clustergraph[lab1, lab2] = push!(clustergraph[lab1, lab2], ni)
             else
-                addedge!(clustergraph, lab1, lab2, [ni])
+                add_edge!(clustergraph, lab1, lab2, [ni])
             end
         end
     end
@@ -418,7 +413,7 @@ Note: const Graph = Graphs.SimpleGraphs.SimpleGraph
 Note: SimpleGraph{T}(n=0) constructs an empty SimpleGraph{T} with n vertices and
 0 edges. If not specified, the element type `T` is the type of `n`.
 """
-function init_clustergraph(T::DataType, method::Symbol)
+function init_clustergraph(T::Type{<:Integer}, method::Symbol)
     clustergraph = MetaGraph(
         Graph{T}(0),
         Symbol, # vertex label
