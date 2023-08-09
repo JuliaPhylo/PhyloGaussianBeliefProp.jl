@@ -374,14 +374,34 @@ function ltripclustergraph(net::HybridNetwork, clusters::Vector{Vector{T}}) wher
         # sepsets will be sorted by nodes' postorder
         clusterindlist = node2cluster[ni]
         sg, _ = induced_subgraph(cg, clusterindlist)
+        node2edge = Dict{Symbol, Vector{Symbol}}() # for updating edge weights later
+        topscoring = Symbol[] # track strongly-connected clusters in `sg`
+        topscore = 0 # track top score for cluster "connectivity"
         for (i1, cl1) in enumerate(clusterindlist)
             lab1 = label_for(clustergraph, cl1)
+            maxw = 0 # track the max no. of elements `cl1` shares with its neighbors
             for i2 in 1:(i1-1)
                 cl2 = clusterindlist[i2]
                 lab2 = label_for(clustergraph, cl2)
-                # todo: replace with ltrip weight
                 w = length(intersect(sg[lab1], sg[lab2]))
+                maxw = (w > maxw) ? w : maxw
                 add_edge!(sg, lab1, lab2, w)
+            end
+            # mark clusters that are incident to a max-weight edge
+            if maxw > topscore # mark cluster `cl1` and unmark all others
+                topscoring, topscore = [lab1], maxw
+            elseif maxw == topscore # mark cluster `cl1`
+                push!(topscoring, lab1)
+            end
+        end
+        # update edge weights
+        for cl in topscoring # topscoring nodes have incident max-weight edges
+            neighborlabs = neighbor_labels(sg, cl)
+            # count no. of incident max-weight edges and add this no. to weights
+            # for all incident edges
+            Δw = length([sg[cl, ncl] == topscore for ncl in neighborlabs])
+            for ncl in neighborlabs
+                sg[cl, ncl] += Δw # not sure if this syntax works
             end
         end
         mst_edges = kruskal_mst(sg, minimize=false)
