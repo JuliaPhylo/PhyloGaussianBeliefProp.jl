@@ -6,10 +6,14 @@ variancename(obj::EvolutionaryModel) = "variance"
 varianceparam(obj::EvolutionaryModel) = "error: 'varianceparam' not implemented"
 # requires all models to have a field named μ
 rootpriormeanvector(obj::EvolutionaryModel) = obj.μ
-dimension(obj::EvolutionaryModel) = length(rootpriormeanvector(obj))
-
 """
-    params(d::EvolutionaryModel)
+    dimension(m::EvolutionaryModel)
+
+Number of traits, e.g. 1 for univariate models.
+"""
+dimension(obj::EvolutionaryModel) = length(rootpriormeanvector(obj))
+"""
+    params(m::EvolutionaryModel)
 
 Tuple of parameters, the same that can be used to construct the evolutionary model.
 """
@@ -143,6 +147,17 @@ function factor_treeedge(m::UnivariateBrownianMotion{T}, t::Real) where T
     g = m.g0 - dimension(m) * log(t)/2
     return(h,J,g)
 end
+function factor_treeedge(m::MvDiagBrownianMotion{T,V}, t::Real) where {T,V}
+    numt = dimension(m); ntot = numt * 2
+    j = m.J ./ T(t) # diagonal elements
+    # J = [diag(j) -diag(j); -diag(j) diag(j)]
+    gen = ((u,tu,v,tv) for u in 1:2 for tu in 1:numt for v in 1:2 for tv in 1:numt)
+    Juv = (u,tu,v,tv) -> (tu==tv ? (u==v ? j[tu] : -j[tu]) : 0)
+    J = LA.Symmetric(SMatrix{ntot,ntot}(Juv(x...) for x in gen))
+    h = SVector{ntot,T}(zero(T) for _ in ntot)
+    g = m.g0 - numt * log(t)/2
+    return(h,J,g)
+end
 
 """
     factor_hybridnode(evolutionarymodel, ts::AbstractVector, γs)
@@ -178,7 +193,8 @@ In `h` and `J`, the first p coordinates are for the hybrid (or its child) and
 the last coordinates for the parents, in the same order in which
 the edge lengths and γs are given.
 """
-function factor_hybridnode(m::UnivariateBrownianMotion{T}, t::AbstractVector, γ::AbstractVector) where T
+function factor_hybridnode(m::EvolutionaryModel, t::AbstractVector, γ::AbstractVector)
+    # default method: assumes that variance along edge e is proportional to t(e)
     t0 = T(sum(γ.^2 .* t)) # >0 if hybrid node is not degenerate
     factor_tree_degeneratehybrid(m, t0, γ)
 end
@@ -190,6 +206,20 @@ function factor_tree_degeneratehybrid(m::UnivariateBrownianMotion{T}, t0::Real, 
     J = LA.Symmetric(SMatrix{nn,nn, T}(j*x*y for x in γ, y in γ))
     h = SVector{nn,T}(zero(T) for _ in 1:nn)
     g = m.g0 - dimension(m) * log(t0)/2
+    return(h,J,g)
+end
+function factor_tree_degeneratehybrid(m::MvDiagBrownianMotion{T,V}, t0::Real, γ::AbstractVector) where {T,V}
+    j = m.J ./ T(t0) # diagonal elements. Dj = diag(j)
+    nparents = length(γ); nn = 1 + nparents
+    numt = dimension(m); ntot = nn * numt
+    # J = [Dj -γ1Dj -γ2Dj; -γ1Dj γ1γ1Dj γ1γ2Dj; -γ2Dj γ1γ2Dj γ2γ2Dj]
+    gen = ((u,tu,v,tv) for u in 0:nparents for tu in 1:numt for v in 0:nparents for tv in 1:numt)
+    Juv = (u,tu,v,tv) -> (tu==tv ?
+            (u==0 ? (v==0 ? j[tu] : -γ[v] * j[tu]) :
+                    (v==0 ? -γ[u] * j[tu] : γ[u] * γ[v] * j[tu])) : zero(T))
+    J = LA.Symmetric(SMatrix{ntot,ntot, T}(Juv(x...) for x in gen))
+    h = SVector{ntot,T}(zero(T) for _ in ntot)
+    g = m.g0 - numt * log(t)/2
     return(h,J,g)
 end
 
@@ -209,5 +239,12 @@ function 1, which corresponds to h,J,g all 0 (and an irrelevant mean).
 function factor_root(m::UnivariateBrownianMotion{T}) where T
     j = T(1/m.v) # improper prior: j=0, v=Inf, factor ≡ 1: h,J,g all 0
     g = (j == 0.0 ? zero(T) : -(log2π + log(m.v) + m.μ^2 * j)/2)
-    return(m.μ*j, j, g) # m.μ
+    return(m.μ*j, j, g)
+end
+function factor_root(m::MvDiagBrownianMotion{T,V}) where {T,V}
+    j = 1 ./ m.v
+    h = m.μ .* j
+    improper = any(j .== 0.0) # then assumes that *all* are 0
+    g = (improper ? zero(T) : -(dimension(m) * log2π + sum(log.(m.v)) + sum(m.μ .* h))/2)
+    return(h, j, g)
 end
