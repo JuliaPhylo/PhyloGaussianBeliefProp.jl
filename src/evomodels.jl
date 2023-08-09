@@ -51,7 +51,7 @@ function UnivariateBrownianMotion(σ2, μ, v=nothing)
 end
 params(m::UnivariateBrownianMotion) = isrootfixed(m) ? (m.σ2, m.μ) : (m.σ2, m.μ, m.v)
 params_optimize(m::UnivariateBrownianMotion) = [-2*m.g0 - log2π, m.μ] # log(σ2),μ
-params_original(m::UnivariateBrownianMotion, logσ2, μ) = (exp(logσ2), μ, m.v)
+params_original(m::UnivariateBrownianMotion, logσ2μ) = (exp(logσ2μ[1]), logσ2μ[2], m.v)
 
 struct MvDiagBrownianMotion{T<:Real, V<:AbstractVector{T}} <: EvolutionaryModel{T}
     "diagonal entries of the diagonal variance rate matrix"
@@ -86,8 +86,8 @@ function MvDiagBrownianMotion(R, μ, v=nothing)
     MvDiagBrownianMotion{T, SV}(R, J, SV(μ), SV(v), -(numt * log2π + sum(log.(R)))/2)
 end
 params(m::MvDiagBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v)
-params_optimize(m::MvDiagBrownianMotion) = [log.(m.R), m.μ]
-params_original(m::MvDiagBrownianMotion, logR, μ) = (exp.(logR), μ, m.v)
+params_optimize(m::MvDiagBrownianMotion) = [log.(m.R)..., m.μ...]
+params_original(m::MvDiagBrownianMotion, logRμ) = (exp.(logRμ[1:dimension(m)]), logRμ[(dimension(m)+1):end], m.v)
 
 struct MvFullBrownianMotion{T<:Real, P1<:AbstractMatrix{T}, V<:AbstractVector{T}, P2<:AbstractMatrix{T}} <: EvolutionaryModel{T}
     "variance rate matrix"
@@ -154,7 +154,7 @@ function factor_treeedge(m::MvDiagBrownianMotion{T,V}, t::Real) where {T,V}
     gen = ((u,tu,v,tv) for u in 1:2 for tu in 1:numt for v in 1:2 for tv in 1:numt)
     Juv = (u,tu,v,tv) -> (tu==tv ? (u==v ? j[tu] : -j[tu]) : 0)
     J = LA.Symmetric(SMatrix{ntot,ntot}(Juv(x...) for x in gen))
-    h = SVector{ntot,T}(zero(T) for _ in ntot)
+    h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
     g = m.g0 - numt * log(t)/2
     return(h,J,g)
 end
@@ -193,7 +193,7 @@ In `h` and `J`, the first p coordinates are for the hybrid (or its child) and
 the last coordinates for the parents, in the same order in which
 the edge lengths and γs are given.
 """
-function factor_hybridnode(m::EvolutionaryModel, t::AbstractVector, γ::AbstractVector)
+function factor_hybridnode(m::EvolutionaryModel{T}, t::AbstractVector, γ::AbstractVector) where T
     # default method: assumes that variance along edge e is proportional to t(e)
     t0 = T(sum(γ.^2 .* t)) # >0 if hybrid node is not degenerate
     factor_tree_degeneratehybrid(m, t0, γ)
@@ -218,8 +218,8 @@ function factor_tree_degeneratehybrid(m::MvDiagBrownianMotion{T,V}, t0::Real, γ
             (u==0 ? (v==0 ? j[tu] : -γ[v] * j[tu]) :
                     (v==0 ? -γ[u] * j[tu] : γ[u] * γ[v] * j[tu])) : zero(T))
     J = LA.Symmetric(SMatrix{ntot,ntot, T}(Juv(x...) for x in gen))
-    h = SVector{ntot,T}(zero(T) for _ in ntot)
-    g = m.g0 - numt * log(t)/2
+    h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
+    g = m.g0 - numt * log(t0)/2
     return(h,J,g)
 end
 

@@ -88,14 +88,15 @@ mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(cgb, ct, net.nodes_chang
 # x,y: 2 traits, some missing values
 m = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0,0))
 b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-#= fixit: implement factor_treeedge etc. for multivariate BM
 PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
 cgb = PGBP.ClusterGraphBelief(b)
 
 mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(cgb, ct, net.nodes_changed,
-    tbl_x, df.taxon, PGBP.MvDiagBrownianMotion, ((2,1), (1,-1)))
-=#
-
+    tbl, df.taxon, PGBP.MvDiagBrownianMotion, ((2,1), (1,-1)))
+@test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
+@test llscore ≈ -14.39029465611705 # -5.174720533524127 -9.215574122592923
+@test mod.μ ≈ [3.500266520382341, -0.26000871507162693]
+@test PGBP.varianceparam(mod) ≈ [11.257682945973125,0.35360518758586457]
 end
 
 end

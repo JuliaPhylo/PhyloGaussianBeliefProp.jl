@@ -178,7 +178,7 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     mod = evomodelfun(evomodelparams...) # model with starting values
     function score(θ) # θ: unconstrained parameters, e.g. log(σ2)
-        model = evomodelfun(params_original(mod, θ...)...)
+        model = evomodelfun(params_original(mod, θ)...)
         init_beliefs_reset!(beliefs.belief)
         init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
         propagate_1traversal_postorder!(beliefs, spt...)
@@ -191,6 +191,6 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     # fixit: if BM and fixed root, avoid optimization bc there exists an exact alternative
     loglikscore = - Optim.minimum(opt)
     bestθ = Optim.minimizer(opt)
-    bestmodel = evomodelfun(params_original(mod, bestθ...)...)
+    bestmodel = evomodelfun(params_original(mod, bestθ)...)
     return bestmodel, loglikscore, opt
 end
