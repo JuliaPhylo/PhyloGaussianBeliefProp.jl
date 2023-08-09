@@ -258,25 +258,28 @@ The following methods for cluster graph construction are supported:
     - Bethe cluster graph (i.e. `method=Bethe()`)
     - LTRIP (i.e. `method=LTRIP()`)
 """
-function clustergraph(net::HybridNetwork, method::AbstractClusterGraphMethod,
-    clusters::Union{Vector{Vector{T}}, Nothing}=nothing) where T
+# function clustergraph(net::HybridNetwork, method::AbstractClusterGraphMethod,
+#     clusters::Union{Vector{Vector{T}}, Nothing}=nothing) where T
 
-    isa(T, Type{vgraph_eltype(net)}) || Vector{Vector{T}}(clusters) ||
-    error("Check that clusters are specified in terms of preorder indices")
+#     isa(T, Type{vgraph_eltype(net)}) || Vector{Vector{T}}(clusters) ||
+#     error("Check that clusters are specified in terms of preorder indices")
 
-    # put these 2 preprocessing steps here for now (also called by moralize!)
-    PN.preorder!(net)
-    PN.nameinternalnodes!(net, "I")
-    return clustergraph(net, method, clusters)
-end
+#     # put these 2 preprocessing steps here for now (also called by moralize!)
+#     PN.preorder!(net)
+#     PN.nameinternalnodes!(net, "I")
+#     return clustergraph(net, method, clusters)
+# end
 
 function clustergraph(net::HybridNetwork, method::Bethe, clusters)
-    notnothing(clusters) || @info "Bethe method does not use user-provided clusters"
+    isnothing(clusters) || @info "Bethe method does not use user-provided clusters"
+    # to remove later
+    PN.preorder!(net)
+    PN.nameinternalnodes!(net, "I")
     return betheclustergraph(net)
 end
 
 function clustergraph(net::HybridNetwork, method::LTRIP, clusters)
-    notnothing(clusters) || error("LTRIP method requires user-specified clusters")
+    !isnothing(clusters) || error("LTRIP method requires user-specified clusters")
     return ltripclustergraph(net, clusters)
 end
 
@@ -294,24 +297,24 @@ function betheclustergraph(net::HybridNetwork)
     T = vgraph_eltype(net)
     clustergraph = init_clustergraph(T, :Bethe)
 
-    node2cluster = Dict{T, (Symbol, Vector{T})}() # for joining clusters later
+    node2cluster = Dict{T, Tuple{Symbol, Vector{Symbol}}}() # for joining clusters later
     preordernames = [n.name for n in net.nodes_changed]
     # iterate through network nodes in preorder
     for (code, n) in enumerate(net.nodes_changed)
         ns = Symbol(n.name)
         vt = T(code)
-        o = sort!(indexin(getparents(n).name, preordernames), rev=true)
+        o = sort!(indexin([p.name for p in getparents(n)], preordernames), rev=true)
         # vdat and nodeindlist are sorted in postorder
         vdat = [ns; [Symbol(n.name) for n in net.nodes_changed[o]]] # node indices
         nodeindlist = [vt; T[o;]] # preorder indices
-        # cluster data: (node labels, node preorder index), sorted in postorder
-        # add factor clusters
-        add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
         if length(nodeindlist) > 1 # non-root node of graph
+            # cluster data: (node labels, node preorder index), sorted in postorder
+            # add factor clusters
+            add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
             for ni in nodeindlist
                 if haskey(node2cluster, ni)
-                    push!(node2cluster[ni][2], vt)
-                else node2cluster[ni] = (ns, [vt])
+                    push!(node2cluster[ni][2], Symbol(vdat...))
+                else node2cluster[ni] = (Symbol(preordernames[ni]), [Symbol(vdat...)])
                 end
             end
         end
@@ -324,8 +327,7 @@ function betheclustergraph(net::HybridNetwork)
             # add variable cluster only if there are > 1 clusters with this node
             add_vertex!(clustergraph, ns, ([ns], [ni]))
             # connect variable cluster to factor clusters that contain this node
-            for code in clusterlist
-                lab = label_for(clustergraph, code)
+            for lab in clusterlist
                 add_edge!(clustergraph, ns, lab, [ni])
             end
         end
