@@ -25,7 +25,7 @@ metaplot(ct)
 @testset "Bethe cluster graph" begin
     netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
     net = readTopology(netstr)
-    cg = PGBP.clustergraph(net, PGBP.Bethe())
+    cg = PGBP.clustergraph!(net, PGBP.Bethe())
     # the singleton {root} cluster is counted as a variable cluster
     numfactorclusters = net.numNodes-1
     numvarclusters = net.numNodes-net.numTaxa
@@ -61,6 +61,9 @@ metaplot(ct)
     (:I3, :I3I4), (:I3, :C2I3), (:I3, :I2I3),
     (:I4, :I4I5), (:I4, :I3I4), (:I4, :I1I4),
     (:I5, :DI5), (:I5, :I4I5)])
+
+    clusters = [v[2][2] for v in values(cg.vertex_properties)]
+    @test PGBP.isfamilypreserving!(clusters, net)[1]
 end
 
 @testset "LTRIP cluster graph" begin
@@ -73,8 +76,9 @@ end
     clusters = Vector{T}[
         [11, 8], [10, 9], [7, 6], [5, 4], [2, 1],
         [9, 8, 6], [8, 3], [6, 4], [4, 3], [3, 1]]
+    @test PGBP.isfamilypreserving!(clusters, net)[1]
     
-    cg = PGBP.clustergraph(net, PGBP.LTRIP(clusters))
+    cg = PGBP.clustergraph!(net, PGBP.LTRIP(clusters, net))
     @test nv(cg) == length(clusters)
      
     # arrange cluster labels in order of insertion (i.e. the order in `clusters`)
@@ -112,15 +116,23 @@ end
         res[i] = is_tree(sg) # check if the subgraph remaining is a (spanning) tree
     end
     @test all(res)
+
+    # LTRIP constructor using minimal clusters
+    cg2 = PGBP.clustergraph!(net, PGBP.LTRIP(net))
+    clusters2 = [v[2][2] for v in values(cg2.vertex_properties)]
+    @test PGBP.isfamilypreserving!(clusters2, net)[1]
 end
 
 @testset "Clique tree" begin
     netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
     net = readTopology(netstr)
-    ct = PGBP.clustergraph(PGBP.Cliquetree(), net)
+    ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
     @test ne(ct) == 8
     @test sort([ct[lab...] for lab in edge_labels(ct)]) == [[1],[3],[4],[6],[6,3],[8],[8,6],[9]]
     @test is_tree(ct)
+
+    cliques = [v[2][2] for v in values(ct.vertex_properties)]
+    @test PGBP.isfamilypreserving!(cliques, net)[1]
 end
 
 end

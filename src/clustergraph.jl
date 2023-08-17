@@ -119,6 +119,318 @@ function filledges!(fe, vertex_code, graph::AbstractGraph)
 end
 
 """
+    minimalclusters!(net)
+
+The *minimal clusters* of a network is its collection of node families. Each
+cluster comprises a node and its parent(s). Thus, each cluster either corresponds
+to a tree edge (e.g. {child, parent}), or a set of hybrid edges into the same
+node (e.g. {child, parent-1, parent-2, ..., parent-k}).
+
+Returns a dictionary that maps each node's preorder index to a vector containing
+its preorder index and those of its parents. Within each vector, the preorder
+indices are sorted in decreasing order so that the parents' indices come after
+the child's.
+"""
+function minimalclusters!(net::HybridNetwork)
+    preprocessnet!(net)
+    T = vgraph_eltype(net)
+    node2family = Dict{T, Vector{T}}()
+    preordernames = [n.name for n in net.nodes_changed]
+    for (code, n) in enumerate(net.nodes_changed)
+        o = sort!(indexin([p.name for p in getparents(n)], preordernames),
+            rev=true)
+        node2family[code] = [code; o]
+    end
+    return node2family
+end
+
+"""
+    isfamilypreserving!(clusters, net)
+
+`clusters` is *family-preserving* with respect to `net` if each minimal cluster
+(see [`minimalclusters!`](@ref)) of `net` is contained in ≥1 cluster in
+`clusters`.
+
+Returns a tuple: (isfamilypreserving::Bool, family2cluster::Dict{T, BitVector}),
+where `isfamilypreserving` indicates if `clusters` is family-preserving with
+respect to `net`, and `family2cluster` is a dictionary that maps each node
+family (represented by the preorder index for its child node) to a vector
+indicating which clusters in `clusters` contain that node family.
+"""
+function isfamilypreserving!(clusters::Vector{Vector{T}},
+    net::HybridNetwork) where {T <: Integer}
+    T1 = vgraph_eltype(net)
+    isa(T, Type{T1}) || error("Supply `clusters` as Vector{Vector{$T1}} object")
+    node2family = minimalclusters!(net)
+    family2cluster = Dict{T, BitVector}()
+    isfamilypreserving = true
+    for ni in keys(node2family)
+        nf = node2family[ni]
+        ch = nf[1] # index family by child node
+        # mark which clusters (if any) each node family is contained in
+        family2cluster[ch] = BitArray(nf ⊆ cl for cl in clusters)
+        # check for potential violation only if family-preserving so far
+        isfamilypreserving && (isfamilypreserving = any(family2cluster[ch]))
+    end
+    return (isfamilypreserving, family2cluster)
+end
+
+"""
+    AbstractClusterGraphMethod
+
+Abstract type for method of cluster graph construction.
+"""
+abstract type AbstractClusterGraphMethod end
+
+getclusters(obj::AbstractClusterGraphMethod) =
+    hasfield(typeof(obj), :clusters) ? obj.clusters : nothing
+
+"""
+    Bethe
+
+Bethe cluster graph (also known as factor graph).
+"""
+struct Bethe <: AbstractClusterGraphMethod end
+
+"""
+    LTRIP
+
+*Layered Trees Running Intersection Property* algorithm of Streicher & du Preez
+(2017).
+
+## References:
+
+S. Streicher and J. du Preez. Graph Coloring: Comparing Cluster Graphs to Factor
+Graphs. In *Proceedings of the ACM Multimedia 2017 Workshop on South African
+Academic Participation, pages 35-42, 2017. doi: 10.1145/3132711.3132717.
+"""
+struct LTRIP <: AbstractClusterGraphMethod
+    clusters::Vector{Vector{T}} where T <: Integer
+end
+
+function LTRIP(net::HybridNetwork)
+    node2family = minimalclusters!(net)
+    clusters = collect(values(node2family))
+    return LTRIP(clusters)
+end
+function LTRIP(clusters::Vector{Vector{T}}, net::HybridNetwork) where {T <: Integer}
+    # checks if `clusters` is valid wrt to `net`
+    isfamilypreserving!(clusters, net)[1] ||
+    error("`clusters` is not family preserving with respect to `net`")
+    return LTRIP(clusters)
+end
+
+"""
+    JoinGraphStr
+
+*Join-graph structuring* algorithm of Mateescu et al. (2010).
+
+## References:
+
+R. Mateescu, K. Kask, V.Gogate, and R. Dechter. Join-graph propagation algorithms.
+*Journal of Artificial Intelligence Research*, 37:279-328,
+2010. doi: 10.1613/jair.2842.
+"""
+struct JoinGraphStr <: AbstractClusterGraphMethod
+    maxclustersize::Integer
+end
+
+"""
+    Cliquetree
+
+## References:
+"""
+struct Cliquetree <: AbstractClusterGraphMethod end
+
+"""
+    clustergraph!(net, method)
+
+Cluster graph `U` for an input network `net`, a `method` of cluster graph
+construction.
+
+The following methods for cluster graph construction are supported:
+    - [`Bethe`](@ref)
+    - [`LTRIP`](@ref)
+    - [`JoinGraphStr`](@ref)
+    - [`Cliquetree`](@ref)
+
+Some methods (e.g. LTRIP) require user-supplied clusters, and have constructors
+that will check if the clusters provided are *family-preserving*
+(see [`isfamilypreserving!`](@ref)) with respect to a given network.
+"""
+function clustergraph!(net::HybridNetwork, method::AbstractClusterGraphMethod)
+    # preprocessing common to all cluster graph methods
+    preprocessnet!(net)
+    return clustergraph(method, net)
+end
+
+function clustergraph(method::Bethe, net::HybridNetwork)
+    return betheclustergraph(net, method)
+end
+
+function clustergraph(method::LTRIP, net::HybridNetwork)
+    return ltripclustergraph(net, method)
+end
+
+function clustergraph(method::JoinGraphStr, net::HybridNetwork)
+    # fixit: implement
+    return
+end
+
+function clustergraph(method::Cliquetree, net::HybridNetwork)
+    return cliquetree!(net, method)
+end
+
+"""
+    betheclustergraph(net, _)
+
+Constructs a Bethe cluster graph, which comprises of:
+    - a factor-cluster for each node-family (except for the singleton {root}) in
+    `net`
+    - a variable-cluster for each node in `net`
+
+See [`Bethe`](@ref)
+"""
+function betheclustergraph(net::HybridNetwork, _)
+    T = vgraph_eltype(net)
+    clustergraph = init_clustergraph(T, :Bethe)
+
+    node2cluster = Dict{T, Tuple{Symbol, Vector{Symbol}}}() # for joining clusters later
+    preordernames = [n.name for n in net.nodes_changed]
+    # iterate through network nodes in preorder
+    for (code, n) in enumerate(net.nodes_changed)
+        ns = Symbol(n.name)
+        vt = T(code)
+        o = sort!(indexin([p.name for p in getparents(n)], preordernames), rev=true)
+        # vdat and nodeindlist are sorted in postorder
+        vdat = [ns; [Symbol(n.name) for n in net.nodes_changed[o]]] # node symbols
+        nodeindlist = [vt; Vector{T}(o)] # preorder indices
+        if length(nodeindlist) > 1 # non-root node of graph
+            # cluster data: (node labels, node preorder index), sorted in postorder
+            # add factor clusters
+            add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
+            for ni in nodeindlist
+                if haskey(node2cluster, ni)
+                    push!(node2cluster[ni][2], Symbol(vdat...))
+                else node2cluster[ni] = (Symbol(preordernames[ni]), [Symbol(vdat...)])
+                end
+            end
+        end
+    end
+
+    for ni in sort!(collect(keys(node2cluster)), rev=true)
+        # sepsets will be sorted by nodes' postorder
+        ns, clusterlist = node2cluster[ni]
+        if length(clusterlist) > 1
+            # add variable cluster only if there are > 1 clusters with this node
+            add_vertex!(clustergraph, ns, ([ns], [ni]))
+            # connect variable cluster to factor clusters that contain this node
+            for lab in clusterlist
+                add_edge!(clustergraph, ns, lab, [ni])
+            end
+        end
+    end
+    return clustergraph
+end
+
+"""
+    ltripclustergraph(net, method)
+
+See [`LTRIP`](@ref)
+"""
+function ltripclustergraph(net::HybridNetwork, method::LTRIP)
+    T = vgraph_eltype(net)
+    clustergraph = init_clustergraph(T, :ltrip)
+    
+    # only used for ltrip, so doesn't count as code duplication
+    # auxiliary metagraph 
+    cg = MetaGraph(Graph{T}(0),
+        Symbol, # vertex label
+        Tuple{Vector{Symbol}, Vector{T}}, # vertex data: nodes in cluster
+        T, # edge data holds edge weight
+        :auxiliary, # tag for the whole graph
+        edge_data -> edge_data,
+        zero(T)) # default weight
+
+    node2cluster = Dict{T, Vector{T}}() # for joining clusters later
+    clusters = getclusters(method)
+    for (code, nodeindlist) in enumerate(clusters)
+        o = sortperm(nodeindlist, rev=true) # order to list nodes in postorder
+        nodeindlist .= nodeindlist[o] # preorder indices
+        vdat = [Symbol(n.name) for n in net.nodes_changed[nodeindlist]]
+        # cluster data: (node labels, node preorder index), sorted in postorder
+        add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
+        add_vertex!(cg, Symbol(vdat...), (vdat, nodeindlist))
+        for ni in nodeindlist
+            if haskey(node2cluster, ni)
+                push!(node2cluster[ni], T(code))
+            else node2cluster[ni] = [T(code)]
+            end
+        end
+    end
+
+     # compute edge weights using auxiliary metagraph
+     for ni in sort!(collect(keys(node2cluster)), rev=true)
+        # sepsets will be sorted by nodes' postorder
+        clusterindlist = node2cluster[ni]
+        sg, _ = induced_subgraph(cg, clusterindlist)
+        node2edge = Dict{Symbol, Vector{Symbol}}() # for updating edge weights later
+        topscoring = Symbol[] # track strongly-connected clusters in `sg`
+        topscore = 0 # track top score for cluster "connectivity"
+        for (i1, cl1) in enumerate(clusterindlist)
+            lab1 = label_for(clustergraph, cl1)
+            maxw = 0 # track the max no. of elements `cl1` shares with its neighbors
+            for i2 in 1:(i1-1)
+                cl2 = clusterindlist[i2]
+                lab2 = label_for(clustergraph, cl2)
+                w = length(intersect(sg[lab1], sg[lab2]))
+                maxw = (w > maxw) ? w : maxw
+                add_edge!(sg, lab1, lab2, w)
+            end
+            # mark clusters that are incident to a max-weight edge
+            if maxw > topscore # mark cluster `cl1` and unmark all others
+                topscoring, topscore = [lab1], maxw
+            elseif maxw == topscore # mark cluster `cl1`
+                push!(topscoring, lab1)
+            end
+        end
+        # update edge weights
+        for cl in topscoring # topscoring nodes have incident max-weight edges
+            neighborlabs = neighbor_labels(sg, cl)
+            # count no. of incident max-weight edges and add this no. to weights
+            # for all incident edges
+            Δw = length([sg[cl, ncl] == topscore for ncl in neighborlabs])
+            for ncl in neighborlabs
+                sg[cl, ncl] += Δw
+            end
+        end
+        mst_edges = kruskal_mst(sg, minimize=false)
+
+        for e in mst_edges
+            lab1 = label_for(sg, src(e))
+            lab2 = label_for(sg, dst(e))
+            if haskey(clustergraph, lab1, lab2) # if has edge {lab1, lab2}
+                clustergraph[lab1, lab2] = push!(clustergraph[lab1, lab2], ni)
+            else
+                add_edge!(clustergraph, lab1, lab2, [ni])
+            end
+        end
+    end
+    return clustergraph
+end
+
+"""
+    cliquetree!(net, _)
+
+See [`Cliquetree`](@ref)
+"""
+function cliquetree!(net::HybridNetwork, _)
+    g = moralize!(net)
+    triangulate_minfill!(g)
+    return cliquetree(g)
+end
+
+"""
     cliquetree(chordal_graph)
 
 Clique tree `U` for an input graph `g` assumed to be chordal (triangulated),
@@ -206,296 +518,6 @@ function cliquetree(graph::AbstractGraph{T}) where T
         rem_edge!(mg, src(e), dst(e))
     end
     return mg
-end
-
-"""
-    AbstractClusterGraphMethod
-
-Abstract type for method of cluster graph construction.
-"""
-abstract type AbstractClusterGraphMethod end
-
-getclusters(obj::AbstractClusterGraphMethod) =
-    hasfield(typeof(obj), :clusters) ? obj.clusters : nothing
-
-"""
-    Bethe
-
-Bethe cluster graph (also known as factor graph).
-"""
-struct Bethe <: AbstractClusterGraphMethod end
-
-"""
-    LTRIP
-
-*Layered Trees Running Intersection Property* algorithm of Streicher & du Preez
-(2017).
-
-## References:
-
-S. Streicher and J. du Preez. Graph Coloring: Comparing Cluster Graphs to Factor
-Graphs. In *Proceedings of the ACM Multimedia 2017 Workshop on South African
-Academic Participation, pages 35-42, 2017. doi: 10.1145/3132711.3132717.
-"""
-struct LTRIP <: AbstractClusterGraphMethod
-    # note that this is different from Vector{Vector{<:Integer}}!
-    clusters::Vector{Vector{T}} where T <: Integer
-    #=
-    fixit: add method to check if `clusters` is valid wrt a given network
-        (1) check that the unique indices in different clusters forms the range
-        1,2, ..., n, where n is the no. of nodes in the network
-        (2) check if `clusters` is family-preserving
-    =# 
-end
-
-"""
-    minimalclusters!(net)
-"""
-function minimalclusters!(net::HybridNetwork)
-    preprocessnet!(net)
-    T = vgraph_eltype(net)
-    node2family = Dict{T, Vector{T}}()
-    preordernames = [n.name for n in net.nodes_changed]
-    for (code, n) in enumerate(net.nodes_changed)
-        o = sort!(indexin([p.name for p in getparents(n)], preordernames),
-            rev=true)
-        node2family[code] = [code; o]
-    end
-    return node2family
-end
-
-"""
-    verifyminimalclusters!(clusters, net)
-"""
-function verifyminimalclusters!(clusters::Vector{Vector{T}},
-    net::HybridNetwork) where {T <: Integer}
-    node2family = minimalclusters!(net)
-    length(clusters) == length(node2family) ||
-        error("Incorrect number of minimal clusters.")
-    for (i, cl) in enumerate(clusters)
-        sort!(cl, rev=true)
-        ch = cl[1] # the child of a node family has the largest preorder index
-        haskey(node2family, ch) || error("Preorder index out of bounds.")
-        node2family[ch] == cl || return false
-    end
-    return true
-end
-
-"""
-    isfamilypreserving!(clusters, net)
-"""
-function isfamilypreserving!(clusters::Vector{Vector{T}},
-    net::HybridNetwork) where {T <: Integer}
-    node2family = minimalclusters!(net)
-    family2cluster = Dict{T, BitVector}()
-    isfamilypreserving = true
-    for ni in keys(node2family)
-        nf = node2family[ni]
-        # mark which clusters (if any) each node family is contained in
-        family2cluster[nf] = BitArray(nf ⊆ cl for cl in clusters)
-        # check for potential violation only if family-preserving so far
-        isfamilypreserving && (isfamilypreserving = any(family2cluster[nf]))
-    end
-    return (isfamilypreserving, family2cluster)
-end
-
-"""
-    JoinGraphStr
-
-*Join-graph structuring* algorithm of Mateescu et al. (2010).
-
-## References:
-
-R. Mateescu, K. Kask, V.Gogate, and R. Dechter. Join-graph propagation algorithms.
-*Journal of Artificial Intelligence Research*, 37:279-328,
-2010. doi: 10.1613/jair.2842.
-"""
-struct JoinGraphStr <: AbstractClusterGraphMethod
-    maxclustersize::Integer
-end
-
-"""
-    Cliquetree
-
-## References:
-"""
-struct Cliquetree <: AbstractClusterGraphMethod end
-
-"""
-    clustergraph(net, method::Bethe, clusters)
-    clustergraph(net, method::LTRIP, clusters)
-
-Cluster graph `U` for an input network `net`, a `method` of cluster graph
-construction, and (possibly) a set of `clusters` specified in terms of the
-preorder indices for `net`.
-
-**Warning**: does *not* check that the clusters provided are *family-preserving*
-with respect to `net`.
-
-The following methods for cluster graph construction are supported:
-    - Bethe cluster graph (i.e. `method=Bethe()`)
-    - LTRIP (i.e. `method=LTRIP()`)
-"""
-function clustergraph(net::HybridNetwork, method::AbstractClusterGraphMethod)
-    # preprocessing common to all cluster graph methods
-    preprocessnet!(net)
-    return clustergraph(method, net)
-end
-
-function clustergraph(method::Bethe, net::HybridNetwork)
-    return betheclustergraph(net, method)
-end
-
-function clustergraph(method::LTRIP, net::HybridNetwork)
-    return ltripclustergraph(net, method)
-end
-
-function clustergraph(method::Cliquetree, net::HybridNetwork)
-    g = moralize!(net)
-    triangulate_minfill!(g)
-    return cliquetree(g)
-end
-
-"""
-    betheclustergraph(net)
-
-Constructs a Bethe cluster graph, which comprises of:
-    - a factor-cluster for each node-family (except for the singleton {root}) in
-    `net`
-    - a variable-cluster for each node in `net`
-
-See [`Bethe`](@ref)
-"""
-function betheclustergraph(net::HybridNetwork, _)
-    T = vgraph_eltype(net)
-    clustergraph = init_clustergraph(T, :Bethe)
-
-    node2cluster = Dict{T, Tuple{Symbol, Vector{Symbol}}}() # for joining clusters later
-    preordernames = [n.name for n in net.nodes_changed]
-    # iterate through network nodes in preorder
-    for (code, n) in enumerate(net.nodes_changed)
-        ns = Symbol(n.name)
-        vt = T(code)
-        o = sort!(indexin([p.name for p in getparents(n)], preordernames), rev=true)
-        # vdat and nodeindlist are sorted in postorder
-        vdat = [ns; [Symbol(n.name) for n in net.nodes_changed[o]]] # node indices
-        nodeindlist = [vt; Vector{T}(o)] # preorder indices
-        if length(nodeindlist) > 1 # non-root node of graph
-            # cluster data: (node labels, node preorder index), sorted in postorder
-            # add factor clusters
-            add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
-            for ni in nodeindlist
-                if haskey(node2cluster, ni)
-                    push!(node2cluster[ni][2], Symbol(vdat...))
-                else node2cluster[ni] = (Symbol(preordernames[ni]), [Symbol(vdat...)])
-                end
-            end
-        end
-    end
-
-    for ni in sort!(collect(keys(node2cluster)), rev=true)
-        # sepsets will be sorted by nodes' postorder
-        ns, clusterlist = node2cluster[ni]
-        if length(clusterlist) > 1
-            # add variable cluster only if there are > 1 clusters with this node
-            add_vertex!(clustergraph, ns, ([ns], [ni]))
-            # connect variable cluster to factor clusters that contain this node
-            for lab in clusterlist
-                add_edge!(clustergraph, ns, lab, [ni])
-            end
-        end
-    end
-    return clustergraph
-end
-
-"""
-    ltripclustergraph(net, clusters)
-
-Assumes that:
-    - clusters are specified in terms of preorder indices
-    - edge-weights are defined as in
-
-See [`LTRIP`](@ref)
-"""
-function ltripclustergraph(net::HybridNetwork, method::LTRIP)
-    T = vgraph_eltype(net)
-    clustergraph = init_clustergraph(T, :ltrip)
-    
-    # only used for ltrip, so doesn't count as code duplication
-    # auxiliary metagraph 
-    cg = MetaGraph(Graph{T}(0),
-        Symbol, # vertex label
-        Tuple{Vector{Symbol}, Vector{T}}, # vertex data: nodes in cluster
-        T, # edge data holds edge weight
-        :auxiliary, # tag for the whole graph
-        edge_data -> edge_data,
-        zero(T)) # default weight
-
-    node2cluster = Dict{T, Vector{T}}() # for joining clusters later
-    clusters = getclusters(method)
-    for (code, nodeindlist) in enumerate(clusters)
-        o = sortperm(nodeindlist, rev=true) # order to list nodes in postorder
-        nodeindlist .= nodeindlist[o] # preorder indices
-        vdat = [Symbol(n.name) for n in net.nodes_changed[nodeindlist]]
-        # cluster data: (node labels, node preorder index), sorted in postorder
-        add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
-        add_vertex!(cg, Symbol(vdat...), (vdat, nodeindlist))
-        for ni in nodeindlist
-            if haskey(node2cluster, ni)
-                push!(node2cluster[ni], T(code))
-            else node2cluster[ni] = [T(code)]
-            end
-        end
-    end
-
-     # compute edge weights using auxiliary metagraph
-     for ni in sort!(collect(keys(node2cluster)), rev=true)
-        # sepsets will be sorted by nodes' postorder
-        clusterindlist = node2cluster[ni]
-        sg, _ = induced_subgraph(cg, clusterindlist)
-        node2edge = Dict{Symbol, Vector{Symbol}}() # for updating edge weights later
-        topscoring = Symbol[] # track strongly-connected clusters in `sg`
-        topscore = 0 # track top score for cluster "connectivity"
-        for (i1, cl1) in enumerate(clusterindlist)
-            lab1 = label_for(clustergraph, cl1)
-            maxw = 0 # track the max no. of elements `cl1` shares with its neighbors
-            for i2 in 1:(i1-1)
-                cl2 = clusterindlist[i2]
-                lab2 = label_for(clustergraph, cl2)
-                w = length(intersect(sg[lab1], sg[lab2]))
-                maxw = (w > maxw) ? w : maxw
-                add_edge!(sg, lab1, lab2, w)
-            end
-            # mark clusters that are incident to a max-weight edge
-            if maxw > topscore # mark cluster `cl1` and unmark all others
-                topscoring, topscore = [lab1], maxw
-            elseif maxw == topscore # mark cluster `cl1`
-                push!(topscoring, lab1)
-            end
-        end
-        # update edge weights
-        for cl in topscoring # topscoring nodes have incident max-weight edges
-            neighborlabs = neighbor_labels(sg, cl)
-            # count no. of incident max-weight edges and add this no. to weights
-            # for all incident edges
-            Δw = length([sg[cl, ncl] == topscore for ncl in neighborlabs])
-            for ncl in neighborlabs
-                sg[cl, ncl] += Δw
-            end
-        end
-        mst_edges = kruskal_mst(sg, minimize=false)
-
-        for e in mst_edges
-            lab1 = label_for(sg, src(e))
-            lab2 = label_for(sg, dst(e))
-            if haskey(clustergraph, lab1, lab2) # if has edge {lab1, lab2}
-                clustergraph[lab1, lab2] = push!(clustergraph[lab1, lab2], ni)
-            else
-                add_edge!(clustergraph, lab1, lab2, [ni])
-            end
-        end
-    end
-    return clustergraph
 end
 
 """
