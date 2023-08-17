@@ -5,6 +5,14 @@ end
 @enum EdgeType etreetype=1 ehybridtype=2 moralizedtype=3 filltype=4
 
 """
+    preprocessnet!(net::HybridNetwork, prefix="I")
+"""
+function preprocessnet!(net::HybridNetwork, prefix="I")
+    PN.preorder!(net)
+    PN.nameinternalnodes!(net, prefix)
+end
+
+"""
     moralize!(net::HybridNetwork, prefix="I")
     moralize(net)
 
@@ -21,8 +29,7 @@ The first version modifies `net` to name its internal nodes (used as labels in `
 and to create or update its node preordering, then calls the second version.
 """
 function moralize!(net::HybridNetwork, prefix="I")
-    PN.preorder!(net)
-    PN.nameinternalnodes!(net, prefix)
+    preprocessnet!(net, prefix)
     moralize(net)
 end
 @doc (@doc moralize!) moralize
@@ -208,6 +215,9 @@ Abstract type for method of cluster graph construction.
 """
 abstract type AbstractClusterGraphMethod end
 
+getclusters(obj::AbstractClusterGraphMethod) =
+    hasfield(typeof(obj), :clusters) ? obj.clusters : nothing
+
 """
     Bethe
 
@@ -227,7 +237,67 @@ S. Streicher and J. du Preez. Graph Coloring: Comparing Cluster Graphs to Factor
 Graphs. In *Proceedings of the ACM Multimedia 2017 Workshop on South African
 Academic Participation, pages 35-42, 2017. doi: 10.1145/3132711.3132717.
 """
-struct LTRIP <: AbstractClusterGraphMethod end
+struct LTRIP <: AbstractClusterGraphMethod
+    # note that this is different from Vector{Vector{<:Integer}}!
+    clusters::Vector{Vector{T}} where T <: Integer
+    #=
+    fixit: add method to check if `clusters` is valid wrt a given network
+        (1) check that the unique indices in different clusters forms the range
+        1,2, ..., n, where n is the no. of nodes in the network
+        (2) check if `clusters` is family-preserving
+    =# 
+end
+
+"""
+    minimalclusters!(net)
+"""
+function minimalclusters!(net::HybridNetwork)
+    preprocessnet!(net)
+    T = vgraph_eltype(net)
+    node2family = Dict{T, Vector{T}}()
+    preordernames = [n.name for n in net.nodes_changed]
+    for (code, n) in enumerate(net.nodes_changed)
+        o = sort!(indexin([p.name for p in getparents(n)], preordernames),
+            rev=true)
+        node2family[code] = [code; o]
+    end
+    return node2family
+end
+
+"""
+    verifyminimalclusters!(clusters, net)
+"""
+function verifyminimalclusters!(clusters::Vector{Vector{T}},
+    net::HybridNetwork) where {T <: Integer}
+    node2family = minimalclusters!(net)
+    length(clusters) == length(node2family) ||
+        error("Incorrect number of minimal clusters.")
+    for (i, cl) in enumerate(clusters)
+        sort!(cl, rev=true)
+        ch = cl[1] # the child of a node family has the largest preorder index
+        haskey(node2family, ch) || error("Preorder index out of bounds.")
+        node2family[ch] == cl || return false
+    end
+    return true
+end
+
+"""
+    isfamilypreserving!(clusters, net)
+"""
+function isfamilypreserving!(clusters::Vector{Vector{T}},
+    net::HybridNetwork) where {T <: Integer}
+    node2family = minimalclusters!(net)
+    family2cluster = Dict{T, BitVector}()
+    isfamilypreserving = true
+    for ni in keys(node2family)
+        nf = node2family[ni]
+        # mark which clusters (if any) each node family is contained in
+        family2cluster[nf] = BitArray(nf ⊆ cl for cl in clusters)
+        # check for potential violation only if family-preserving so far
+        isfamilypreserving && (isfamilypreserving = any(family2cluster[nf]))
+    end
+    return (isfamilypreserving, family2cluster)
+end
 
 """
     JoinGraphStr
@@ -238,9 +308,18 @@ struct LTRIP <: AbstractClusterGraphMethod end
 
 R. Mateescu, K. Kask, V.Gogate, and R. Dechter. Join-graph propagation algorithms.
 *Journal of Artificial Intelligence Research*, 37:279-328,
-2010. doi:10.1613/jair.2842.
+2010. doi: 10.1613/jair.2842.
 """
-struct JoinGraphStr <: AbstractClusterGraphMethod end
+struct JoinGraphStr <: AbstractClusterGraphMethod
+    maxclustersize::Integer
+end
+
+"""
+    Cliquetree
+
+## References:
+"""
+struct Cliquetree <: AbstractClusterGraphMethod end
 
 """
     clustergraph(net, method::Bethe, clusters)
@@ -257,25 +336,24 @@ The following methods for cluster graph construction are supported:
     - Bethe cluster graph (i.e. `method=Bethe()`)
     - LTRIP (i.e. `method=LTRIP()`)
 """
-function clustergraph(net::HybridNetwork, method::Bethe, clusters)
-    isnothing(clusters) || @info "Bethe method does not use user-provided clusters"
-    # to remove later
-    PN.preorder!(net)
-    PN.nameinternalnodes!(net, "I")
-    return betheclustergraph(net)
+function clustergraph(net::HybridNetwork, method::AbstractClusterGraphMethod)
+    # preprocessing common to all cluster graph methods
+    preprocessnet!(net)
+    return clustergraph(method, net)
 end
 
-function clustergraph(net::HybridNetwork, method::LTRIP,
-    clusters::Vector{Vector{T}}) where {T <: Integer}
-    !isnothing(clusters) || error("LTRIP method requires user-specified clusters")
-    
-    # remove later
-    isa(T, Type{vgraph_eltype(net)}) ||
-    (Vector{Vector{T}}(clusters) && (clusters = Vector{Vector{T}}(clusters))) ||
-    error("Check that clusters are specified in terms of preorder indices")
-    PN.preorder!(net)
-    PN.nameinternalnodes!(net, "I")
-    return ltripclustergraph(net, clusters)
+function clustergraph(method::Bethe, net::HybridNetwork)
+    return betheclustergraph(net, method)
+end
+
+function clustergraph(method::LTRIP, net::HybridNetwork)
+    return ltripclustergraph(net, method)
+end
+
+function clustergraph(method::Cliquetree, net::HybridNetwork)
+    g = moralize!(net)
+    triangulate_minfill!(g)
+    return cliquetree(g)
 end
 
 """
@@ -288,7 +366,7 @@ Constructs a Bethe cluster graph, which comprises of:
 
 See [`Bethe`](@ref)
 """
-function betheclustergraph(net::HybridNetwork)
+function betheclustergraph(net::HybridNetwork, _)
     T = vgraph_eltype(net)
     clustergraph = init_clustergraph(T, :Bethe)
 
@@ -301,7 +379,7 @@ function betheclustergraph(net::HybridNetwork)
         o = sort!(indexin([p.name for p in getparents(n)], preordernames), rev=true)
         # vdat and nodeindlist are sorted in postorder
         vdat = [ns; [Symbol(n.name) for n in net.nodes_changed[o]]] # node indices
-        nodeindlist = [vt; T[o;]] # preorder indices
+        nodeindlist = [vt; Vector{T}(o)] # preorder indices
         if length(nodeindlist) > 1 # non-root node of graph
             # cluster data: (node labels, node preorder index), sorted in postorder
             # add factor clusters
@@ -339,8 +417,8 @@ Assumes that:
 
 See [`LTRIP`](@ref)
 """
-function ltripclustergraph(net::HybridNetwork, clusters::Vector{Vector{T}}) where T
-    isa(vgraph_eltype(net), Type{T}) || error("Type mismatch")
+function ltripclustergraph(net::HybridNetwork, method::LTRIP)
+    T = vgraph_eltype(net)
     clustergraph = init_clustergraph(T, :ltrip)
     
     # only used for ltrip, so doesn't count as code duplication
@@ -354,6 +432,7 @@ function ltripclustergraph(net::HybridNetwork, clusters::Vector{Vector{T}}) wher
         zero(T)) # default weight
 
     node2cluster = Dict{T, Vector{T}}() # for joining clusters later
+    clusters = getclusters(method)
     for (code, nodeindlist) in enumerate(clusters)
         o = sortperm(nodeindlist, rev=true) # order to list nodes in postorder
         nodeindlist .= nodeindlist[o] # preorder indices
@@ -401,7 +480,7 @@ function ltripclustergraph(net::HybridNetwork, clusters::Vector{Vector{T}}) wher
             # for all incident edges
             Δw = length([sg[cl, ncl] == topscore for ncl in neighborlabs])
             for ncl in neighborlabs
-                sg[cl, ncl] += Δw # not sure if this syntax works
+                sg[cl, ncl] += Δw
             end
         end
         mst_edges = kruskal_mst(sg, minimize=false)

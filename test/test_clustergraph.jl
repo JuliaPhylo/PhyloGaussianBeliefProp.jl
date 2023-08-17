@@ -25,7 +25,7 @@ metaplot(ct)
 @testset "Bethe cluster graph" begin
     netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
     net = readTopology(netstr)
-    cg = PGBP.clustergraph(net, PGBP.Bethe(), nothing)
+    cg = PGBP.clustergraph(net, PGBP.Bethe())
     # the singleton {root} cluster is counted as a variable cluster
     numfactorclusters = net.numNodes-1
     numvarclusters = net.numNodes-net.numTaxa
@@ -42,15 +42,14 @@ metaplot(ct)
     numhybridnodes = net.numHybrids
     @test ne(cg) == (numterminaledges + 2*num_nonhybrid_internaledges + 3*numhybridnodes)
 
-    # sort cluster labels according to order in which clusters are added
-    # factor clusters are added first, according to the preordering of their
-    # child nodes. variable clusters are added next in postordering of their
-    # nodes
+    #= sort cluster labels according to order in which clusters are added factor
+    clusters are added first, according to the preordering of their child nodes.
+    variable clusters are added next in postordering of their nodes =#
     o = sortperm([v[1] for v in values(cg.vertex_properties)])
-    # (n -> n.number).(net.nodes_changed) # node numbers arranged in preorder
-    # [-2, 6, -3, -6, 5, -7, 4, -4, 3, 2, 1]
-    # (n -> n.names).(net.nodes_changed) # node labels
-    # ["I5", "D", "I4", "I3", "C2", "I2", "C", "I1", "H1", "B", "A"]
+    #= (n -> n.number).(net.nodes_changed) # node numbers arranged in preorder
+        [-2, 6, -3, -6, 5, -7, 4, -4, 3, 2, 1]
+    (n -> n.names).(net.nodes_changed) # node labels
+        ["I5", "D", "I4", "I3", "C2", "I2", "C", "I1", "H1", "B", "A"] =#
     @test collect(keys(cg.vertex_properties))[o] == [
         :DI5, :I4I5, :I3I4, :C2I3, :I2I3, :CI2, :I1I4, :H1I1I2, :BH1, :AI1,
         :H1, :I1, :I2, :I3, :I4, :I5
@@ -68,25 +67,26 @@ end
     netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
     net = readTopology(netstr)
     T = PGBP.vgraph_eltype(net)
-    # each cluster is specified a vector of preorder indices corresponding to
-    # the nodes of net
-    # the clusters used here correspond to the node families in net, except {root}
+    #= Each cluster is specified a vector of preorder indices corresponding to
+    the nodes of net. The clusters used here correspond to the node families in
+    net, except {root} =#
     clusters = Vector{T}[
         [11, 8], [10, 9], [7, 6], [5, 4], [2, 1],
         [9, 8, 6], [8, 3], [6, 4], [4, 3], [3, 1]]
-    cg = PGBP.clustergraph(net, PGBP.LTRIP(), clusters)
-    @test nv(cg) == length(clusters)
     
+    cg = PGBP.clustergraph(net, PGBP.LTRIP(clusters))
+    @test nv(cg) == length(clusters)
+     
     # arrange cluster labels in order of insertion (i.e. the order in `clusters`)
     o = sortperm([v[1] for v in values(cg.vertex_properties)])
     @test collect(keys(cg.vertex_properties))[o] == [
         :AI1, :BH1, :CI2, :C2I3, :DI5,
         :H1I1I2, :I1I4, :I2I3, :I3I4, :I4I5]
 
-    # since the edges added for each (variable-specific) spanning tree depends
-    # on how `kruskal_mst` is implemented, we focus on checking, for each
-    # variable, if the subgraph induced by the clusters and edges containing that
-    # variable is a tree
+    #= since the edges added for each (variable-specific) spanning tree depends
+    on how `kruskal_mst` is implemented, we focus on checking, for each variable,
+    if the subgraph induced by the clusters and edges containing that variable
+    is a tree =#
 
     # sub(cluster)graphs induced by clusters containing node label [...]
     sgI1, _ = induced_subgraph(cg, [1, 6, 7]) # :I1
@@ -112,6 +112,15 @@ end
         res[i] = is_tree(sg) # check if the subgraph remaining is a (spanning) tree
     end
     @test all(res)
+end
+
+@testset "Clique tree" begin
+    netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
+    net = readTopology(netstr)
+    ct = PGBP.clustergraph(PGBP.Cliquetree(), net)
+    @test ne(ct) == 8
+    @test sort([ct[lab...] for lab in edge_labels(ct)]) == [[1],[3],[4],[6],[6,3],[8],[8,6],[9]]
+    @test is_tree(ct)
 end
 
 end
