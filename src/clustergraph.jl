@@ -184,6 +184,8 @@ abstract type AbstractClusterGraphMethod end
 
 getclusters(obj::AbstractClusterGraphMethod) =
     hasfield(typeof(obj), :clusters) ? obj.clusters : nothing
+getmaxclustersize(obj::AbstractClusterGraphMethod) =
+    hasfield(typeof(obj), :maxclustersize) ? obj.maxclustersize : nothing
 
 """
     Bethe
@@ -272,9 +274,12 @@ function clustergraph(method::LTRIP, net::HybridNetwork)
     return ltripclustergraph(net, method)
 end
 
+#= fixit: Discuss. For consistency, I would have to change `clustergraph` to
+`clustergraph!` for the 2 functions below. But then I can't dispatch nicely
+using the function at the very top: `clustergraph!(net, method)`
+=#
 function clustergraph(method::JoinGraphStr, net::HybridNetwork)
-    # fixit: implement
-    return
+    return joingraph!(net, method)
 end
 
 function clustergraph(method::Cliquetree, net::HybridNetwork)
@@ -417,6 +422,55 @@ function ltripclustergraph(net::HybridNetwork, method::LTRIP)
         end
     end
     return clustergraph
+end
+
+"""
+    joingraph(net, method)
+
+Requires an elimination order (e.g. from greedy min-fill)
+
+1. Sort node families into buckets. These are the initial clusters for each
+bucket.
+2. Loop through buckets
+    i. For each bucket, partition clusters into minibuckets (subject to
+    maxclustersize) and connect minibuckets to one another. The sepset for this
+    connection is the bucket variable. There is some degree of freedom in how
+    clusters are partitioned into minibuckets.
+    ii. For each minibucket in a bucket, create a subminibucket (by
+    marginalizing out the bucket variable) and assign it to the relevant bucket.
+    Connect each minibucket to its corresponding subminibucket. The sepset for
+    this connection is their full intersection (all nodes except for the bucket
+    variable).
+"""
+function joingraph!(net::HybridNetwork, method::JoinGraphStr)
+    g = moralize!(net)
+    ordering = triangulate_minfill!(g) # node labels in elimination order
+    T = vgraph_eltype(net)
+    preorder2eliminationorder = Dict{T, T}(
+        g[ns] => i for (i, ns) in enumerate(ordering)
+    ) # preorder to elimination order
+
+    # initialize `bucket`
+    node2family = minimalclusters!(net)
+    bucket = Dict{T, Tuple{Symbol, Vector{Vector{Symbol}}}}(i => (ns, []) for
+        (i, ns) in enumerate(ordering))
+    for ni in keys(node2family)
+        # node family specified in elimination order indices
+        nf = [preorder2eliminationorder[n] for n in node2family[ni]]
+        # assign node families to the "highest" (wrt priority in `ordering`)
+        # bucket possible
+        bi = minimum(nf) # bucket index
+        push!(bucket[bi][2], ordering[nf])
+    end
+
+    clustergraph = init_clustergraph(T, :jgstr)
+    maxclustersize = getmaxclustersize(method)
+    for i in 1:eachindex(bucket)
+        b = bucket[i]
+        # partition bucket contents into minibuckets
+        # create subminibuckets and move these to other buckets
+    end
+    return bucket
 end
 
 """
