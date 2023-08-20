@@ -446,31 +446,105 @@ function joingraph!(net::HybridNetwork, method::JoinGraphStr)
     g = moralize!(net)
     ordering = triangulate_minfill!(g) # node labels in elimination order
     T = vgraph_eltype(net)
-    preorder2eliminationorder = Dict{T, T}(
-        g[ns] => i for (i, ns) in enumerate(ordering)
-    ) # preorder to elimination order
+    # preorder indices sorted in elimination order
+    eliminationorder2preorder = [g[ns] for ns in ordering]
 
-    # initialize `bucket`
+    # initialize `buckets`
+    buckets = Dict{T, Tuple{Symbol, Dict{T, Vector{Vector{T}}}}}(
+        i => (ns, Dict()) for (i, ns) in enumerate(ordering)
+    )
+    # node families (represented as vectors of preorder indices) correspond to
+    # initial factors
     node2family = minimalclusters!(net)
-    bucket = Dict{T, Tuple{Symbol, Vector{Vector{Symbol}}}}(i => (ns, []) for
-        (i, ns) in enumerate(ordering))
+    maxclustersize = T(getmaxclustersize(method)) # size limit for minibuckets
+    clustergraph = init_clustergraph(T, :jgstr)
     for ni in keys(node2family)
-        # node family specified in elimination order indices
-        nf = [preorder2eliminationorder[n] for n in node2family[ni]]
-        # assign node families to the "highest" (wrt priority in `ordering`)
-        # bucket possible
-        bi = minimum(nf) # bucket index
-        push!(bucket[bi][2], ordering[nf])
+        # minibucket: node family specified in elimination order indices and
+        # sorted in elimination order
+        mb = Vector{T}(indexin(node2family[ni], eliminationorder2preorder))
+        sort!(mb)
+        # first element in minibucket always has highest priority wrt elimination
+        # order. assign `mb` to bucket corresponding to that element
+        bi = mb[1]
+        # dictionary mapping minibucket size to minibucket(s) within bucket
+        di = buckets[bi][2]
+        # merge `mb` (if within size limits) with existing minibuckets within
+        # bucket, otherwise just add to bucket
+        assign!(di, mb, maxclustersize)
     end
 
-    clustergraph = init_clustergraph(T, :jgstr)
-    maxclustersize = getmaxclustersize(method)
-    for i in 1:eachindex(bucket)
-        b = bucket[i]
-        # partition bucket contents into minibuckets
-        # create subminibuckets and move these to other buckets
+    for i in 1:length(ordering)
+        bs, bd = buckets[i] # bucket symbol, bucket dictionary
+        for minibuckets in values(bd)
+            for mb in minibuckets
+                nodeindlist = eliminationorder2preorder[mb]
+                o = sortperm(nodeindlist, rev=true)
+                nodeindlist .= nodeindlist[o]
+                vdat = ordering[mb][o]
+                # add cluster corresponding to `mb` to `clustergraph`
+                add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
+
+                mb_new = copy(mb) # initialize new minibucket
+                popfirst!(mb_new) # remove ("marginalize") bucket variable
+                #= `mb_new` should be connected to `mb` in `clustergraph`, the
+                sepset is `mb_new` =#
+                if !isempty(mb_new)
+                    #= Assign to bucket corresponding to highest priority element
+                    and check if `mb_new` can be merged with an existing minibucket
+                    (starting with the smallest) in the assigned bucket. If so,
+                    complete the merge and update the size => minibucket
+                    dictionary (no. of minibuckets decreases by 1) =#
+                    
+                    mb_new = assign!(buckets[mb_new[1]][2], mb_new, maxclustersize)
+                    # nodeindlist_new = eliminationorder2preorder[mb_new]
+                    # o_new = sortperm(nodeindlist_new, rev=true)
+                    # nodeindlist_new .= nodeindlist_new[o_new]
+                    # vdat_new = ordering[mb_new][o_new]
+                    # add_vertex!(clustergraph, Symbol(vdat_new),
+                    #     (vdat_new, nodeindlist_new))
+                end
+            end
+        end
     end
-    return bucket
+    print(buckets)
+    return clustergraph
+end
+"""
+    assign!(bucket, new minibucket, max minibucket size)
+"""
+function assign!(bucket::Dict{T, Vector{Vector{T}}},
+    new::Vector{T}, maxsize::T) where {T <: Integer}
+    if !isempty(bucket)
+        for sz in sort(collect(keys(bucket))) # minibucket sizes
+            minibuckets = bucket[sz]
+            for (i, mb) in enumerate(minibuckets)
+                merged = sort(union(new, mb))
+                mergedsz = length(merged)
+                if mergedsz ≤ maxsize
+                    popat!(minibuckets, i)
+                    if isempty(minibuckets)
+                        pop!(bucket, sz)
+                    end
+                    # fixit: do i need to convert?
+                    if haskey(bucket, mergedsz)
+                        push!(bucket[mergedsz], merged)
+                    else
+                        bucket[mergedsz] = [merged]
+                    end
+                    return merged
+                end
+            end
+        end
+    end
+    # `new` cannot be merged with any existing minibucket within
+    # `bucket`
+    sz = length(new)
+    if haskey(bucket, sz)
+        push!(bucket[sz], new)
+    else
+        bucket[sz] = [new]
+    end
+    return new
 end
 
 """
