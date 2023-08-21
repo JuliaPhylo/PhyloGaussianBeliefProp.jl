@@ -481,36 +481,60 @@ function joingraph!(net::HybridNetwork, method::JoinGraphStr)
                 o = sortperm(nodeindlist, rev=true)
                 nodeindlist .= nodeindlist[o]
                 vdat = ordering[mb][o]
+                lab = Symbol(vdat...)
                 # add cluster corresponding to `mb` to `clustergraph`
-                add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
+                add_vertex!(clustergraph, lab, (vdat, nodeindlist))
 
                 mb_new = copy(mb) # initialize new minibucket
                 popfirst!(mb_new) # remove ("marginalize") bucket variable
-                #= `mb_new` should be connected to `mb` in `clustergraph`, the
-                sepset is `mb_new` =#
                 if !isempty(mb_new)
                     #= Assign to bucket corresponding to highest priority element
                     and check if `mb_new` can be merged with an existing minibucket
                     (starting with the smallest) in the assigned bucket. If so,
                     complete the merge and update the size => minibucket
                     dictionary (no. of minibuckets decreases by 1) =#
-                    
-                    mb_new = assign!(buckets[mb_new[1]][2], mb_new, maxclustersize)
-                    # nodeindlist_new = eliminationorder2preorder[mb_new]
-                    # o_new = sortperm(nodeindlist_new, rev=true)
-                    # nodeindlist_new .= nodeindlist_new[o_new]
-                    # vdat_new = ordering[mb_new][o_new]
-                    # add_vertex!(clustergraph, Symbol(vdat_new),
-                    #     (vdat_new, nodeindlist_new))
+
+                    #= If `mb2` is empty, then `mb1` == `mb_new`. Otherwise, it
+                    # is merged with `mb2` (an existing minibucket) to produce
+                    `mb1`. It may be that `mb2` == `mb1` =#
+                    (mb1, mb2) = assign!(buckets[mb_new[1]][2], mb_new,
+                        maxclustersize)
+                    nodeindlist1 = eliminationorder2preorder[mb1]
+                    o1 = sortperm(nodeindlist1, rev=true)
+                    nodeindlist1 .= nodeindlist1[o1]
+                    vdat1 = ordering[mb1][o1]
+                    lab1 = Symbol(vdat1...)
+                    # add new cluster for `mb1`
+                    add_vertex!(clustergraph, lab1, (vdat1, nodeindlist1))
+                    add_edge!(clustergraph, lab, lab1, nodeindlist)
+                    if length(mb1) != length(mb2) # mb1 != mb2
+                        # cluster for `mb2` is replaced by new cluster for `mb1`
+                        o2 = sortperm(eliminationorder2preorder[mb2], rev=true)
+                        vdat2 = ordering[mb2][o2]
+                        lab2 = Symbol(vdat2...)
+                        if haskey(clustergraph, lab2)
+                            # connect edges into `mb2` to `mb1`
+                            for labn in neighbor_labels(clustergraph, lab2)
+                                add_edge!(clustergraph, lab1, labn,
+                                    clustergraph[lab2, labn])
+                            end
+                            delete!(clustergraph, lab2) # delete `mb2`
+                        end
+                    end
                 end
             end
         end
     end
-    print(buckets)
     return clustergraph
 end
 """
-    assign!(bucket, new minibucket, max minibucket size)
+    assign!(bucket, new_minibucket, max_minibucket_size)
+
+Attempts to merge `new_minibucket` with one of the minibuckets contained in
+`bucket` (in order of increasing size), subject to the constraint that the
+resulting minibucket does not exceed `max_minibucket_size`. If a successful
+merge is found, then (`resulting_minibucket`, `minibucket_merged_into`) is
+returned. Otherwise, (`new_minibucket`, []) is returned.
 """
 function assign!(bucket::Dict{T, Vector{Vector{T}}},
     new::Vector{T}, maxsize::T) where {T <: Integer}
@@ -531,7 +555,7 @@ function assign!(bucket::Dict{T, Vector{Vector{T}}},
                     else
                         bucket[mergedsz] = [merged]
                     end
-                    return merged
+                    return (merged, mb)
                 end
             end
         end
@@ -544,7 +568,7 @@ function assign!(bucket::Dict{T, Vector{Vector{T}}},
     else
         bucket[sz] = [new]
     end
-    return new
+    return (new, T[])
 end
 
 """
