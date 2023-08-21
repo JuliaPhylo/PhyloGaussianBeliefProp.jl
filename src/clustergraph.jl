@@ -457,7 +457,7 @@ function joingraph!(net::HybridNetwork, method::JoinGraphStr)
     # initial factors
     node2family = minimalclusters!(net)
     maxclustersize = T(getmaxclustersize(method)) # size limit for minibuckets
-    clustergraph = init_clustergraph(T, :jgstr)
+    cg = init_clustergraph(T, :auxiliary)
     for ni in keys(node2family)
         # minibucket: node family specified in elimination order indices and
         # sorted in elimination order
@@ -475,16 +475,23 @@ function joingraph!(net::HybridNetwork, method::JoinGraphStr)
 
     for i in 1:length(ordering)
         bs, bd = buckets[i] # bucket symbol, bucket dictionary
+        bi = eliminationorder2preorder[i] # preorder index for `bs`
         for minibuckets in values(bd)
-            for mb in minibuckets
+            # connect minibuckets in a "chain", where the sepset is the bucket
+            # variable `bs`, which corresponds to preorder index `bi`
+            for (j, mb) in enumerate(minibuckets)
                 nodeindlist = eliminationorder2preorder[mb]
                 o = sortperm(nodeindlist, rev=true)
                 nodeindlist .= nodeindlist[o]
                 vdat = ordering[mb][o]
                 lab = Symbol(vdat...)
-                # add cluster corresponding to `mb` to `clustergraph`
-                add_vertex!(clustergraph, lab, (vdat, nodeindlist))
-
+                # add cluster corresponding to `mb` to `cg`
+                add_vertex!(cg, lab, (vdat, nodeindlist))
+                if j > 1
+                    # connect `mb` to current tail of "chain"
+                    add_edge!(cg, prev, lab, bi)
+                end
+                prev = lab # `mb` becomes new tail of "chain"
                 mb_new = copy(mb) # initialize new minibucket
                 popfirst!(mb_new) # remove ("marginalize") bucket variable
                 if !isempty(mb_new)
@@ -505,25 +512,39 @@ function joingraph!(net::HybridNetwork, method::JoinGraphStr)
                     vdat1 = ordering[mb1][o1]
                     lab1 = Symbol(vdat1...)
                     # add new cluster for `mb1`
-                    add_vertex!(clustergraph, lab1, (vdat1, nodeindlist1))
-                    add_edge!(clustergraph, lab, lab1, nodeindlist)
+                    add_vertex!(cg, lab1, (vdat1, nodeindlist1))
+                    add_edge!(cg, lab, lab1,
+                        filter(ni -> ni != bi, nodeindlist))
                     if length(mb1) != length(mb2) # mb1 != mb2
                         # cluster for `mb2` is replaced by new cluster for `mb1`
                         o2 = sortperm(eliminationorder2preorder[mb2], rev=true)
                         vdat2 = ordering[mb2][o2]
                         lab2 = Symbol(vdat2...)
-                        if haskey(clustergraph, lab2)
+                        if haskey(cg, lab2)
                             # connect edges into `mb2` to `mb1`
-                            for labn in neighbor_labels(clustergraph, lab2)
-                                add_edge!(clustergraph, lab1, labn,
-                                    clustergraph[lab2, labn])
+                            for labn in neighbor_labels(cg, lab2)
+                                add_edge!(cg, lab1, labn,
+                                    cg[lab2, labn])
                             end
-                            delete!(clustergraph, lab2) # delete `mb2`
+                            delete!(cg, lab2) # delete `mb2`
                         end
                     end
                 end
             end
         end
+    end
+
+    # copy `cg` onto `clustergraph`. Though `cg` stores the correct cluster and
+    # sepset information, due to alternating edge/vertex additions in its
+    # construction, this messes with edge (and consequently edge metadata) access 
+    # fixit: rewrite in a more efficient and stable way
+    clustergraph = init_clustergraph(T, :jgstr)
+    for lab in values(cg.vertex_labels)
+        add_vertex!(clustergraph, lab, cg[lab])
+    end
+    edges = cg.edge_data
+    for (lab1, lab2) in keys(edges)
+        add_edge!(clustergraph, lab1, lab2, edges[(lab1, lab2)])
     end
     return clustergraph
 end
@@ -538,18 +559,20 @@ returned. Otherwise, (`new_minibucket`, []) is returned.
 """
 function assign!(bucket::Dict{T, Vector{Vector{T}}},
     new::Vector{T}, maxsize::T) where {T <: Integer}
-    if !isempty(bucket)
-        for sz in sort(collect(keys(bucket))) # minibucket sizes
-            minibuckets = bucket[sz]
+    if !isempty(bucket) # there exist potential minibuckets to merge into
+        # loop through different size collections of minibuckets, in order of
+        # increasing size
+        for sz in sort(collect(keys(bucket)))
+            minibuckets = bucket[sz] # minibuckets with size `sz`
             for (i, mb) in enumerate(minibuckets)
                 merged = sort(union(new, mb))
                 mergedsz = length(merged)
                 if mergedsz ≤ maxsize
-                    popat!(minibuckets, i)
-                    if isempty(minibuckets)
+                    popat!(minibuckets, i) # remove minibucket being merged with
+                    if isempty(minibuckets) # remove any empty size categories
                         pop!(bucket, sz)
                     end
-                    # fixit: do i need to convert?
+                    # insert result of merge into appropriate size category
                     if haskey(bucket, mergedsz)
                         push!(bucket[mergedsz], merged)
                     else
@@ -560,8 +583,8 @@ function assign!(bucket::Dict{T, Vector{Vector{T}}},
             end
         end
     end
-    # `new` cannot be merged with any existing minibucket within
-    # `bucket`
+    # `new` cannot be merged with any existing minibucket within `bucket`, then
+    # insert it whole into the appropriate size collection in `bucket`
     sz = length(new)
     if haskey(bucket, sz)
         push!(bucket[sz], new)

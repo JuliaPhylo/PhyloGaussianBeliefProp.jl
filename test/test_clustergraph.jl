@@ -123,6 +123,41 @@ end
     @test PGBP.isfamilypreserving!(clusters2, net)[1]
 end
 
+@testset "Join-graph struturing" begin
+    netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
+    net = readTopology(netstr)
+    cg = PGBP.joingraph!(net, PGBP.JoinGraphStr(3))
+    @test ne(cg) == 10
+    @test nv(cg) == 11
+    
+    clusters = cg.vertex_properties
+    # vector of (`node_label`, subgraph of `cg` induced by clusters containing
+    # `node_label`)
+    subgraphs = Tuple{Symbol, MetaGraph}[]
+    for n in net.nodes_changed
+        clusters_s = filter(cl -> Symbol(n.name) ∈ clusters[cl][2][1], keys(clusters))
+        clusters_i = [clusters[cl][1] for cl in clusters_s]
+        sg_n, _ = induced_subgraph(cg, clusters_i)
+        push!(subgraphs, (Symbol(n.name), sg_n))
+    end
+
+    res = falses(length(subgraphs))
+    for (i, (nl, sg)) in enumerate(subgraphs)
+        # loop through edges of induced subgraph `sg`, and delete any that do not
+        # contain the variable of interest `nl`
+        for e in collect(keys(sg.edge_data))
+            cl1, cl2 = e[1], e[2]
+            nodelabs1 = sg[cl1][1]
+            nodelabs2 = sg[cl2][1]
+            if (nl ∉ nodelabs1) & (nl ∉ nodelabs2)
+                delete!(sg, cl1, cl2)
+            end
+        end
+        res[i] = is_tree(sg) # check if the subgraph remaining is a (spanning) tree
+    end
+    @test all(res)
+end
+
 @testset "Clique tree" begin
     netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
     net = readTopology(netstr)
