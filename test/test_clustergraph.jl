@@ -78,7 +78,7 @@ end
         [9, 8, 6], [8, 3], [6, 4], [4, 3], [3, 1]]
     @test PGBP.isfamilypreserving!(clusters, net)[1]
     
-    cg = PGBP.clustergraph!(net, PGBP.LTRIP(clusters, net))
+    cg = PGBP.clustergraph!(net, PGBP.LTRIP!(clusters, net))
     @test nv(cg) == length(clusters)
      
     # arrange cluster labels in order of insertion (i.e. the order in `clusters`)
@@ -118,7 +118,7 @@ end
     @test all(res)
 
     # LTRIP constructor using minimal clusters
-    cg2 = PGBP.clustergraph!(net, PGBP.LTRIP(net))
+    cg2 = PGBP.clustergraph!(net, PGBP.LTRIP!(net))
     clusters2 = [v[2][2] for v in values(cg2.vertex_properties)]
     @test PGBP.isfamilypreserving!(clusters2, net)[1]
 end
@@ -126,7 +126,7 @@ end
 @testset "Join-graph struturing" begin
     netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
     net = readTopology(netstr)
-    cg = PGBP.joingraph!(net, PGBP.JoinGraphStr(3))
+    cg = PGBP.clustergraph!(net, PGBP.JoinGraphStr(3))
     @test ne(cg) == 10
     @test nv(cg) == 11
     
