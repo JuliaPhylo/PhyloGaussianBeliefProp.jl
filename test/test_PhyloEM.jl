@@ -20,7 +20,7 @@ spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
 
 @testset "comparison with PhyloEM" begin
 
-m = PGBP.UnivariateBrownianMotion(1, 0, 10000000000) # "infinite" root variance
+m = PGBP.UnivariateBrownianMotion(1, 0, 10000000000) # "infinite" root variance to match phyloEM
 b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
 PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
 cgb = PGBP.ClusterGraphBelief(b)
@@ -51,15 +51,51 @@ condcovar = [0.0000000,0.0000000,0.0000000,0.0000000,0.0000000,NaN,0.3932039,0.2
 condcovar = condcovar[[6,8,9,5,4,3,7,2,1]]
 for i in eachindex(cgb.belief)
     vv =  inv(cgb.belief[i].J)
-    dim(vv) == 2 && @test vv[1,2] ≈ condcovar[cgb.belief[i].nodelabel[1]] atol=1e-6
+    size(vv, 1) == 2 && @test vv[1,2] ≈ condcovar[cgb.belief[i].nodelabel[1]] atol=1e-6
 end
-# Test mu hat
-muhat = 0.4436893
-tmp1, tmp = PGBP.integratebelief!(cgb, 13)
-@test tmp1[end] ≈ muhat atol=1e-6
-# Test sigma2 hat
-# TODO: as individual conditional moments match, this should also work.
 
+end # of no-optimization
+
+@testset "exact formulas" begin
+
+    # y: 1 trait, no missing values
+    # exact REML
+    m = PGBP.UnivariateBrownianMotion(1, 0, Inf) # infinite root variance
+    b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
+    PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+    cgb = PGBP.ClusterGraphBelief(b)
+    PGBP.calibrate!(cgb, [spt])
+    mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct, net.nodes_changed,
+        tbl_y, df.taxon, PGBP.UnivariateBrownianMotion)
+    # numerical optim
+    #m = PGBP.UnivariateBrownianMotion(1.8,0.4,0) # infinite root variance
+    #b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
+    #PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+    #cgb = PGBP.ClusterGraphBelief(b)
+    #PGBP.calibrate!(cgb, [spt])
+    #modopt, llscoreopt, opt = PGBP.calibrate_optimize_cliquetree!(cgb, ct, net.nodes_changed,
+    #    tbl_x, df.taxon, PGBP.UnivariateBrownianMotion, (1.8,0.4))
+
+    @test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
+    @test llscore ≈ -7.351098376474686
+    @test mod.μ ≈ 0.4436893203883497
+    @test PGBP.varianceparam(mod) ≈ 0.35360518758586457
+    
+    #= ML solution the matrix-way, analytical for BM:
+    # for y: univariate
+    Σ = Matrix(vcv(net)[!,Symbol.(df.taxon)])
+    n=5 # number of data points
+    i = ones(n) # intercept
+    μhat = inv(transpose(i) * inv(Σ) * i) * (transpose(i) * inv(Σ) * tbl.y) # 0.4436893203883497
+    r = tbl.y .- μhat
+    σ2hat_REML = (transpose(r) * inv(Σ) * r) / (n-1) # 0.4988220064724921
+    llscore = - n/2 - logdet(2π * σ2hat_ML .* Σ)/2 # -5.174720533524127
+    =#
+
+    end
+    
+
+end
 
 #= likelihood and moments using PhylogeneticEM from R
 library(PhylogeneticEM)
@@ -99,7 +135,3 @@ for (i in 1:nrow(tree$edge)) {
 }
 num / den
 =#
-
-end # of no-optimization
-
-end

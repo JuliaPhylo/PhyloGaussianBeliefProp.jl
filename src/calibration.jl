@@ -194,3 +194,88 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
     return bestmodel, loglikscore, opt
 end
+
+"""
+    calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief, clustergraph,
+        nodevector_preordered, tbl::Tables.ColumnTable, taxa::AbstractVector,
+        evolutionarymodel_name)
+
+For a Brownian Motion with a fixed root, compute the exact maximum likelihood
+parameters using closed form formulas relying on belief propagation.
+The  `clustergraph` is assumed to be a clique tree for the input tree,
+whose nodes in preorder are `nodevector_preordered`.
+Optimization aims to maximize the likelihood
+of the data in `tbl` at leaves in the network.
+The taxon names in `taxa` should appear in the same order as they come in `tbl`.
+The parameters being optimized are the variance rate(s) and prior mean(s)
+at the root. The prior variance at the root is fixed to zero.
+
+The calibration does a postorder of the clique tree only, using the optimal parameters,
+to get the likelihood
+at the root *without* the conditional distribution at all nodes, modifying
+`beliefs` in place. Therefore, if the distribution of ancestral states is sought,
+an extra preorder calibration would be required.
+Warning: there is *no* check that the cluster graph is in fact a clique tree.
+"""
+# TODO multivariate version
+function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
+        cgraph, prenodes::Vector{PN.Node},
+        tbl::Tables.ColumnTable, taxa::AbstractVector,
+        evomodelfun # constructor function
+        )
+    evomodelfun == UnivariateBrownianMotion || error("Exact optimization is only implemented for the univariate BM.")
+    evomodelparams = (1,0,0) # parameters used for BP to get estimates
+    ## TODO: check that root is fixed ?
+    ## TODO: test that the underlying net is a tree
+
+    ## Compute mu_hat from root belief
+    ## Root is in the sepset between root factor nodes
+    spt = spanningtree_clusterlist(cgraph, prenodes)
+    ss_root = sepsetindex(spt[1][1], spt[2][1], beliefs)
+    mu_hat, _ = integratebelief!(beliefs, ss_root)
+    mu_hat = mu_hat[1]
+
+    ## Compute sigma2_hat from conditional moments
+    tmp_num = 0
+    tmp_den = 0
+    for i in eachindex(beliefs.belief)
+        if beliefs.belief[i].type == bclustertype 
+            # Loop over cluster beliefs, associated with edges for a tree
+            b = beliefs.belief[i]
+            edge = PN.getparentedge(prenodes[b.nodelabel[1]])
+            exp_be, _ = integratebelief!(b)
+            vv =  inv(b.J)
+            if size(vv, 1) == 2
+                # belief is two dimensional: not a tip cluster
+                tmp_num += (exp_be[2] - exp_be[1])^2 / edge.length
+                tmp_den += 1 - (vv[2,2] + vv[1,1] - 2 * vv[1,2]) / edge.length
+            elseif size(vv, 1) == 1 
+                # belief is one dimensional: tip cluster
+                # find data associated to the tip
+                # TODO: is there a more simple way to do that ? Record of data in belief object ?
+                node = prenodes[b.nodelabel[1]]
+                node.leaf || error("A one dimensional node is internal, should be a leaf")
+                nodelab = node.name
+                i_row = findfirst(isequal(nodelab), taxa)
+                !isnothing(i_row) || error("A node with data does not match any taxon")
+                tipvalue = [tbl[v][i_row] for v in 1:length(tbl)]
+                tmp_num += (exp_be[1] - tipvalue[1])^2 / edge.length
+                tmp_den += 1 - (vv[1,1]) / edge.length / evomodelparams[1]
+            else
+                error("A tree cluster graph should only have clusters of size at most 2.")
+            end
+        end
+    end
+    sigma2_hat = tmp_num / tmp_den
+    ## TODO: This is the REML estimate. Should we get ML instead ?
+
+    ## Get optimal paramters and associated likelihood
+    bestθ = (sigma2_hat,mu_hat,0.000000000000001) ## TODO: 0 here makes thing crash. Why ??
+    bestmodel = evomodelfun(bestθ...)
+    init_beliefs_reset!(beliefs.belief)
+    init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
+    propagate_1traversal_postorder!(beliefs, spt...)
+    _, loglikscore = integratebelief!(beliefs, spt[3][1])
+
+    return bestmodel, loglikscore
+end
