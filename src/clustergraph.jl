@@ -151,7 +151,7 @@ end
 (see [`minimalclusters!`](@ref)) of `net` is contained in ≥1 cluster in
 `clusters`.
 
-Returns a tuple: (isfamilypreserving::Bool, family2cluster::Dict{T, BitVector}),
+Returns a tuple: `(isfamilypreserving::Bool, family2cluster::Dict{T, BitVector})`,
 where `isfamilypreserving` indicates if `clusters` is family-preserving with
 respect to `net`, and `family2cluster` is a dictionary that maps each node
 family (represented by the preorder index for its child node) to a vector
@@ -173,6 +173,51 @@ function isfamilypreserving!(clusters::Vector{Vector{T}},
         isfamilypreserving && (isfamilypreserving = any(family2cluster[ch]))
     end
     return (isfamilypreserving, family2cluster)
+end
+
+"""
+    checkRI(clustergraph, net)
+
+`clustergraph` satisfies the *running-intersection* (RI) property if for each
+node in `net`, the subgraph of `clustergraph` induced by the clusters containing
+that node is a tree.
+
+Assumes that `net` has been preordered ([`preorder!`](@ref)).
+
+**Warning**: does *not* check that `clustergraph` has been correctly constructed.
+
+Returns a vector of tuples: `[(t1::Symbol, t2::Bool), ...]`, where `t1` is a node
+label and `t2` indicates if the sub(cluster)graph induced by the clusters
+containing that node is a tree. `clustergraph` satisfies the RI property if `t2`
+is `true` for all nodes.
+"""
+function checkRI(clustergraph::MetaGraph, net::HybridNetwork)
+    cluster_properties = clustergraph.vertex_properties
+    subgraphs = Tuple{Symbol, MetaGraph}[]
+    for n in net.nodes_changed
+        # clusters as vectors of node symbols
+        clusters_s = filter(cl -> Symbol(n.name) ∈ cluster_properties[cl][2][1],
+            keys(cluster_properties))
+        # clusters as vectors of preorder indices
+        clusters_i = [cluster_properties[cl][1] for cl in clusters_s]
+        sg_n, _ = induced_subgraph(clustergraph, clusters_i)
+        push!(subgraphs, (Symbol(n.name), sg_n))
+    end
+    res = Tuple{Symbol, Bool}[]
+    for (i, (nl, sg)) in enumerate(subgraphs)
+        # loop through edges of the induced subgraph `sg`, and delete any that
+        # do not contain the variable of interest `nl`
+        for e in collect(keys(sg.edge_data))
+            cl1, cl2 = e[1], e[2]
+            nodelabs1 = sg[cl1][1]
+            nodelabs2 = sg[cl2][1]
+            if (nl ∉ nodelabs1) & (nl ∉ nodelabs2)
+                delete!(sg, cl1, cl2)
+            end
+        end
+        push!(res, (nl, is_tree(sg))) # check if the subgraph remaining is a tree
+    end
+    return res
 end
 
 """
@@ -280,14 +325,14 @@ Requires:
 - user-specified max cluster size
 - an elimination order for the nodes in the HybridNetwork that is expected to
 yield a small induced-width (e.g. from a heuristic such as greedy min-fill
-[`triangulate_minfill!(graph)`](@ref))
+([`triangulate_minfill!(graph)`](@ref)))
 
 1. Each node in the HybridNetwork labels a "bucket", and these buckets are ordered
 according to the elimination order (e.g. the highest-priority bucket is labelled
-by the first node in the elimination order)
+by the first node in the elimination order).
 2. Node families are assigned to buckets based on the highest-priority node they
 contain (e.g. if {1, 4, 9} forms a node family and node 4 is higher in the
-elimination order than nodes 1 or 9, then {1, 4, 9} gets assigned to bucket 4)
+elimination order than nodes 1 or 9, then {1, 4, 9} gets assigned to bucket 4).
 3. Node families are clusters (of nodes), and we refer to the clusters within a
 bucket as "minibuckets". Minibuckets within a bucket can be merged as long as
 the size of their union does not exceed the max cluster size provided (there is
@@ -315,14 +360,24 @@ struct JoinGraphStr <: AbstractClusterGraphMethod
     maxclustersize::Integer
 end
 function JoinGraphStr(maxclustersize::Integer, net::HybridNetwork)
-    maxindegree = maximum(n -> length(getparents[n]), net.node)
-    maxclustersize ≤ (maxindegree + 1) || error("`maxclustersize` is smaller
+    maxindegree = maximum(n -> length(getparents(n)), net.node)
+    maxclustersize ≥ (maxindegree + 1) || error("`maxclustersize` is smaller
     than size of largest minimal cluster")
     return JoinGraphStr(maxclustersize)
 end
 
 """
     Cliquetree
+
+## Algorithm:
+
+1. Moralizes ([`moralize`](@ref)) the HybridNetwork.
+2. Triangulates the resulting undirected graph using greedy min-fill
+([`triangulate_minfill!(graph)`](@ref)).
+3. Extracts the maximal cliques of the resulting chordal graph.
+4. Defines the edge weight between each pair of maximal cliques as the size of
+their intersection, then finds a maximum spanning tree. Edges between cliques
+are labelled by their intersection.
 
 ## References:
 D. Koller and N. Friedman. *Probabilistic graphical models: principles and
@@ -342,10 +397,6 @@ The following methods for cluster graph construction are supported:
     - [`LTRIP`](@ref)
     - [`JoinGraphStr`](@ref)
     - [`Cliquetree`](@ref)
-
-Some methods (e.g. LTRIP) require user-supplied clusters, and have constructors
-that will check if the clusters provided are *family-preserving*
-(see [`isfamilypreserving!`](@ref)) with respect to a given network.
 """
 function clustergraph!(net::HybridNetwork, method::AbstractClusterGraphMethod)
     preprocessnet!(net)
@@ -356,7 +407,7 @@ clustergraph(net::HybridNetwork, ::Bethe) = betheclustergraph(net)
 clustergraph(net::HybridNetwork, method::LTRIP) = ltripclustergraph(net, method)
 
 function clustergraph(net::HybridNetwork, method::JoinGraphStr)
-    joingraph(net, method)
+    joingraph(net, JoinGraphStr(getmaxclustersize(method), net))
 end
 
 function clustergraph(net::HybridNetwork, ::Cliquetree)
@@ -635,8 +686,8 @@ function assign!(bucket::Dict{T, Vector{Vector{T}}},
     new::Vector{T}, maxsize::T) where {T <: Integer}
     if !isempty(bucket) # there exist potential minibuckets to merge into
         # loop through different size collections of minibuckets, in order of
-        # increasing size
-        for sz in sort(collect(keys(bucket)))
+        # decreasing size
+        for sz in sort(collect(keys(bucket)), rev=true)
             minibuckets = bucket[sz] # minibuckets with size `sz`
             for (i, mb) in enumerate(minibuckets)
                 merged = sort(union(new, mb))
