@@ -221,19 +221,20 @@ Warning: there is *no* check that the cluster graph is in fact a clique tree.
 function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
         cgraph, prenodes::Vector{PN.Node},
         tbl::Tables.ColumnTable, taxa::AbstractVector,
-        evomodelfun # constructor function
+        evomodelfun, # constructor function
+        evomodelparams
         )
     evomodelfun == UnivariateBrownianMotion || error("Exact optimization is only implemented for the univariate BM.")
-    evomodelparams = (1,0,0) # parameters used for BP to get estimates
-    ## TODO: check that root is fixed ?
-    ## TODO: test that the underlying net is a tree
+    model = evomodelfun(evomodelparams...)
+    isrootfixed(model) || error("Exact optimization is only implemented for the BM with fixed root.")
+    ## TODO: test that the underlying net is a tree ?
 
     ## Compute mu_hat from root belief
     ## Root is in the sepset between root factor nodes
     spt = spanningtree_clusterlist(cgraph, prenodes)
+    rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     ss_root = sepsetindex(spt[1][1], spt[2][1], beliefs)
     mu_hat, _ = integratebelief!(beliefs, ss_root)
-    mu_hat = mu_hat[1]
 
     ## Compute sigma2_hat from conditional moments
     tmp_num = 0
@@ -247,6 +248,7 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
             vv =  inv(b.J)
             if size(vv, 1) == 2
                 # belief is two dimensional: not a tip cluster
+                # TODO: deal with missing data
                 tmp_num += (exp_be[2] - exp_be[1])^2 / edge.length
                 tmp_den += 1 - (vv[2,2] + vv[1,1] - 2 * vv[1,2]) / edge.length
             elseif size(vv, 1) == 1 
@@ -270,12 +272,14 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
     ## TODO: This is the REML estimate. Should we get ML instead ?
 
     ## Get optimal paramters and associated likelihood
-    bestθ = (sigma2_hat,mu_hat,0.000000000000001) ## TODO: 0 here makes thing crash. Why ??
+    bestθ = (sigma2_hat,mu_hat, 0)
+    print(bestθ)
     bestmodel = evomodelfun(bestθ...)
-    init_beliefs_reset!(beliefs.belief)
+    init_beliefs_reset!(beliefs)
+    update_root_inscope!(beliefs, model)
     init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
     propagate_1traversal_postorder!(beliefs, spt...)
-    _, loglikscore = integratebelief!(beliefs, spt[3][1])
+    _, loglikscore = integratebelief!(beliefs, rootj)
 
     return bestmodel, loglikscore
 end

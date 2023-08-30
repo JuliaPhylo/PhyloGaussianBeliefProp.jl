@@ -6,7 +6,7 @@
 
 netstr = "((A:1.5,B:1.5):1,(C:1,(D:0.5, E:0.5):0.5):1.5);"
 
-df = DataFrame(taxon=["A","B","C","D","E"], x=[10,10,missing,0,1], y=[1.0,.9,1,-1,-0.9])
+df = DataFrame(taxon=["A","B","C","D","E"], x=[10,10,3,0,1], y=[1.0,.9,1,-1,-0.9])
 df_var = select(df, Not(:taxon))
 tbl = columntable(df_var)
 tbl_y = columntable(select(df, :y)) # 1 trait, for univariate models
@@ -56,6 +56,76 @@ end
 
 end # of no-optimization
 
+@testset "update root status" begin
+
+    # y: 1 trait, no missing values
+    m1 = PGBP.UnivariateBrownianMotion(1, 0, 0.9)
+    b1 = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m1);
+    PGBP.init_beliefs_assignfactors!(b1, m1, tbl_y, df.taxon, net.nodes_changed);
+
+    m2 = PGBP.UnivariateBrownianMotion(1, 0, 0) # fixed root
+    b2 = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m2);
+    PGBP.init_beliefs_assignfactors!(b2, m2, tbl_y, df.taxon, net.nodes_changed);
+
+    PGBP.update_root_inscope!(b1, m2)
+    PGBP.init_beliefs_reset!(b1)
+    PGBP.init_beliefs_assignfactors!(b1, m2, tbl_y, df.taxon, net.nodes_changed);
+    
+    for ind in eachindex(b1)
+        @test b1[ind].nodelabel == b2[ind].nodelabel
+        @test b1[ind].ntraits == b2[ind].ntraits
+        @test b1[ind].inscope == b2[ind].inscope
+        @test b1[ind].μ == b2[ind].μ
+        @test b1[ind].h == b2[ind].h
+        @test b1[ind].J == b2[ind].J
+        @test b1[ind].type == b2[ind].type
+        @test b1[ind].metadata == b2[ind].metadata
+    end
+    
+    PGBP.update_root_inscope!(b1, m1)
+    PGBP.init_beliefs_reset!(b1)
+    PGBP.init_beliefs_assignfactors!(b1, m1, tbl_y, df.taxon, net.nodes_changed);
+    PGBP.update_root_inscope!(b2, m1)
+    PGBP.init_beliefs_reset!(b2)
+    PGBP.init_beliefs_assignfactors!(b2, m1, tbl_y, df.taxon, net.nodes_changed);
+
+    for ind in eachindex(b1)
+        @test b1[ind].nodelabel == b2[ind].nodelabel
+        @test b1[ind].ntraits == b2[ind].ntraits
+        @test b1[ind].inscope == b2[ind].inscope
+        @test b1[ind].μ == b2[ind].μ
+        @test b1[ind].h == b2[ind].h
+        @test b1[ind].J == b2[ind].J
+        @test b1[ind].type == b2[ind].type
+        @test b1[ind].metadata == b2[ind].metadata
+    end
+
+    # x,y: 2 traits, no missing values
+    m1 = PGBP.MvDiagBrownianMotion((1,1), (0,0), (1.2,3))
+    b1 = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m1);
+    PGBP.init_beliefs_assignfactors!(b1, m1, tbl, df.taxon, net.nodes_changed);
+
+    m2 = PGBP.MvDiagBrownianMotion((1,1), (0,0), (0,0))
+    b2 = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m2);
+    PGBP.init_beliefs_assignfactors!(b2, m2, tbl, df.taxon, net.nodes_changed);
+
+    PGBP.update_root_inscope!(b1, m2)
+    PGBP.init_beliefs_reset!(b1)
+    PGBP.init_beliefs_assignfactors!(b1, m2, tbl, df.taxon, net.nodes_changed);
+    
+    for ind in eachindex(b1)
+        @test b1[ind].nodelabel == b2[ind].nodelabel
+        @test b1[ind].ntraits == b2[ind].ntraits
+        @test b1[ind].inscope == b2[ind].inscope
+        @test b1[ind].μ == b2[ind].μ
+        @test b1[ind].h == b2[ind].h
+        @test b1[ind].J == b2[ind].J
+        @test b1[ind].type == b2[ind].type
+        @test b1[ind].metadata == b2[ind].metadata
+    end
+
+end
+
 @testset "exact formulas" begin
 
     # y: 1 trait, no missing values
@@ -66,7 +136,7 @@ end # of no-optimization
     cgb = PGBP.ClusterGraphBelief(b)
     PGBP.calibrate!(cgb, [spt])
     mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct, net.nodes_changed,
-        tbl_y, df.taxon, PGBP.UnivariateBrownianMotion)
+        tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (1,0,0))
     # numerical optim
     #m = PGBP.UnivariateBrownianMotion(1.8,0.4,0) # infinite root variance
     #b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
@@ -77,9 +147,23 @@ end # of no-optimization
     #    tbl_x, df.taxon, PGBP.UnivariateBrownianMotion, (1.8,0.4))
 
     @test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
-    @test llscore ≈ -7.351098376474686
+    @test llscore ≈ -6.851098376474686
     @test mod.μ ≈ 0.4436893203883497
-    @test PGBP.varianceparam(mod) ≈ 0.35360518758586457
+    @test PGBP.varianceparam(mod) ≈ 0.6235275080906149
+
+    # x,y: 2 traits, no missing values
+    #m = PGBP.MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf))
+    #b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
+    #PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
+    #cgb = PGBP.ClusterGraphBelief(b)
+    #PGBP.calibrate!(cgb, [spt])
+    #mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct, net.nodes_changed,
+    #    tbl, df.taxon, PGBP.UnivariateBrownianMotion)
+
+    #@test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
+    #@test llscore ≈  -6.851098376474686
+    #@test mod.μ ≈ 5.990291262135924
+    #@test PGBP.varianceparam(mod) ≈ 9.006526686186882
     
     #= ML solution the matrix-way, analytical for BM:
     # for y: univariate
@@ -88,8 +172,17 @@ end # of no-optimization
     i = ones(n) # intercept
     μhat = inv(transpose(i) * inv(Σ) * i) * (transpose(i) * inv(Σ) * tbl.y) # 0.4436893203883497
     r = tbl.y .- μhat
-    σ2hat_REML = (transpose(r) * inv(Σ) * r) / (n-1) # 0.4988220064724921
-    llscore = - n/2 - logdet(2π * σ2hat_ML .* Σ)/2 # -5.174720533524127
+    σ2hat_REML = (transpose(r) * inv(Σ) * r) / (n-1) # 0.6235275080906149
+    σ2hat_ML = (transpose(r) * inv(Σ) * r) / n # 0.49882200647249186
+    llscore = - (n-1)/2 - logdet(2π * σ2hat_REML .* Σ)/2 # -6.851098376474686
+    # for x: univariate
+    Σ = Matrix(vcv(net)[!,Symbol.(df.taxon)])
+    n=5 # number of data points
+    i = ones(n) # intercept
+    μhat = inv(transpose(i) * inv(Σ) * i) * (transpose(i) * inv(Σ) * tbl.x) # 5.990291262135924
+    r = tbl.y .- μhat
+    σ2hat_REML = (transpose(r) * inv(Σ) * r) / (n-1) # 9.006526686186882
+    llscore = - n/2 - logdet(2π * σ2hat_ML .* Σ)/2 # -6.793239498189161
     =#
 
     end

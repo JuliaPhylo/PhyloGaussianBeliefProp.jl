@@ -212,6 +212,39 @@ function init_beliefs_allocate(tbl::Tables.ColumnTable, taxa::AbstractVector,
 end
 
 """
+update_root_inscope!(beliefs, model)
+
+Check the status of the root, and change the scope of root clusters and sepsets
+accordingly.
+This function is needed to update beliefs when the root changes from fixed to non-fixed,
+or vice-versa.
+
+The function assumes that all traits at the root have at least one data below them.
+"""
+function update_root_inscope!(beliefs, model::EvolutionaryModel{T}) where T
+    ## TODO: is that the correct way to do it ?
+    ## TODO: Or should we assume that the root status will never change and make that clear ?
+    ## TODO: Should this be called at the begining of "init_beliefs_assignfactors", in case the root status of the model has changed ?
+    numtraits = dimension(model)
+    fixedroot = isrootfixed(model)
+    function update_inscope!(inscope, root_int)
+        if fixedroot 
+            inscope[:,root_int] .= falses(numtraits) # fixed root : 'false'
+        else
+            inscope[:,root_int] .= trues(numtraits) # root is assumed to have data below it
+        end
+    end
+    for (i_b, b) in enumerate(beliefs)
+        if 1 ∈ nodelabels(b) # root is in belief
+            root_int = findfirst(nl -> 1 == nl, nodelabels(b))
+            inscope = beliefs[i_b].inscope
+            update_inscope!(inscope, root_int)
+            beliefs[i_b] = ClusterBelief(beliefs[i_b].nodelabel, numtraits, inscope, beliefs[i_b].type, beliefs[i_b].metadata, T)
+        end
+    end
+end
+
+"""
     init_beliefs_reset!(beliefs)
 
 Reset cluster and sepset beliefs to h=0, J=0, g=0 (μ unchanged) so they can
