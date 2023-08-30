@@ -151,7 +151,7 @@ end
 (see [`minimalclusters!`](@ref)) of `net` is contained in ≥1 cluster in
 `clusters`.
 
-Returns a tuple: (isfamilypreserving::Bool, family2cluster::Dict{T, BitVector}),
+Returns a tuple: `(isfamilypreserving::Bool, family2cluster::Dict{T, BitVector})`,
 where `isfamilypreserving` indicates if `clusters` is family-preserving with
 respect to `net`, and `family2cluster` is a dictionary that maps each node
 family (represented by the preorder index for its child node) to a vector
@@ -176,6 +176,51 @@ function isfamilypreserving!(clusters::Vector{Vector{T}},
 end
 
 """
+    checkRI(clustergraph, net)
+
+`clustergraph` satisfies the *running-intersection* (RI) property if for each
+node in `net`, the subgraph of `clustergraph` induced by the clusters containing
+that node is a tree.
+
+Assumes that `net` has been preordered ([`preorder!`](@ref)).
+
+**Warning**: does *not* check that `clustergraph` has been correctly constructed.
+
+Returns a vector of tuples: `[(t1::Symbol, t2::Bool), ...]`, where `t1` is a node
+label and `t2` indicates if the sub(cluster)graph induced by the clusters
+containing that node is a tree. `clustergraph` satisfies the RI property if `t2`
+is `true` for all nodes.
+"""
+function checkRI(clustergraph::MetaGraph, net::HybridNetwork)
+    cluster_properties = clustergraph.vertex_properties
+    subgraphs = Tuple{Symbol, MetaGraph}[]
+    for n in net.nodes_changed
+        # clusters as vectors of node symbols
+        clusters_s = filter(cl -> Symbol(n.name) ∈ cluster_properties[cl][2][1],
+            keys(cluster_properties))
+        # clusters as vectors of preorder indices
+        clusters_i = [cluster_properties[cl][1] for cl in clusters_s]
+        sg_n, _ = induced_subgraph(clustergraph, clusters_i)
+        push!(subgraphs, (Symbol(n.name), sg_n))
+    end
+    res = Tuple{Symbol, Bool}[]
+    for (i, (nl, sg)) in enumerate(subgraphs)
+        # loop through edges of the induced subgraph `sg`, and delete any that
+        # do not contain the variable of interest `nl`
+        for e in collect(keys(sg.edge_data))
+            cl1, cl2 = e[1], e[2]
+            nodelabs1 = sg[cl1][1]
+            nodelabs2 = sg[cl2][1]
+            if (nl ∉ nodelabs1) & (nl ∉ nodelabs2)
+                delete!(sg, cl1, cl2)
+            end
+        end
+        push!(res, (nl, is_tree(sg))) # check if the subgraph remaining is a tree
+    end
+    return res
+end
+
+"""
     AbstractClusterGraphMethod
 
 Abstract type for method of cluster graph construction.
@@ -190,33 +235,71 @@ getmaxclustersize(obj::AbstractClusterGraphMethod) =
 """
     Bethe
 
-Bethe cluster graph (also known as factor graph).
+Subtype of [`AbstractClusterGraphMethod`](@ref).
+
+## Algorithm:
+A Bethe cluster graph (also known as factor graph) has:
+- a factor-cluster for each node-family (except for the singleton containing the
+root node) in the network, and
+- a variable-cluster for each node in the network
+
+Each variable-cluster is joined to the factor-clusters that contain it. The
+sepset for each edge is the variable-cluster that it is incident to.
+
+## References:
+D. Koller and N. Friedman. *Probabilistic graphical models: principles and
+techniques*. MIT Press, 2009. ISBN 9780262013192. doi:
+[10.5555/1795555](https://doi.org/10.5555/1795555).
 """
 struct Bethe <: AbstractClusterGraphMethod end
 
 """
-    LTRIP
+    LTRIP{T<:Integer}
 
-*Layered Trees Running Intersection Property* algorithm of Streicher & du Preez
-(2017).
+Subtype of [`AbstractClusterGraphMethod`](@ref).
+A HybridNetwork and a valid LTRIP are passed to [`clustergraph!`](@ref) to
+construct a cluster graph from the user-provided clusters based on the *Layered
+Trees Running Intersection Property* algorithm of Streicher & du Preez (2017).
+
+## Fieldnames:
+- clusters: a vector of user-specified clusters that has to be family-preserving
+([`isfamilypreserving!`](@ref)) with respect to some HybridNetwork
+
+## Constructors:
+- `LTRIP!(net)`: uses minimal clusters ([`minimalclusters!(net)`](@ref)), which
+are guaranteed to be family-preserving
+- `LTRIP!(clusters, net)`: checks if that clusters provided are family-preserving
+
+## Algorithm:
+1. For each node, LTRIP finds a spanning-tree for the clusters that contain that
+node. The edges of this spanning-tree are all labelled with the singleton
+containing that node.
+    1. For the clusters containing a particular node, the edge weight for any
+    pair of clusters is set to the size of their intersection.
+    2. The max-weight edges are identified, then the weight of each edge is
+    increased by the number of max-weight edges that either of its endpoints
+    adjacent to.
+    3. A maximum spanning-tree based on the set of augmented edge weights is
+    returned.
+2. The spanning-trees for each node are layered on one another so that the
+sepset for any edge is the union of its labels across the different
+spanning-trees.
 
 ## References:
-
 S. Streicher and J. du Preez. Graph Coloring: Comparing Cluster Graphs to Factor
 Graphs. In *Proceedings of the ACM Multimedia 2017 Workshop on South African
-Academic Participation, pages 35-42, 2017. doi: 10.1145/3132711.3132717.
+Academic Participation, pages 35-42, 2017. doi:
+[10.1145/3132711.3132717](https://doi.org/10.1145/3132711.3132717).
 """
-struct LTRIP <: AbstractClusterGraphMethod
-    clusters::Vector{Vector{T}} where T <: Integer
+struct LTRIP{T<:Integer} <: AbstractClusterGraphMethod
+    clusters::Vector{Vector{T}}
 end
-
-function LTRIP(net::HybridNetwork)
+function LTRIP!(net::HybridNetwork)
     node2family = minimalclusters!(net)
     clusters = collect(values(node2family))
     return LTRIP(clusters)
 end
-function LTRIP(clusters::Vector{Vector{T}}, net::HybridNetwork) where {T <: Integer}
-    # checks if `clusters` is valid wrt to `net`
+function LTRIP!(clusters::Vector{Vector{T}}, net::HybridNetwork) where {T <: Integer}
     isfamilypreserving!(clusters, net)[1] ||
     error("`clusters` is not family preserving with respect to `net`")
     return LTRIP(clusters)
@@ -225,22 +308,81 @@ end
 """
     JoinGraphStr
 
+Subtype of [`AbstractClusterGraphMethod`](@ref).
+
 *Join-graph structuring* algorithm of Mateescu et al. (2010).
 
-## References:
+## Fieldnames:
+- maxclustersize: upper limit for cluster size that must be ≥ size of the
+largest minimal cluster ([`minimalclusters!(net)`](@ref))
 
+## Constructors:
+- `JoinGraphStr(maxclustersize, net)`: checks that max cluster size provided is
+valid
+
+## Algorithm:
+Requires:
+- user-specified max cluster size
+- an elimination order for the nodes in the HybridNetwork that is expected to
+yield a small induced-width (e.g. from a heuristic such as greedy min-fill
+([`triangulate_minfill!(graph)`](@ref)))
+
+1. Each node in the HybridNetwork labels a "bucket", and these buckets are ordered
+according to the elimination order (e.g. the highest-priority bucket is labelled
+by the first node in the elimination order).
+2. Node families are assigned to buckets based on the highest-priority node they
+contain (e.g. if {1, 4, 9} forms a node family and node 4 is higher in the
+elimination order than nodes 1 or 9, then {1, 4, 9} gets assigned to bucket 4).
+3. Node families are clusters (of nodes), and we refer to the clusters within a
+bucket as "minibuckets". Minibuckets within a bucket can be merged as long as
+the size of their union does not exceed the max cluster size provided (there is
+some degree of freedom for how this can be done).
+4. Starting with the highest-priority bucket, we create new minibuckets by
+"marginalizing out" the bucket label from each existing minibucket (these are
+left unchanged in the process).
+5. Each new minibucket is joined to its "originator" minibucket by an edge that
+is labeled by their intersection (i.e. the variables in the new minibucket).
+Each new minibucket is then reassigned to a new (and necessarily lower-priority)
+bucket based on its highest priority node. Merging can take place during
+reassignment as long as the the max cluster size is respected. The union of 2
+minibuckets retains the edges of each of minibucket.
+6. Steps 4 & 5 are carried out for each bucket in order of priority.
+7. The resulting minibuckets in each bucket are then joined in a chain (there is
+some degree of freedom for how this can be done), where each edge is labelled by
+the bucket label.
+
+## References:
 R. Mateescu, K. Kask, V.Gogate, and R. Dechter. Join-graph propagation algorithms.
-*Journal of Artificial Intelligence Research*, 37:279-328,
-2010. doi: 10.1613/jair.2842.
+*Journal of Artificial Intelligence Research*, 37:279-328, 2010. doi:
+[10.1613/jair.2842](https://doi.org/10.1613/jair.2842).
 """
 struct JoinGraphStr <: AbstractClusterGraphMethod
     maxclustersize::Integer
+end
+function JoinGraphStr(maxclustersize::Integer, net::HybridNetwork)
+    maxindegree = maximum(n -> length(getparents(n)), net.node)
+    maxclustersize ≥ (maxindegree + 1) || error("`maxclustersize` is smaller
+    than size of largest minimal cluster")
+    return JoinGraphStr(maxclustersize)
 end
 
 """
     Cliquetree
 
+## Algorithm:
+
+1. Moralizes ([`moralize`](@ref)) the HybridNetwork.
+2. Triangulates the resulting undirected graph using greedy min-fill
+([`triangulate_minfill!(graph)`](@ref)).
+3. Extracts the maximal cliques of the resulting chordal graph.
+4. Defines the edge weight between each pair of maximal cliques as the size of
+their intersection, then finds a maximum spanning tree. Edges between cliques
+are labelled by their intersection.
+
 ## References:
+D. Koller and N. Friedman. *Probabilistic graphical models: principles and
+techniques*. MIT Press, 2009. ISBN 9780262013192. doi:
+[10.5555/1795555](https://doi.org/10.5555/1795555).
 """
 struct Cliquetree <: AbstractClusterGraphMethod end
 
@@ -255,48 +397,31 @@ The following methods for cluster graph construction are supported:
     - [`LTRIP`](@ref)
     - [`JoinGraphStr`](@ref)
     - [`Cliquetree`](@ref)
-
-Some methods (e.g. LTRIP) require user-supplied clusters, and have constructors
-that will check if the clusters provided are *family-preserving*
-(see [`isfamilypreserving!`](@ref)) with respect to a given network.
 """
 function clustergraph!(net::HybridNetwork, method::AbstractClusterGraphMethod)
-    # preprocessing common to all cluster graph methods
     preprocessnet!(net)
-    return clustergraph(method, net)
+    return clustergraph(net, method)
 end
 
-function clustergraph(method::Bethe, net::HybridNetwork)
-    return betheclustergraph(net, method)
+clustergraph(net::HybridNetwork, ::Bethe) = betheclustergraph(net)
+clustergraph(net::HybridNetwork, method::LTRIP) = ltripclustergraph(net, method)
+
+function clustergraph(net::HybridNetwork, method::JoinGraphStr)
+    joingraph(net, JoinGraphStr(getmaxclustersize(method), net))
 end
 
-function clustergraph(method::LTRIP, net::HybridNetwork)
-    return ltripclustergraph(net, method)
-end
-
-#= fixit: Discuss. For consistency, I would have to change `clustergraph` to
-`clustergraph!` for the 2 functions below. But then I can't dispatch nicely
-using the function at the very top: `clustergraph!(net, method)`
-=#
-function clustergraph(method::JoinGraphStr, net::HybridNetwork)
-    return joingraph!(net, method)
-end
-
-function clustergraph(method::Cliquetree, net::HybridNetwork)
-    return cliquetree!(net, method)
+function clustergraph(net::HybridNetwork, ::Cliquetree)
+    g = moralize(net)
+    triangulate_minfill!(g)
+    return cliquetree(g)
 end
 
 """
-    betheclustergraph(net, _)
-
-Constructs a Bethe cluster graph, which comprises of:
-    - a factor-cluster for each node-family (except for the singleton {root}) in
-    `net`
-    - a variable-cluster for each node in `net`
+    betheclustergraph(net)
 
 See [`Bethe`](@ref)
 """
-function betheclustergraph(net::HybridNetwork, _)
+function betheclustergraph(net::HybridNetwork)
     T = vgraph_eltype(net)
     clustergraph = init_clustergraph(T, :Bethe)
 
@@ -339,7 +464,7 @@ function betheclustergraph(net::HybridNetwork, _)
 end
 
 """
-    ltripclustergraph(net, method)
+    ltripclustergraph(net, method::LTRIP)
 
 See [`LTRIP`](@ref)
 """
@@ -427,7 +552,7 @@ end
 """
     joingraph(net, method)
 
-Requires an elimination order (e.g. from greedy min-fill)
+See [`JoinGraphStr`](@ref)
 
 1. Sort node families into buckets. These are the initial clusters for each
 bucket.
@@ -442,8 +567,8 @@ bucket.
     this connection is their full intersection (all nodes except for the bucket
     variable).
 """
-function joingraph!(net::HybridNetwork, method::JoinGraphStr)
-    g = moralize!(net)
+function joingraph(net::HybridNetwork, method::JoinGraphStr)
+    g = moralize(net)
     ordering = triangulate_minfill!(g) # node labels in elimination order
     T = vgraph_eltype(net)
     # preorder indices sorted in elimination order
@@ -561,8 +686,8 @@ function assign!(bucket::Dict{T, Vector{Vector{T}}},
     new::Vector{T}, maxsize::T) where {T <: Integer}
     if !isempty(bucket) # there exist potential minibuckets to merge into
         # loop through different size collections of minibuckets, in order of
-        # increasing size
-        for sz in sort(collect(keys(bucket)))
+        # decreasing size
+        for sz in sort(collect(keys(bucket)), rev=true)
             minibuckets = bucket[sz] # minibuckets with size `sz`
             for (i, mb) in enumerate(minibuckets)
                 merged = sort(union(new, mb))
@@ -592,17 +717,6 @@ function assign!(bucket::Dict{T, Vector{Vector{T}}},
         bucket[sz] = [new]
     end
     return (new, T[])
-end
-
-"""
-    cliquetree!(net, _)
-
-See [`Cliquetree`](@ref)
-"""
-function cliquetree!(net::HybridNetwork, _)
-    g = moralize!(net)
-    triangulate_minfill!(g)
-    return cliquetree(g)
 end
 
 """
