@@ -57,7 +57,7 @@ metaplot(ct)
     Check the Running Intersection property -- the subgraph induced by clusters
     containing a specific variable must be a tree
     =#
-    @test all(t[2] for t in PGBP.checkRI(cg, net))
+    @test all(t[2] for t in PGBP.check_runningintersection(cg, net))
 
     # Check that the set of clusters is family-preserving wrt the network
     cluster_properties = cg.vertex_properties
@@ -65,7 +65,7 @@ metaplot(ct)
     # variable clusters: [1], [3], [4], [6], [8], [9]
     # factor clusters: [2, 1], [3, 1], [4, 3], [5, 4], [6, 4], [7, 6], [8, 3],
     #   [9, 8, 6], [10, 9], [11, 8]
-    @test PGBP.isfamilypreserving!(clusters, net)[1]
+    @test PGBP.isfamilypreserving(clusters, net)[1]
 end
 
 @testset "LTRIP cluster graph" begin
@@ -93,12 +93,12 @@ end
     @test sort(clusters) == sort(output_clusters)
 
     @test length(connected_components(cg)) == 1
-    @test all(t[2] for t in PGBP.checkRI(cg, net))
+    @test all(t[2] for t in PGBP.check_runningintersection(cg, net))
 
     cg2 = PGBP.clustergraph!(net, PGBP.LTRIP!(net))
-    @test all(t[2] for t in PGBP.checkRI(cg2, net))
+    @test all(t[2] for t in PGBP.check_runningintersection(cg2, net))
     clusters2 = [v[2][2] for v in values(cg2.vertex_properties)]
-    @test PGBP.isfamilypreserving!(clusters2, net)[1]
+    @test PGBP.isfamilypreserving(clusters2, net)[1]
 
     clusters3 = Vector{T}[
         [11, 8], [10, 9], [7, 6], [5, 4], [2, 1],
@@ -112,9 +112,9 @@ end
     net = readTopology(netstr)
     cg = PGBP.clustergraph!(net, PGBP.JoinGraphStr(3))
 
-    @test all(t[2] for t in PGBP.checkRI(cg, net))
+    @test all(t[2] for t in PGBP.check_runningintersection(cg, net))
     clusters = [v[2][2] for v in values(cg.vertex_properties)]
-    @test PGBP.isfamilypreserving!(clusters, net)[1]
+    @test PGBP.isfamilypreserving(clusters, net)[1]
     @test maximum(cl -> length(cl), clusters) ≤ 3 # max cluster size is respected
     # catch invalid max cluster size
     @test_throws ErrorException PGBP.clustergraph!(net, PGBP.JoinGraphStr(2))
@@ -130,9 +130,9 @@ end
         [6,3],[8],[8,6],[9]]
     @test is_tree(ct)
 
-    @test all(t[2] for t in PGBP.checkRI(ct, net))
+    @test all(t[2] for t in PGBP.check_runningintersection(ct, net))
     cliques = [v[2][2] for v in values(ct.vertex_properties)]
-    @test PGBP.isfamilypreserving!(cliques, net)[1]
+    @test PGBP.isfamilypreserving(cliques, net)[1]
 end
 
 end

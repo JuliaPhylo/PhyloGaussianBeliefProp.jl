@@ -119,20 +119,18 @@ function filledges!(fe, vertex_code, graph::AbstractGraph)
 end
 
 """
-    minimalclusters!(net)
+    nodefamilies(net)
 
-The *minimal clusters* of a network is its collection of node families. Each
-cluster comprises a node and its parent(s). Thus, each cluster either corresponds
-to a tree edge (e.g. {child, parent}), or a set of hybrid edges into the same
-node (e.g. {child, parent-1, parent-2, ..., parent-k}).
+A dictionary of type `Dict{T, Vector{T}}` that maps each node's preorder index
+to a vector containing its preorder index and those of its parents (i.e. the
+preorder indices of the node family that it is the child in). Within each vector,
+the indices are sorted in decreasing order so that the parents' indices come
+after the child's.
 
-Returns a dictionary that maps each node's preorder index to a vector containing
-its preorder index and those of its parents. Within each vector, the preorder
-indices are sorted in decreasing order so that the parents' indices come after
-the child's.
+**Warning**: assumes that `net` is preordered ([`preorder!`](@ref)).
 """
-function minimalclusters!(net::HybridNetwork)
-    preprocessnet!(net)
+function nodefamilies(net::HybridNetwork)
+    # preprocessnet!(net)
     T = vgraph_eltype(net)
     node2family = Dict{T, Vector{T}}()
     preordernames = [n.name for n in net.nodes_changed]
@@ -145,60 +143,62 @@ function minimalclusters!(net::HybridNetwork)
 end
 
 """
-    isfamilypreserving!(clusters, net)
+    isfamilypreserving(clusters, net)
 
-`clusters` is *family-preserving* with respect to `net` if each minimal cluster
-(see [`minimalclusters!`](@ref)) of `net` is contained in ≥1 cluster in
-`clusters`.
+Tuple:
+1. A boolean: true (false) if `clusters` (each cluster is given as a vector of
+   preorder indices) is (is not) family-preserving with respect to `net`, that
+   is: if each node family (a node and all of its parents) in `net` is contained
+   in at least 1 cluster in `clusters`.
+2. A dictionary of type `Dict{T, BitVector}` that maps each family (represented
+   by the preorder index for its child node) to a vector of booleans, where each
+   boolean indicates if the family is included in the associated cluster or not.
 
-Returns a tuple: `(isfamilypreserving::Bool, family2cluster::Dict{T, BitVector})`,
-where `isfamilypreserving` indicates if `clusters` is family-preserving with
-respect to `net`, and `family2cluster` is a dictionary that maps each node
-family (represented by the preorder index for its child node) to a vector
-indicating which clusters in `clusters` contain that node family.
+**Warning**: assumes that `net` is preordered ([`preorder!`](@ref)).
+
+See also [`nodefamilies`](@ref) to get node families.
 """
-function isfamilypreserving!(clusters::Vector{Vector{T}},
+function isfamilypreserving(clusters::Vector{Vector{T}},
     net::HybridNetwork) where {T <: Integer}
     T1 = vgraph_eltype(net)
     isa(T, Type{T1}) || error("Supply `clusters` as Vector{Vector{$T1}} object")
-    node2family = minimalclusters!(net)
+    node2family = nodefamilies(net)
     family2cluster = Dict{T, BitVector}()
-    isfamilypreserving = true
+    ifp = true # is family-preserving
     for ni in keys(node2family)
         nf = node2family[ni]
         ch = nf[1] # index family by child node
         # mark which clusters (if any) each node family is contained in
         family2cluster[ch] = BitArray(nf ⊆ cl for cl in clusters)
         # check for potential violation only if family-preserving so far
-        isfamilypreserving && (isfamilypreserving = any(family2cluster[ch]))
+        ifp && (ifp = any(family2cluster[ch]))
     end
-    return (isfamilypreserving, family2cluster)
+    return (ifp, family2cluster)
 end
 
 """
-    checkRI(clustergraph, net)
+    check_runningintersection(clustergraph, net)
+
+Vector of tuples: `[(t1::Symbol, t2::Bool), ...]`, where `t1` is a node label
+and `t2` indicates if the subgraph of `clustergraph` induced by the clusters
+containing that node is a tree.
+
+**Warning**:
+- Assumes that `net` has been preordered ([`preorder!`](@ref)).
+- Does *not* check if `clustergraph` has been correctly constructed.
 
 `clustergraph` satisfies the *running-intersection* (RI) property if for each
-node in `net`, the subgraph of `clustergraph` induced by the clusters containing
-that node is a tree.
-
-Assumes that `net` has been preordered ([`preorder!`](@ref)).
-
-**Warning**: does *not* check that `clustergraph` has been correctly constructed.
-
-Returns a vector of tuples: `[(t1::Symbol, t2::Bool), ...]`, where `t1` is a node
-label and `t2` indicates if the sub(cluster)graph induced by the clusters
-containing that node is a tree. `clustergraph` satisfies the RI property if `t2`
-is `true` for all nodes.
+node in `net`, the subgraph induced by the clusters containing that node is a
+tree (i.e. if `t2` is `true` for all nodes).
 """
-function checkRI(clustergraph::MetaGraph, net::HybridNetwork)
+function check_runningintersection(clustergraph::MetaGraph, net::HybridNetwork)
     cluster_properties = clustergraph.vertex_properties
     subgraphs = Tuple{Symbol, MetaGraph}[]
     for n in net.nodes_changed
-        # clusters as vectors of node symbols
+        # vector of cluster symbols
         clusters_s = filter(cl -> Symbol(n.name) ∈ cluster_properties[cl][2][1],
             keys(cluster_properties))
-        # clusters as vectors of preorder indices
+        # vector of cluster indices
         clusters_i = [cluster_properties[cl][1] for cl in clusters_s]
         sg_n, _ = induced_subgraph(clustergraph, clusters_i)
         push!(subgraphs, (Symbol(n.name), sg_n))
@@ -263,10 +263,10 @@ Trees Running Intersection Property* algorithm of Streicher & du Preez (2017).
 
 ## Fieldnames:
 - clusters: a vector of user-specified clusters that has to be family-preserving
-([`isfamilypreserving!`](@ref)) with respect to some HybridNetwork
+([`isfamilypreserving`](@ref)) with respect to some HybridNetwork
 
 ## Constructors:
-- `LTRIP!(net)`: uses minimal clusters ([`minimalclusters!(net)`](@ref)), which
+- `LTRIP!(net)`: uses minimal clusters ([`nodefamilies(net)`](@ref)), which
 are guaranteed to be family-preserving
 - `LTRIP!(clusters, net)`: checks if that clusters provided are family-preserving
 
@@ -295,12 +295,12 @@ struct LTRIP{T<:Integer} <: AbstractClusterGraphMethod
     clusters::Vector{Vector{T}}
 end
 function LTRIP!(net::HybridNetwork)
-    node2family = minimalclusters!(net)
+    node2family = nodefamilies(net)
     clusters = collect(values(node2family))
     return LTRIP(clusters)
 end
 function LTRIP!(clusters::Vector{Vector{T}}, net::HybridNetwork) where {T <: Integer}
-    isfamilypreserving!(clusters, net)[1] ||
+    isfamilypreserving(clusters, net)[1] ||
     error("`clusters` is not family preserving with respect to `net`")
     return LTRIP(clusters)
 end
@@ -314,7 +314,7 @@ Subtype of [`AbstractClusterGraphMethod`](@ref).
 
 ## Fieldnames:
 - maxclustersize: upper limit for cluster size that must be ≥ size of the
-largest minimal cluster ([`minimalclusters!(net)`](@ref))
+largest minimal cluster ([`nodefamilies(net)`](@ref))
 
 ## Constructors:
 - `JoinGraphStr(maxclustersize, net)`: checks that max cluster size provided is
@@ -580,7 +580,7 @@ function joingraph(net::HybridNetwork, method::JoinGraphStr)
     )
     # node families (represented as vectors of preorder indices) correspond to
     # initial factors
-    node2family = minimalclusters!(net)
+    node2family = nodefamilies(net)
     maxclustersize = T(getmaxclustersize(method)) # size limit for minibuckets
     cg = init_clustergraph(T, :auxiliary)
     for ni in keys(node2family)
@@ -840,7 +840,7 @@ end
     spanningtree_clusterlist(clustergraph, nodevector_preordered)
 
 Build the depth-first search spanning tree of the cluster graph, starting from
-the node indexed `root_index` in the underlying simple graph;
+the cluster indexed `root_index` in the underlying simple graph;
 find the associated topological ordering of the clusters (preorder); then
 return a tuple of these four vectors:
 1. `parent_labels`: labels of the parents' child clusters. The first one is the root.
@@ -866,6 +866,83 @@ function spanningtree_clusterlist(cgraph::MetaGraph, rootj::Integer)
     parentclust_j = par[childclust_j] # parent of each cluster in spanning tree
     childclust_lab  = [cgraph.vertex_labels[j] for j in childclust_j]
     parentclust_lab = [cgraph.vertex_labels[j] for j in parentclust_j]
+    return parentclust_lab, childclust_lab, parentclust_j, childclust_j
+end
+
+"""
+    sub_spanningtree_clusterlist(clustergraph, nodesymbol)
+
+Extract the subgraph (of `clustergraph`) induced by the clusters that contain
+the node labelled `nodesymbol` and build a depth-first search spanning tree of
+this subgraph starting from an arbitrary cluster. Return the spanning tree as a
+schedule of edges expressed as a tuple of four vectors: (`parent_labels`,
+`child_labels`, `parent_indices`, `child_indices`), as in
+[`spanningtree_clusterlist`](@ref).
+
+Each edge of `clustergraph` is contained in ≥1 such (subgraph)spanning trees, so
+iterating over all nodes generates a sequence of schedules that collectively
+covers all edges of `clustergraph`.
+"""
+function sub_spanningtree_clusterlist(cgraph::MetaGraph, ns::Symbol)
+    cluster_properties = cgraph.vertex_properties
+    # labels for clusters that contain node `ns`
+    clusters_s = filter(cl -> ns ∈ cgraph[cl][1], collect(labels(cgraph)))
+    # indices for clusters that contain node `ns`
+    clusters_i = [code_for(cgraph, cl) for cl in clusters_s]
+    sg, vmap = induced_subgraph(cgraph, clusters_i)
+    # pick any node to be the root: rootj can be any value between 1 and
+    # length(cg.vertex_labels)
+    rootj = 1 # fixit: fix to 1 for now
+    spt = spanningtree_clusterlist(sg, rootj)
+    # map cluster indices back to those for `cgraph`
+    spt[3] .= vmap[spt[3]]
+    spt[4] .= vmap[spt[4]]
+    return spt
+end
+
+"""
+    minimal_valid_schedule(clustergraph, clusterswithevidence)
+
+Generate a minimal valid schedule of messages to be computed on a initialized
+Bethe cluster graph, so that any schedule of messages following is valid.
+Return the schedule as a tuple of four vectors: (`parent_labels`, `child_labels`,
+`parent_indices`, `child_indices`) as in [`spanningtree_clusterlist`](@ref).
+"""
+function minimal_valid_schedule(cgraph::MetaGraph, wevidence::Vector{Symbol})
+    !isempty(wevidence) || error("`wevidence` cannot be empty")
+    #= `received` tracks clusters that have received evidence (through messages
+    during initialization). Only clusters that have received evidence can
+    transmit this (such clusters get added to `cansend`) to neighbor clusters
+    through a message. =#
+    received = Set{Symbol}(wevidence)
+    cansend = copy(wevidence)
+    T = typeof(cgraph[cansend[1]][2][1])
+    childclust_j = T[] # child cluster indices
+    parentclust_j = T[] # parent cluster indices
+    childclust_lab = Symbol[] # child cluster labels
+    parentclust_lab = Symbol[] # parent cluster labels
+    while !isempty(cansend)
+        #= For each cluster in `cansend`, send a message to any neighbors that
+        have not received evidence (all such neighbors get added to `cansend`),
+        then remove it from `cansend`. Since the cluster graph represented by
+        `cgraph` is connected, all clusters will eventually be added to `cansend`
+        and processed in order. Hence, this generates a minimal sequence of
+        messages that can be computed, so that the updated cluster beliefs will
+        be non-degenerate wrt any messages they are allowed to compute (i.e.
+        any schedule of messages following is valid). =#
+        cl = popfirst!(cansend) # remove node to be processed
+        nb = neighbor_labels(cgraph, cl)
+        for cl2 in nb
+            if cl2 ∉ received
+                push!(childclust_j, code_for(cgraph, cl2))
+                push!(parentclust_j, code_for(cgraph, cl))
+                push!(childclust_lab, cl2)
+                push!(parentclust_lab, cl)
+                push!(received, cl2) # `cl2` can no longer receive messages
+                push!(cansend, cl2) # `cl2` can now send messages
+            end
+        end
+    end
     return parentclust_lab, childclust_lab, parentclust_j, childclust_j
 end
 

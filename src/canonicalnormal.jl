@@ -339,6 +339,8 @@ function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
         be.g[1] += g
         # @show be.h,be.J,be.g[1]
     end
+    #= removed because of too many cases when some clusters would be initialized to 0.
+    #  example: variable-clusters in Bethe cluster graph
     for be in beliefs # sanity check: each cluster belief should be non-zero
         # unless one variable was completely removed from the scope (e.g. leaf without any data)
         be.type == bclustertype || break # sepsets untouched and listed last
@@ -347,7 +349,7 @@ function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
             error("belief for nodes $(nodelabels(be)) was not assigned any non-zero factor")
         # do NOT update μ = J^{-1} h because J often singular before propagation
         # be.μ .= PDMat(LA.Symmetric(be.J)) \ be.h
-    end
+    end =#
     return beliefs
 end
 
