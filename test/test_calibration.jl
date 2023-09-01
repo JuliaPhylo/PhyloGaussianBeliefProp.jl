@@ -31,6 +31,58 @@ for i in eachindex(cgb.belief)
     @test tmp ≈ llscore
 end
 
+@testset "Bethe: no optimization" begin
+cg_bethe = PGBP.clustergraph!(net, PGBP.Bethe())
+b_bethe = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg_bethe, m);
+PGBP.init_beliefs_assignfactors!(b_bethe, m, tbl_y, df.taxon, net.nodes_changed);
+cgb_bethe = PGBP.ClusterGraphBelief(b_bethe)
+# schedule that updates beliefs of cluster graph, so that any schedule following
+# is valid (i.e. all marginalization operations in the schedule are well-defined)
+pa_lab, ch_lab, pa_j, ch_j =
+    PGBP.minimal_valid_schedule(cg_bethe, [:Ai4, :B2i6, :B1i6, :Ci2])
+for i in 1:length(pa_lab)
+    ss_j = PGBP.sepsetindex(pa_lab[i], ch_lab[i], cgb_bethe)
+    PGBP.propagate_belief!(b_bethe[ch_j[i]], b_bethe[ss_j], b_bethe[pa_j[i]])
+end
+# schedule that, though it may be inefficient for convergence, covers all edges
+# of cluster graph
+sch = [] # schedule that covers all edges of cluster graph
+for n in net.nodes_changed
+    ns = Symbol(n.name)
+    sspt = PGBP.sub_spanningtree_clusterlist(cg_bethe, ns)
+    isempty(spt[1]) && continue
+    push!(sch, sspt)
+end
+PGBP.calibrate!(cgb_bethe, sch, 2)
+
+# clique tree beliefs
+ct_H5i4i2_var = cgb.belief[cgb.cdict[:H5i4i2]].J \ I
+# 1.17972      0.371009     0.00843203
+# 0.371009     0.753976    -0.00306619
+# 0.00843203  -0.00306619   0.181748
+ct_H5i4i2_mean = PGBP.integratebelief!(cgb.belief[cgb.cdict[:H5i4i2]])[1]
+# 1.6393181556858691
+# 2.5271166302556445
+# -0.6420604806255028
+ct_i6H5_var = cgb.belief[cgb.cdict[:i6H5]].J \ I
+# 0.789199  0.536239
+# 0.536239  1.17972
+ct_i6H5_mean = PGBP.integratebelief!(cgb.belief[cgb.cdict[:i6H5]])[1]
+# 1.2633264344026673
+# 1.6393181556858687
+
+# cluster graph beliefs
+cg_bethe_H5i4i2_var = cgb_bethe.belief[cgb_bethe.cdict[:H5i4i2]].J \ I
+cg_bethe_H5i4i2_mean = PGBP.integratebelief!(cgb_bethe.belief[cgb_bethe.cdict[:H5i4i2]])[1]
+cg_bethe_i6H5_var = cgb_bethe.belief[cgb_bethe.cdict[:i6H5]].J \ I
+cg_bethe_i6H5_mean = PGBP.integratebelief!(cgb_bethe.belief[cgb_bethe.cdict[:i6H5]])[1]
+# Compare marginal estimates for i2, i4, H5, i6 with those from clique tree
+@test all(ct_H5i4i2_var .== cg_bethe_H5i4i2_var)
+@test all(ct_H5i4i2_mean .== cg_bethe_H5i4i2_mean)
+@test all(ct_i6H5_var .== cg_bethe_i6H5_var)
+@test all(ct_i6H5_mean .== cg_bethe_i6H5_mean)
+end
+
 #= likelihood using PN.vcv and matrix inversion, different params
 σ2tmp = 1; μtmp = -2
 Σnet = σ2tmp .* Matrix(vcv(net)[!,Symbol.(df.taxon)])
