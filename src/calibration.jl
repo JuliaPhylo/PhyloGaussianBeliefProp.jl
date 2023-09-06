@@ -225,10 +225,13 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
         evomodelfun, # constructor function
         evomodelparams
         )
-    evomodelfun == UnivariateBrownianMotion || error("Exact optimization is only implemented for the univariate BM.")
+    evomodelfun == UnivariateBrownianMotion || evomodelfun == MvFullBrownianMotion || error("Exact optimization is only implemented for the univariate or full Brownian Motion.")
     model = evomodelfun(evomodelparams...)
     isrootfixed(model) || error("Exact optimization is only implemented for the BM with fixed root.")
     ## TODO: test that the underlying net is a tree ?
+    ## TODO: check that the tree was calibrated with the right model MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf)) ?
+    ## TODO: or do this first calibration directly in the function ? (API change)
+    p = dimension(model)
 
     ## Compute mu_hat from root belief
     ## Root is in the sepset between root factor nodes
@@ -238,7 +241,7 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
     mu_hat, _ = integratebelief!(beliefs, ss_root)
 
     ## Compute sigma2_hat from conditional moments
-    tmp_num = 0
+    tmp_num = zeros(p,p)
     tmp_den = 0
     for i in eachindex(beliefs.belief)
         if beliefs.belief[i].type == bclustertype 
@@ -247,12 +250,15 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
             edge = PN.getparentedge(prenodes[b.nodelabel[1]])
             exp_be, _ = integratebelief!(b)
             vv =  inv(b.J)
-            if size(vv, 1) == 2
+            if size(vv, 1) == 2 * p
                 # belief is two dimensional: not a tip cluster
                 # TODO: deal with missing data
-                tmp_num += (exp_be[2] - exp_be[1])^2 / edge.length
-                tmp_den += 1 - (vv[2,2] + vv[1,1] - 2 * vv[1,2]) / edge.length
-            elseif size(vv, 1) == 1 
+                indchild = 1:p
+                indpar = (p+1):(2*p)
+                diffExp = view(exp_be, indpar) - view(exp_be, indchild)
+                tmp_num += diffExp * transpose(diffExp) ./ edge.length
+                tmp_den += 1 - (vv[1,1] + vv[p+1,p+1] - 2 * vv[1,p+1]) / edge.length
+            elseif size(vv, 1) == p
                 # belief is one dimensional: tip cluster
                 # find data associated to the tip
                 # TODO: is there a more simple way to do that ? Record of data in belief object ?
@@ -261,26 +267,32 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
                 nodelab = node.name
                 i_row = findfirst(isequal(nodelab), taxa)
                 !isnothing(i_row) || error("A node with data does not match any taxon")
-                tipvalue = [tbl[v][i_row] for v in 1:length(tbl)]
-                tmp_num += (exp_be[1] - tipvalue[1])^2 / edge.length
-                tmp_den += 1 - (vv[1,1]) / edge.length / evomodelparams[1]
+                tipvalue = [tbl[v][i_row] for v in eachindex(tbl)]
+                indpar = 1:p
+                diffExp = view(exp_be, indpar) - tipvalue
+                tmp_num += diffExp * transpose(diffExp) ./ edge.length
+                tmp_den += 1 - vv[1,1] / edge.length
             else
                 error("A tree cluster graph should only have clusters of size at most 2.")
             end
         end
     end
-    sigma2_hat = tmp_num / tmp_den
+    sigma2_hat = tmp_num ./ tmp_den
     ## TODO: This is the REML estimate. Should we get ML instead ?
 
-    ## Get optimal paramters and associated likelihood
-    bestθ = (sigma2_hat,mu_hat, 0)
-    print(bestθ)
+    ## Get optimal paramters
+    bestθ = (sigma2_hat,mu_hat, zeros(p,p))
     bestmodel = evomodelfun(bestθ...)
-    init_beliefs_reset!(beliefs.belief)
-    update_root_inscope!(beliefs.belief, model)
-    init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
-    propagate_1traversal_postorder!(beliefs, spt...)
-    _, loglikscore = integratebelief!(beliefs, rootj)
+    ## Get associated likelihood
+    ## TODO: likelihood for the full BM (not implemented)
+    loglikscore = NaN
+    if (evomodelfun == UnivariateBrownianMotion)
+        init_beliefs_reset!(beliefs.belief)
+        update_root_inscope!(beliefs.belief, model)
+        init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
+        propagate_1traversal_postorder!(beliefs, spt...)
+        _, loglikscore = integratebelief!(beliefs, rootj)
+    end
 
     return bestmodel, loglikscore
 end
