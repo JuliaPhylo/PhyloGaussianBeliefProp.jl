@@ -218,6 +218,7 @@ an extra preorder calibration would be required.
 Warning: there is *no* check that the cluster graph is in fact a clique tree.
 """
 # TODO multivariate version
+# TODO deal with missing values
 function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
         cgraph, prenodes::Vector{PN.Node},
         tbl::Tables.ColumnTable, taxa::AbstractVector,
@@ -275,8 +276,8 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
     bestθ = (sigma2_hat,mu_hat, 0)
     print(bestθ)
     bestmodel = evomodelfun(bestθ...)
-    init_beliefs_reset!(beliefs)
-    update_root_inscope!(beliefs, model)
+    init_beliefs_reset!(beliefs.belief)
+    update_root_inscope!(beliefs.belief, model)
     init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
     propagate_1traversal_postorder!(beliefs, spt...)
     _, loglikscore = integratebelief!(beliefs, rootj)

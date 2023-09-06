@@ -57,6 +57,7 @@ end
 end # of no-optimization
 
 @testset "update root status" begin
+    # Check that an update from a fixed root to a random root is possible
 
     # y: 1 trait, no missing values
     m1 = PGBP.UnivariateBrownianMotion(1, 0, 0.9)
@@ -137,19 +138,25 @@ end
     PGBP.calibrate!(cgb, [spt])
     mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct, net.nodes_changed,
         tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (1,0,0))
-    # numerical optim
-    #m = PGBP.UnivariateBrownianMotion(1.8,0.4,0) # infinite root variance
-    #b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-    #PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-    #cgb = PGBP.ClusterGraphBelief(b)
-    #PGBP.calibrate!(cgb, [spt])
-    #modopt, llscoreopt, opt = PGBP.calibrate_optimize_cliquetree!(cgb, ct, net.nodes_changed,
-    #    tbl_x, df.taxon, PGBP.UnivariateBrownianMotion, (1.8,0.4))
 
     @test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
     @test llscore ≈ -6.851098376474686
     @test mod.μ ≈ 0.4436893203883497
     @test PGBP.varianceparam(mod) ≈ 0.6235275080906149
+
+    # numerical optim
+    m = PGBP.UnivariateBrownianMotion(0.5,0.5,0) 
+    b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
+    PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+    cgb = PGBP.ClusterGraphBelief(b)
+    PGBP.calibrate!(cgb, [spt])
+    modopt, llscoreopt, opt = PGBP.calibrate_optimize_cliquetree!(cgb, ct, net.nodes_changed,
+        tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (0.5,-3))
+
+    @test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscoreopt
+    @test llscoreopt ≈ -6.793239498189161
+    @test modopt.μ ≈ mod.μ
+    @test PGBP.varianceparam(modopt) ≈ PGBP.varianceparam(mod) * (n-1) / n
 
     # x,y: 2 traits, no missing values
     #m = PGBP.MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf))
@@ -174,7 +181,8 @@ end
     r = tbl.y .- μhat
     σ2hat_REML = (transpose(r) * inv(Σ) * r) / (n-1) # 0.6235275080906149
     σ2hat_ML = (transpose(r) * inv(Σ) * r) / n # 0.49882200647249186
-    llscore = - (n-1)/2 - logdet(2π * σ2hat_REML .* Σ)/2 # -6.851098376474686
+    llscorereml = - (n-1)/2 - logdet(2π * σ2hat_REML .* Σ)/2 # -6.851098376474686
+    llscore = - n/2 - logdet(2π * σ2hat_ML .* Σ)/2 # -6.79323949818916
     # for x: univariate
     Σ = Matrix(vcv(net)[!,Symbol.(df.taxon)])
     n=5 # number of data points

@@ -42,14 +42,14 @@ variancename(m::UnivariateBrownianMotion) = "evolutionary variance rate σ2"
 varianceparam(m::UnivariateBrownianMotion) = m.σ2
 rootpriormeanvector(m::UnivariateBrownianMotion) = [m.μ]
 isrootfixed(m::UnivariateBrownianMotion) = m.v == 0
-function UnivariateBrownianMotion(σ2::U, μ::U, v=nothing) where {U<:Number}
+function UnivariateBrownianMotion(σ2::U1, μ::U2, v=nothing) where {U1<:Number, U2<:Number}
     T = promote_type(Float64, typeof(σ2), typeof(μ))
     if isnothing(v) v = zero(T); end
     σ2 > 0 || error("evolutionary variance rate σ2 = $(σ2) must be positive")
     v >= 0 || error("root variance v=$v must be non-negative")
     UnivariateBrownianMotion{T}(σ2, 1/σ2, μ, v, -(log2π + log(σ2))/2)
 end
-function UnivariateBrownianMotion(σ2::Union{U,V}, μ::Union{U,V}, v=nothing) where {U<:Number, V<:AbstractArray{U}}
+function UnivariateBrownianMotion(σ2::Union{U1,V1}, μ::Union{U2,V2}, v=nothing) where {U1<:Number, U2<:Number, V1<:AbstractArray{U1}, V2<:AbstractArray{U2}}
     if (isnothing(v))
         (length(σ2) == 1 && length(μ) == 1) || error("UnivariateBrownianMotion can only take scalars as entries.")
         UnivariateBrownianMotion(σ2[1], μ[1])

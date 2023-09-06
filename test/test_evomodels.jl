@@ -12,13 +12,23 @@ h,J,g = PGBP.factor_treeedge(m, 1)
 @test g ≈ -1.2655121234846454
 m2 = PGBP.UnivariateBrownianMotion(2, 3, 0)
 @test m == m2
+m2 = PGBP.UnivariateBrownianMotion(2.0, 3, 0)
+@test m == m2
 m2 = PGBP.UnivariateBrownianMotion([2], [3])
+@test m == m2
+m2 = PGBP.UnivariateBrownianMotion([2], [3.0])
 @test m == m2
 m2 = PGBP.UnivariateBrownianMotion([2], 3)
 @test m == m2
+m2 = PGBP.UnivariateBrownianMotion([2], 3.0)
+@test m == m2
 m2 = PGBP.UnivariateBrownianMotion([2], 3, 0)
 @test m == m2
+m2 = PGBP.UnivariateBrownianMotion([2.0], 3, 0)
+@test m == m2
 m2 = PGBP.UnivariateBrownianMotion([2], 3, [0])
+@test m == m2
+m2 = PGBP.UnivariateBrownianMotion([2], 3.0, [0])
 @test m == m2
 @test_throws "scalars" PGBP.UnivariateBrownianMotion([2,2], [3], [0])
 @test_throws "scalars" PGBP.UnivariateBrownianMotion([2,2], 3, 0)
