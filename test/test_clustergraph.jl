@@ -23,40 +23,24 @@ metaplot(ct)
     netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
     net = readTopology(netstr)
     cg = PGBP.clustergraph!(net, PGBP.Bethe())
-
-    #=
-    Count the no. of clusters:
-    1. no. of factor clusters == no. of node families (== no. of nodes) except
-    for the singleton {root}, which is counted as a variable cluster
-    2. no. of variable clusters == no. of internal nodes
+    #= number of clusters:
+    1. factor clusters:   1 per node families = 1 per non-root node
+    2. variable clusters: 1 per internal node (including the root, excluding leaves)
     =#
     numfactorclusters = net.numNodes-1
     numvarclusters = net.numNodes-net.numTaxa
     @test nv(cg) == numfactorclusters + numvarclusters
-    
-    #=
-    Count the no. of cluster graph edges:
-        * Assume no leaf node is a hybrid
-        * Assume hybrid nodes have indegree 2
-    1. network terminal edges correspond to clusters with 1 incident edge
-    2. network non-terminal non-hybrid internal edges correspond to clusters
-    with 2 incident edges
-    3. hybrid node families correspond to clusters with 3 incident edges
+    #= number of edges in the cluster graph, assuming
+        * leaves are not hybrids
+        * bicombining: hybrid nodes have 2 parents
+    1. external edge in net: 1 per leaf → 1 edge in cluster graph
+    2. internal tree edge in net, e.g. internal tree node → 2 edges in graph
+    3. hybrid node family, 1 per hybrid node in net → 3 edges in graph
     =#
-    numterminaledges = net.numTaxa
-    num_nonhybrid_internaledges =
-        length(findall(!e.hybrid for e in net.edge)) - numterminaledges
-    numhybridnodes = net.numHybrids
-    @test ne(cg) == (numterminaledges + 2*num_nonhybrid_internaledges +
-        3*numhybridnodes)
-    
-    # Check if connected
-    @test length(connected_components(cg)) == 1
+    ninternal_tree = sum(!e.hybrid for e in net.edge) - net.numTaxa
+    @test ne(cg) == (net.numTaxa + 2*ninternal_tree + 3*net.numHybrids)
 
-    #=
-    Check the Running Intersection property -- the subgraph induced by clusters
-    containing a specific variable must be a tree
-    =#
+    @test length(connected_components(cg)) == 1 # check for 1 connected component
     @test all(t[2] for t in PGBP.check_runningintersection(cg, net))
 
     # Check that the set of clusters is family-preserving wrt the network
@@ -80,12 +64,12 @@ end
 
     # Check if input clusters are valid
     @test(try
-        PGBP.LTRIP!(clusters, net); true
+        PGBP.LTRIP(clusters, net); true
     catch
         false
     end)
     
-    cg = PGBP.clustergraph!(net, PGBP.LTRIP!(clusters, net))
+    cg = PGBP.clustergraph!(net, PGBP.LTRIP(clusters, net))
 
     # Compare input and output clusters (and hence check if family-preserving)
     cluster_properties = cg.vertex_properties
@@ -95,7 +79,7 @@ end
     @test length(connected_components(cg)) == 1
     @test all(t[2] for t in PGBP.check_runningintersection(cg, net))
 
-    cg2 = PGBP.clustergraph!(net, PGBP.LTRIP!(net))
+    cg2 = PGBP.clustergraph!(net, PGBP.LTRIP(net))
     @test all(t[2] for t in PGBP.check_runningintersection(cg2, net))
     clusters2 = [v[2][2] for v in values(cg2.vertex_properties)]
     @test PGBP.isfamilypreserving(clusters2, net)[1]
@@ -104,20 +88,20 @@ end
         [11, 8], [10, 9], [7, 6], [5, 4], [2, 1],
         [9, 8], [8, 3], [6, 4], [4, 3], [3, 1]] # not family-preserving
     @test_throws ErrorException PGBP.clustergraph!(net,
-        PGBP.LTRIP!(clusters3, net))
+        PGBP.LTRIP(clusters3, net))
 end
 
 @testset "Join-graph struturing" begin
     netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
     net = readTopology(netstr)
-    cg = PGBP.clustergraph!(net, PGBP.JoinGraphStr(3))
+    cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3))
 
     @test all(t[2] for t in PGBP.check_runningintersection(cg, net))
     clusters = [v[2][2] for v in values(cg.vertex_properties)]
     @test PGBP.isfamilypreserving(clusters, net)[1]
     @test maximum(cl -> length(cl), clusters) ≤ 3 # max cluster size is respected
     # catch invalid max cluster size
-    @test_throws ErrorException PGBP.clustergraph!(net, PGBP.JoinGraphStr(2))
+    @test_throws ErrorException PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(2))
 end
 
 @testset "Clique tree" begin

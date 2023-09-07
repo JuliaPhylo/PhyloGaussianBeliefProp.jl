@@ -80,7 +80,7 @@ ct_i6H5_mean = PGBP.integratebelief!(ctb.belief[ctb.cdict[:i6H5]])[1]
     @test ct_i6H5_mean == cg_i6H5_mean
 end
 @testset "Join-graph: no optimization" begin
-    cg = PGBP.clustergraph!(net, PGBP.JoinGraphStr(3))
+    cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3))
     b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
     PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
     cgb = PGBP.ClusterGraphBelief(b)
