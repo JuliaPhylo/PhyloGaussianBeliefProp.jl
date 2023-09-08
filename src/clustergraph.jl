@@ -8,7 +8,7 @@ end
     preprocessnet!(net::HybridNetwork, prefix="I")
 
 Create or update the pre-ordering of nodes in `net` using `PhyloNetworks.preorder!`,
-then names unnamed internal nodes, with names starting with `prefix`.
+then name unnamed internal nodes, with names starting with `prefix`.
 Nodes in phylogenetic networks need to have names to build cluster graphs,
 in which a cluster contains network nodes. Pre-ordering is also used to traverse
 the network for building cluster graphs.
@@ -129,9 +129,10 @@ end
 """
     nodefamilies(net)
 
-Vector with elements of type `Vector{T}`. Element `i` lists the preorder index
-of node `i` (that is, `net.nodes_changed[i]`) and the preorder index of all
-of its parents in `net`, sorted in decreasing order. Due to pre-ordering,
+Vector `v` with elements of type `Vector{T}`.
+`v[i]` first lists `i`, the preorder index of node `net.nodes_changed[i]`,
+followed by the preorder index of all of this node's parents in `net`,
+sorted in decreasing order. Due to pre-ordering,
 all of the parents' indices are listed after the node (their child) index.
 A given node and its parents is called a "node family".
 
@@ -264,13 +265,16 @@ Trees Running Intersection Property* algorithm of Streicher & du Preez (2017).
 ## Fieldnames
 
 - clusters: vector of clusters, required to be family-preserving
-  with respect to some HybridNetwork; see [`isfamilypreserving`](@ref)
+  with respect to some HybridNetwork -- see [`isfamilypreserving`](@ref).
+  each cluster is required to be sorted in decreasing order (for postorder)
 
 ## Constructors
 
 - `LTRIP(net)`: uses [`nodefamilies(net)`](@ref) as input clusters,
   which are guaranteed to be family-preserving
-- `LTRIP(clusters, net)`: checks if that clusters provided are family-preserving
+- `LTRIP(clusters, net)`: checks if that clusters provided are family-preserving,
+   then sorts each cluster in decreasing order (modifying them in place!)
+   before creating the LTRIP object.
 
 They assume, *with no check*, that `net` already has a preordering.
 
@@ -308,6 +312,9 @@ end
 function LTRIP(clusters::Vector{Vector{T}}, net::HybridNetwork) where {T <: Integer}
     isfamilypreserving(clusters, net)[1] ||
     error("`clusters` is not family preserving with respect to `net`")
+    for cl in clusters
+        issorted(cl, rev=true) || sort!(cl, rev=true)
+    end
     return LTRIP(clusters)
 end
 
@@ -371,29 +378,34 @@ struct JoinGraphStructuring <: AbstractClusterGraphMethod
     maxclustersize::Integer
 end
 function JoinGraphStructuring(maxclustersize::Integer, net::HybridNetwork)
-    maxindegree = maximum(n -> length(getparents(n)), net.node)
+    maxindegree = maximum(n -> length(getparents(n)), net.hybrid)
     maxclustersize ≥ (maxindegree + 1) || error("`maxclustersize` is smaller
-    than size of largest minimal cluster")
+    than the size of largest node family, $maxindegree +1.")
     return JoinGraphStructuring(maxclustersize)
 end
 
 """
     Cliquetree
 
-## Algorithm:
+Subtype of [`AbstractClusterGraphMethod`](@ref).
 
-1. Moralizes ([`moralize`](@ref)) the HybridNetwork.
-2. Triangulates the resulting undirected graph using greedy min-fill
-([`triangulate_minfill!(graph)`](@ref)).
-3. Extracts the maximal cliques of the resulting chordal graph.
-4. Defines the edge weight between each pair of maximal cliques as the size of
-their intersection, then finds a maximum spanning tree. Edges between cliques
-are labelled by their intersection.
+## Algorithm
 
-## References:
+1. [`moralize`](@ref) the network (connect partners that share a child).
+2. triangulate the resulting undirected graph using greedy min-fill,
+   see [`triangulate_minfill!(graph)`](@ref).
+3. extract the maximal cliques of the resulting chordal graph.
+4. calculate the edge weight between each pair of maximal cliques as the size of
+   their intersection
+5. find a maximum-weight spanning tree
+6. labeled the retained edges (in the spanning tree) by their intersection of
+   the two cliques they connect.
+
+## References
+
 D. Koller and N. Friedman. *Probabilistic graphical models: principles and
-techniques*. MIT Press, 2009. ISBN 9780262013192. doi:
-[10.5555/1795555](https://doi.org/10.5555/1795555).
+techniques*. MIT Press, 2009. ISBN 9780262013192.
+doi: [10.5555/1795555](https://doi.org/10.5555/1795555).
 """
 struct Cliquetree <: AbstractClusterGraphMethod end
 
@@ -438,38 +450,32 @@ function betheclustergraph(net::HybridNetwork)
     clustergraph = init_clustergraph(T, :Bethe)
 
     node2cluster = Dict{T, Tuple{Symbol, Vector{Symbol}}}() # for joining clusters later
-    preordernames = [n.name for n in net.nodes_changed]
-    # iterate through network nodes in preorder
-    for (code, n) in enumerate(net.nodes_changed)
-        ns = Symbol(n.name)
+    prenodes = net.nodes_changed
+    prenodes_names = [Symbol(n.name) for n in prenodes]
+    # add a factor-cluster for each non-root node
+    for (code, n) in enumerate(prenodes)
         vt = T(code)
-        o = sort!(indexin([p.name for p in getparents(n)], preordernames), rev=true)
-        # vdat and nodeindlist are sorted in postorder
-        vdat = [ns; [Symbol(n.name) for n in net.nodes_changed[o]]] # node symbols
-        nodeindlist = [vt; Vector{T}(o)] # preorder indices
-        if length(nodeindlist) > 1 # non-root node of graph
-            # cluster data: (node labels, node preorder index), sorted in postorder
-            # add factor clusters
-            add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
-            for ni in nodeindlist
-                if haskey(node2cluster, ni)
-                    push!(node2cluster[ni][2], Symbol(vdat...))
-                else node2cluster[ni] = (Symbol(preordernames[ni]), [Symbol(vdat...)])
-                end
+        o = sort!(indexin(getparents(n), prenodes), rev=true) # for postorder
+        nodeind = pushfirst!(T.(o), vt)   # preorder indices of nodes in factor
+        nodesym = prenodes_names[nodeind] # node symbol      of nodes in factor
+        # (nodesym, nodeind) = factor-cluster data, its nodes listed in postorder
+        length(nodeind) > 1 || continue # skip the root
+        factorCname = Symbol(nodesym...) # factor-cluster name: label in metagraph
+        add_vertex!(clustergraph, factorCname, (nodesym, nodeind))
+        for (nns, nni) in zip(nodesym, nodeind)
+            if haskey(node2cluster, nni)
+                push!(node2cluster[nni][2], factorCname)
+            else node2cluster[nni] = (nns, [factorCname])
             end
         end
     end
-
-    for ni in sort!(collect(keys(node2cluster)), rev=true)
-        # sepsets will be sorted by nodes' postorder
+    # add a variable-cluster for each non-leaf node, and its adjacent edges (sepsets)
+    for ni in sort!(collect(keys(node2cluster)), rev=true) # add nodes in postorder
         ns, clusterlist = node2cluster[ni]
-        if length(clusterlist) > 1
-            # add variable cluster only if there are > 1 clusters with this node
-            add_vertex!(clustergraph, ns, ([ns], [ni]))
-            # connect variable cluster to factor clusters that contain this node
-            for lab in clusterlist
-                add_edge!(clustergraph, ns, lab, [ni])
-            end
+        length(clusterlist) > 1 || continue # skip leaves: in only 1 factor-cluster
+        add_vertex!(clustergraph, ns, ([ns], [ni]))
+        for lab in clusterlist # lab: factor-cluster name, for each factor that contains the node
+            add_edge!(clustergraph, ns, lab, [ni]) # sepset: singleton {ni}
         end
     end
     return clustergraph
@@ -483,26 +489,23 @@ See [`LTRIP`](@ref)
 function ltripclustergraph(net::HybridNetwork, method::LTRIP)
     T = vgraph_eltype(net)
     clustergraph = init_clustergraph(T, :ltrip)
-    
-    # only used for ltrip, so doesn't count as code duplication
-    # auxiliary metagraph 
-    cg = MetaGraph(Graph{T}(0),
+    cg = MetaGraph(Graph{T}(0), # auxiliary graph to hold connection weights
         Symbol, # vertex label
         Tuple{Vector{Symbol}, Vector{T}}, # vertex data: nodes in cluster
         T, # edge data holds edge weight
-        :auxiliary, # tag for the whole graph
+        :connectionweights, # tag for the whole graph
         edge_data -> edge_data,
         zero(T)) # default weight
 
     node2cluster = Dict{T, Vector{T}}() # for joining clusters later
     clusters = getclusters(method)
-    for (code, nodeindlist) in enumerate(clusters)
-        o = sortperm(nodeindlist, rev=true) # order to list nodes in postorder
-        nodeindlist .= nodeindlist[o] # preorder indices
-        vdat = [Symbol(n.name) for n in net.nodes_changed[nodeindlist]]
+    prenodes_names = [Symbol(n.name) for n in net.nodes_changed]
+    for (code, nodeindlist) in enumerate(clusters) # nodeindlist assumed sorted, decreasing
+        cdat = prenodes_names[nodeindlist]
+        cname = Symbol(cdat...)
         # cluster data: (node labels, node preorder index), sorted in postorder
-        add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
-        add_vertex!(cg, Symbol(vdat...), (vdat, nodeindlist))
+        add_vertex!(clustergraph, cname, (cdat, nodeindlist))
+        add_vertex!(cg,           cname, (cdat, nodeindlist))
         for ni in nodeindlist
             if haskey(node2cluster, ni)
                 push!(node2cluster[ni], T(code))
@@ -510,9 +513,9 @@ function ltripclustergraph(net::HybridNetwork, method::LTRIP)
             end
         end
     end
-
-     # compute edge weights using auxiliary metagraph
-     for ni in sort!(collect(keys(node2cluster)), rev=true)
+    # compute edge weights using auxiliary graph
+    # fixit: calculate connection weights in loop outside of loop to build node-specific spanning trees???
+    for ni in sort!(collect(keys(node2cluster)), rev=true)
         # sepsets will be sorted by nodes' postorder
         clusterindlist = node2cluster[ni]
         sg, _ = induced_subgraph(cg, clusterindlist)
@@ -754,13 +757,7 @@ Uses `maximal_cliques` and `kruskal_mst` (for min/maximum spanning trees) from
 """
 function cliquetree(graph::AbstractGraph{T}) where T
     mc = maximal_cliques(graph)
-    mg = MetaGraph(Graph{T}(0),
-        Symbol, # vertex label
-        Tuple{Vector{Symbol},Vector{T}}, # vertex data: nodes in clique
-        Vector{T}, # edge data: nodes in sepset
-        :cliquetree,
-        edge_data -> T(length(edge_data)),
-        zero(T))
+    mg = init_clustergraph(T, :cliquetree)
     node2clique = Dict{T,Vector{T}}() # to connect cliques faster later
     for (code, cl) in enumerate(mc)
         nodeindlist = [graph[label_for(graph,u)] for u in cl] # preorder index
@@ -822,18 +819,27 @@ function cliquetree(graph::AbstractGraph{T}) where T
 end
 
 """
-    init_clustergraph(vertex_type, clustergraph_method)
+    init_clustergraph(T::Type{<:Integer}, clustergraph_method::Symbol)
 
-Construct empty `MetaGraph` based on an empty `Graph`. Metadata types are
-initialized as follows:
-    - `label_type::Symbol`
-    - `vertex_data_type::Tuple{Vector{Symbol}, Vector{T}}`
-    - `edge_data_type::Vector{T}`
-Metadata for `Graph` as a whole is `method::Symbol`.
+`MetaGraph` with an empty base graph (0 vertices, 0 edges),
+meta-graph data `clustergraph_method`,
+edge-weight function counting the length of the edge-data vector,
+and the following types:
+- vertex indices in the base graph: `T`
+- vertex labels: `Symbol`
+- vertex data: `Tuple{Vector{Symbol}, Vector{T}}`
+  to hold information about the variables (nodes in phylogenetic network)
+  in the cluster (vertex in cluster graph):
+  node names as symbols, and node preorder index
+- edge data: `Vector{T}` to hold information about the sepset:
+  preorder index of nodes in the sepset.
 
-Note: const Graph = Graphs.SimpleGraphs.SimpleGraph
-Note: SimpleGraph{T}(n=0) constructs an empty SimpleGraph{T} with n vertices and
-0 edges. If not specified, the element type `T` is the type of `n`.
+See packages [MetaGraphsNext](https://juliagraphs.org/MetaGraphsNext.jl/dev/)
+and [Graphs](https://juliagraphs.org/Graphs.jl/dev/).
+
+The empty graph above is of type `Graphs.SimpleGraphs.SimpleGraph{T}`:
+undirected, with vertex indices of type `T`. After addition of `n` vertices,
+the vertex indices range from 1 to `n`, technically in `Base.OneTo{T}(n)`.
 """
 function init_clustergraph(T::Type{<:Integer}, method::Symbol)
     clustergraph = MetaGraph(

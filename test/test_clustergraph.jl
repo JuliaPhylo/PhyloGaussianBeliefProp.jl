@@ -1,7 +1,7 @@
 @testset "cluster graphs" begin
+netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
 
 @testset "Utilities" begin
-    netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
     net = readTopology(netstr)
     g = PhyloGaussianBeliefProp.moralize!(net)
     @test nv(g) == net.numNodes
@@ -20,7 +20,6 @@ metaplot(ct)
 =#
 
 @testset "Bethe cluster graph" begin
-    netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
     net = readTopology(netstr)
     cg = PGBP.clustergraph!(net, PGBP.Bethe())
     #= number of clusters:
@@ -53,7 +52,6 @@ metaplot(ct)
 end
 
 @testset "LTRIP cluster graph" begin
-    netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
     net = readTopology(netstr)
     T = PGBP.vgraph_eltype(net)
     # Clusters specified as vectors of preorder indices. The clusters used here
@@ -92,7 +90,6 @@ end
 end
 
 @testset "Join-graph struturing" begin
-    netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
     net = readTopology(netstr)
     cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3))
 
@@ -105,7 +102,6 @@ end
 end
 
 @testset "Clique tree" begin
-    netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3.0,D:5.0);"
     net = readTopology(netstr)
     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
     
