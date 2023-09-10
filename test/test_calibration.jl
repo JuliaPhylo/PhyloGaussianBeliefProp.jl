@@ -52,16 +52,9 @@ ct_i6H5_mean = PGBP.integratebelief!(ctb.belief[ctb.cdict[:i6H5]])[1]
     b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
     PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
     cgb= PGBP.ClusterGraphBelief(b)
-    #= Schedule that updates beliefs of cluster graph, so that any schedule
-    following is valid (i.e. all marginalization operations in the schedule are
-    well-defined). Applies if there are no pairs of neighbor clusters whose
-    beliefs are initialized to 1. =#
-    pa_lab, ch_lab, pa_j, ch_j =
-        PGBP.minimal_valid_schedule(cg, [:Ai4, :B2i6, :B1i6, :Ci2])
-    for i in 1:length(pa_lab)
-        ss_j = PGBP.sepsetindex(pa_lab[i], ch_lab[i], cgb)
-        PGBP.propagate_belief!(b[ch_j[i]], b[ss_j], b[pa_j[i]])
-    end
+    #= Modify beliefs of cluster graph so that any schedule is valid (i.e. all
+    marginalization operations in the schedule are well-defined). =#
+    PGBP.mod_beliefs_bethe!(cgb, PGBP.dimension(m), net)
     sch = [] # schedule that covers all edges of cluster graph
     for n in net.nodes_changed
         ns = Symbol(n.name)
@@ -74,10 +67,10 @@ ct_i6H5_mean = PGBP.integratebelief!(ctb.belief[ctb.cdict[:i6H5]])[1]
     cg_H5i4i2_mean = PGBP.integratebelief!(cgb.belief[cgb.cdict[:H5i4i2]])[1]
     cg_i6H5_var = cgb.belief[cgb.cdict[:i6H5]].J \ I
     cg_i6H5_mean = PGBP.integratebelief!(cgb.belief[cgb.cdict[:i6H5]])[1]
-    @test ct_H5i4i2_var == cg_H5i4i2_var
-    @test ct_H5i4i2_mean == cg_H5i4i2_mean
-    @test ct_i6H5_var == cg_i6H5_var
-    @test ct_i6H5_mean == cg_i6H5_mean
+    @test ct_H5i4i2_var ≈ cg_H5i4i2_var rtol=1e-5
+    @test ct_H5i4i2_mean ≈ cg_H5i4i2_mean rtol=1e-5
+    @test ct_i6H5_var ≈ cg_i6H5_var rtol=1e-5
+    @test ct_i6H5_mean ≈ cg_i6H5_mean rtol=1e-5
 end
 @testset "Join-graph: no optimization" begin
     cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3))

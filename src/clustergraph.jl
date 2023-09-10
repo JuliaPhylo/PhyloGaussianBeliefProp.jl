@@ -189,7 +189,7 @@ end
 
 Vector of tuples. Each tuple is of the form `(nodelabel, istree)`, where
 `nodelabel::Symbol` is the label of a node in `net` and `istree` is true (false)
-if the node's cluster subgraph of is (is not) a tree.
+if the node's cluster subgraph is (is not) a tree.
 This "cluster subgraph" for a given node is the subgraph of `clustergraph`
 induced by the clusters containing the node
 and by the edges whose sepset contain the node.

@@ -34,6 +34,11 @@ function Base.show(io::IO, b::ClusterGraphBelief)
     print(io, disp)
 end
 
+clusterindex(c, obj::ClusterGraphBelief) = clusterindex(c, obj.cdict)
+function clusterindex(clusterlabel, clusterdict)
+    clusterdict[clusterlabel]
+end
+
 sepsetindex(c1, c2, obj::ClusterGraphBelief) = sepsetindex(c1, c2, obj.sdict)
 function sepsetindex(clustlabel1, clustlabel2, sepsetdict)
     sepsetdict[Set((clustlabel1, clustlabel2))]
@@ -86,6 +91,57 @@ function default_sepset1(beliefs::AbstractVector, n::Integer)
     return j
 end
 
+"""
+    mod_beliefs_bethe!(beliefs::ClusterGraphBelief, traitdimension,
+        net, ridgeconstant::Float=1.0)
+
+Modify naively initialized beliefs (see [`init_beliefs_assignfactors!`](@ref))
+of a Bethe cluster graph so that:
+1. messages sent/received between neighbor clusters are well-defined, and
+2. messages sent from a hybrid cluster are non-degenerate.
+
+For each hybrid cluster belief, add `ridgeconstant` to the diagonal elements of 
+its precision matrix that correspond to the parent nodes in the cluster, so that
+the affected principal submatrix is stably invertible (the first `traitdimension`
+rows/columns of the precision matrix correspond to the hybrid node).
+For the edge beliefs associated with the parent nodes in a hybrid cluster, add
+`ridgeconstant` to the diagonal elements of its precision matrix so as to
+preserve the cluster graph invariant (i.e. the product of cluster beliefs
+divided by the product of edge beliefs is invariant throughout belief
+propagation).
+
+Send a message along each affected edge from hybrid cluster to variable cluster,
+so that all subsequent messages received by these hybrid clusters are valid
+Gaussians (i.e. with positive semi-definite variance/precision).
+"""
+function mod_beliefs_bethe!(beliefs::ClusterGraphBelief,
+    numt::Integer, net::HybridNetwork, ϵ::Float64=1.0)
+    # fixit: set ϵ adaptively
+    prenodes = net.nodes_changed
+    b = beliefs.belief
+    # modify beliefs of hybrid clusters and their incident sepsets
+    for n in net.hybrid
+        o = sort!(indexin(getparents(n), prenodes), rev=true)
+        parentnames = [pn.name for pn in prenodes[o]]
+        clustlabel = Symbol(n.name, parentnames...)
+        cbi = clusterindex(clustlabel, beliefs) # cluster belief index
+        sb_idx = [sepsetindex(clustlabel, clustlabel2, beliefs) for clustlabel2
+            in Symbol.(parentnames)] # sepset belief indices for parent nodes
+        #= Add ϵ to diagonal entries of principal submatrix (for parent nodes)
+        of cluster belief precision. The first `numt` coordinates are for the
+        hybrid node. =#
+        b[cbi].J[(numt+1):end, (numt+1):end] .+= ϵ*LA.I(length(sb_idx)*numt)
+        for (i, sbi) in enumerate(sb_idx)
+            #= Add ϵ to diagonal entries of sepset belief precision to preserve
+            the cluster graph invariant. =#
+            b[sbi].J .+= ϵ*LA.I(numt)
+            #= Send non-degenerate message from hybrid cluster to neighbor
+            variable clusters for each parent node. =#
+            propagate_belief!(b[clusterindex(Symbol(parentnames[i]), beliefs)],
+                b[sbi], b[cbi])
+        end
+    end
+end
 
 """
     calibrate!(beliefs::ClusterGraphBelief, schedule, niterations=1)
