@@ -3,6 +3,7 @@
 netstr = "((A:1.5,B:1.5):1,(C:1,(D:0.5, E:0.5):0.5):1.5);"
 
 df = DataFrame(taxon=["A","B","C","D","E"], x=[10,10,3,0,1], y=[1.0,.9,1,-1,-0.9])
+n = 5
 df_var = select(df, Not(:taxon))
 tbl = columntable(df_var)
 tbl_y = columntable(select(df, :y)) # 1 trait, for univariate models
@@ -233,3 +234,92 @@ end # of exact formulas
     
 
 end
+
+@testset "exact network calibration for the BM" begin
+
+    netstr = "(((A:4.0,((B1:1.0,B2:1.0)i6:0.6)#H5:1.1::0.9)i4:0.5,(#H5:2.0::0.1,C:0.1)i2:1.0)i1:3.0);"
+
+    df = DataFrame(taxon=["A","B1","B2","C"], x=[10,10,2,0], y=[1.0,.9,1,-1])
+    n = 4
+    df_var = select(df, Not(:taxon))
+    tbl = columntable(df_var)
+    tbl_y = columntable(select(df, :y)) # 1 trait, for univariate models
+    tbl_x = columntable(select(df, :x))
+    
+    net = readTopology(netstr)
+    g = PGBP.moralize!(net)
+    PGBP.triangulate_minfill!(g)
+    ct = PGBP.cliquetree(g)
+    spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+    
+    @testset "exact formulas" begin
+    
+        # y: 1 trait, no missing values
+        # exact REML
+        m = PGBP.UnivariateBrownianMotion(1, 0, Inf) # infinite root variance
+        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+        cgb = PGBP.ClusterGraphBelief(b)
+        PGBP.calibrate!(cgb, [spt])
+        mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct, net.nodes_changed,
+            tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (1,0,0))
+
+        @test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
+        @test llscore ≈ -5.250084678427689
+        @test mod.μ ≈ -0.260008715071627
+        @test PGBP.varianceparam(mod) ≈ 0.4714735834478194
+    
+        # numerical optim
+        m = PGBP.UnivariateBrownianMotion(0.5,0.5,0) 
+        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+        cgb = PGBP.ClusterGraphBelief(b)
+        PGBP.calibrate!(cgb, [spt])
+        modopt, llscoreopt, opt = PGBP.calibrate_optimize_cliquetree!(cgb, ct, net.nodes_changed,
+            tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (0.5,-3))
+    
+        @test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscoreopt
+        @test llscoreopt ≈ -5.174720533524127
+        @test modopt.μ ≈ mod.μ
+        @test PGBP.varianceparam(modopt) ≈ PGBP.varianceparam(mod) * (n-1) / n
+    
+        # x,y: 2 traits, no missing values
+        m = PGBP.MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf))
+        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
+        cgb = PGBP.ClusterGraphBelief(b)
+        PGBP.calibrate!(cgb, [spt])
+        mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct, net.nodes_changed,
+           tbl, df.taxon, PGBP.MvFullBrownianMotion, ([1 0; 0 1], [0,0]))
+
+        #@test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
+        #@test llscore ≈  -6.851098376474686
+        @test mod.μ ≈ [2.791001688545128 ; -0.260008715071627]
+        @test PGBP.varianceparam(mod) ≈ [17.93326111121198 1.6089749098736517 ; 1.6089749098736517 0.4714735834478195]
+    
+        #= ML solution the matrix-way, analytical for BM:
+        # for y: univariate
+        Σ = Matrix(vcv(net)[!,Symbol.(df.taxon)])
+        n=4 # number of data points
+        i = ones(n) # intercept
+        μhat = inv(transpose(i) * inv(Σ) * i) * (transpose(i) * inv(Σ) * tbl.y) 
+        r = tbl.y .- μhat
+        σ2hat_REML = (transpose(r) * inv(Σ) * r) / (n-1) 
+        σ2hat_ML = (transpose(r) * inv(Σ) * r) / n 
+        llscorereml = - (n-1)/2 - logdet(2π * σ2hat_REML .* Σ)/2 
+        llscore = - n/2 - logdet(2π * σ2hat_ML .* Σ)/2 
+        # for x,y: multivariate
+        Σ = Matrix(vcv(net)[!,Symbol.(df.taxon)])
+        n=4 # number of data points
+        datatbl = [tbl.x  tbl.y]
+        i = ones(n) # intercept
+        μhat = inv(transpose(i) * inv(Σ) * i) * (transpose(i) * inv(Σ) * datatbl) 
+        r = datatbl - i * μhat
+        σ2hat_REML = (transpose(r) * inv(Σ) * r) / (n-1) 
+        llscore = - n/2 - logdet(2π * σ2hat_ML .* Σ)/2 
+        =#
+    
+    end # of exact formulas
+        
+    
+    end

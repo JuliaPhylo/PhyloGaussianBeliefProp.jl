@@ -23,14 +23,18 @@ struct ClusterGraphBelief{T<:AbstractBelief}
     "dictionary: cluster neighbor labels => sepset index"
     sdict::Dict{Set{Symbol},Int}
 end
-nbeliefs(obj::ClusterGraphBelief)  = length(obj.belief)
+nbeliefs(obj::ClusterGraphBelief) = length(obj.belief)
 nclusters(obj::ClusterGraphBelief) = obj.nclusters
-nsepsets(obj::ClusterGraphBelief)  = nbeliefs(obj) - nclusters(obj)
+nsepsets(obj::ClusterGraphBelief) = nbeliefs(obj) - nclusters(obj)
 function Base.show(io::IO, b::ClusterGraphBelief)
     disp = "beliefs for $(nclusters(b)) clusters and $(nsepsets(b)) sepsets.\nclusters:\n"
-    for (k,v) in b.cdict disp *= "  $(rpad(k,10)) => $v\n";end
+    for (k, v) in b.cdict
+        disp *= "  $(rpad(k,10)) => $v\n"
+    end
     disp *= "sepsets:\n"
-    for (k,v) in b.sdict disp *= "  $(rpad(join(k,", "),20)) => $v\n";end
+    for (k, v) in b.sdict
+        disp *= "  $(rpad(join(k,", "),20)) => $v\n"
+    end
     print(io, disp)
 end
 
@@ -41,14 +45,14 @@ end
 
 function ClusterGraphBelief(beliefs)
     i = findfirst(b -> b.type == bsepsettype, beliefs)
-    nc = (isnothing(i) ? length(beliefs) : i-1)
+    nc = (isnothing(i) ? length(beliefs) : i - 1)
     all(beliefs[i].type == bclustertype for i in 1:nc) ||
         error("clusters are not consecutive")
     all(beliefs[i].type == bsepsettype for i in (nc+1):length(beliefs)) ||
         error("sepsets are not consecutive")
     cdict = get_clusterindexdictionary(beliefs, nc)
     sdict = get_sepsetindexdictionary(beliefs, nc)
-    return ClusterGraphBelief{eltype(beliefs)}(beliefs,nc,cdict,sdict)
+    return ClusterGraphBelief{eltype(beliefs)}(beliefs, nc, cdict, sdict)
 end
 function get_clusterindexdictionary(beliefs, nclusters)
     Dict(beliefs[j].metadata => j for j in 1:nclusters)
@@ -79,7 +83,7 @@ integratebelief!(b::ClusterGraphBelief) = integratebelief!(b, default_sepset1(b)
 integratebelief!(b::ClusterGraphBelief, j::Integer) = integratebelief!(b.belief[j])
 
 # first sepset containing a single node
-default_sepset1(b::ClusterGraphBelief) = default_sepset1(b.belief, nclusters(b)+1)
+default_sepset1(b::ClusterGraphBelief) = default_sepset1(b.belief, nclusters(b) + 1)
 function default_sepset1(beliefs::AbstractVector, n::Integer)
     j = findnext(b -> length(nodelabels(b)) == 1, beliefs, n)
     isnothing(j) && error("no sepset with a single node") # should not occur: degree-1 taxa
@@ -130,7 +134,7 @@ This condition holds if beliefs are produced on a given cluster graph and if the
 tree is produced by [`spanningtree_clusterlist`](@ref) on the same graph.
 """
 function propagate_1traversal_postorder!(beliefs::ClusterGraphBelief,
-            pa_lab, ch_lab, pa_j, ch_j)
+    pa_lab, ch_lab, pa_j, ch_j)
     b = beliefs.belief
     # (parent <- sepset <- child) in postorder
     for i in reverse(1:length(pa_lab))
@@ -140,7 +144,7 @@ function propagate_1traversal_postorder!(beliefs::ClusterGraphBelief,
 end
 
 function propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,
-            pa_lab, ch_lab, pa_j, ch_j)
+    pa_lab, ch_lab, pa_j, ch_j)
     b = beliefs.belief
     # (child <- sepset <- parent) in preorder
     for i in 1:length(pa_lab)
@@ -170,10 +174,10 @@ an extra preorder calibration would be required.
 Warning: there is *no* check that the cluster graph is in fact a clique tree.
 """
 function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
-        cgraph, prenodes::Vector{PN.Node},
-        tbl::Tables.ColumnTable, taxa::AbstractVector,
-        evomodelfun, # constructor function
-        evomodelparams)
+    cgraph, prenodes::Vector{PN.Node},
+    tbl::Tables.ColumnTable, taxa::AbstractVector,
+    evomodelfun, # constructor function
+    evomodelparams)
     spt = spanningtree_clusterlist(cgraph, prenodes)
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     mod = evomodelfun(evomodelparams...) # model with starting values
@@ -189,7 +193,7 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     # because they cannot differentiate array mutation, as in: view(be.h, factorind) .+= h
     opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS())
     # fixit: if BM and fixed root, avoid optimization bc there exists an exact alternative
-    loglikscore = - Optim.minimum(opt)
+    loglikscore = -Optim.minimum(opt)
     bestθ = Optim.minimizer(opt)
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
     return bestmodel, loglikscore, opt
@@ -217,71 +221,102 @@ at the root *without* the conditional distribution at all nodes, modifying
 an extra preorder calibration would be required.
 Warning: there is *no* check that the cluster graph is in fact a clique tree.
 """
-# TODO multivariate version
-# TODO deal with missing values
+# TODO deal with missing values (only completelly missing tips)
+# TODO network case
 function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
-        cgraph, prenodes::Vector{PN.Node},
-        tbl::Tables.ColumnTable, taxa::AbstractVector,
-        evomodelfun, # constructor function
-        evomodelparams
-        )
+    cgraph, prenodes::Vector{PN.Node},
+    tbl::Tables.ColumnTable, taxa::AbstractVector,
+    evomodelfun, # constructor function
+    evomodelparams
+)
     evomodelfun == UnivariateBrownianMotion || evomodelfun == MvFullBrownianMotion || error("Exact optimization is only implemented for the univariate or full Brownian Motion.")
     model = evomodelfun(evomodelparams...)
     isrootfixed(model) || error("Exact optimization is only implemented for the BM with fixed root.")
-    ## TODO: test that the underlying net is a tree ?
     ## TODO: check that the tree was calibrated with the right model MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf)) ?
     ## TODO: or do this first calibration directly in the function ? (API change)
     p = dimension(model)
 
     ## Compute mu_hat from root belief
-    ## Root is in the sepset between root factor nodes
+    ## Root is the last node of the root cluster
     spt = spanningtree_clusterlist(cgraph, prenodes)
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
-    ss_root = sepsetindex(spt[1][1], spt[2][1], beliefs)
-    mu_hat, _ = integratebelief!(beliefs, ss_root)
+    exp_root, _ = integratebelief!(beliefs, rootj)
+    mu_hat = exp_root[(end-p+1):end]
 
     ## Compute sigma2_hat from conditional moments
-    tmp_num = zeros(p,p)
+    tmp_num = zeros(p, p)
     tmp_den = 0
-    for i in eachindex(beliefs.belief)
-        if beliefs.belief[i].type == bclustertype 
-            # Loop over cluster beliefs, associated with edges for a tree
-            b = beliefs.belief[i]
-            edge = PN.getparentedge(prenodes[b.nodelabel[1]])
-            exp_be, _ = integratebelief!(b)
-            vv =  inv(b.J)
-            if size(vv, 1) == 2 * p
-                # belief is two dimensional: not a tip cluster
-                # TODO: deal with missing data
-                indchild = 1:p
-                indpar = (p+1):(2*p)
-                diffExp = view(exp_be, indpar) - view(exp_be, indchild)
-                tmp_num += diffExp * transpose(diffExp) ./ edge.length
-                tmp_den += 1 - (vv[1,1] + vv[p+1,p+1] - 2 * vv[1,p+1]) / edge.length
-            elseif size(vv, 1) == p
-                # belief is one dimensional: tip cluster
-                # find data associated to the tip
-                # TODO: is there a more simple way to do that ? Record of data in belief object ?
-                node = prenodes[b.nodelabel[1]]
-                node.leaf || error("A one dimensional node is internal, should be a leaf")
-                nodelab = node.name
-                i_row = findfirst(isequal(nodelab), taxa)
-                !isnothing(i_row) || error("A node with data does not match any taxon")
-                tipvalue = [tbl[v][i_row] for v in eachindex(tbl)]
-                indpar = 1:p
-                diffExp = view(exp_be, indpar) - tipvalue
-                tmp_num += diffExp * transpose(diffExp) ./ edge.length
-                tmp_den += 1 - vv[1,1] / edge.length
-            else
-                error("A tree cluster graph should only have clusters of size at most 2.")
+    # loop over all nodes
+    for i in eachindex(prenodes)
+        # TODO: is it the correct way to iterate over the graph ?
+        # remove the root which is first in pre-order
+        i == 1 && continue
+        # find associated cluster
+        nodechild = prenodes[i]
+        clusterindex = findClusterIndex(nodechild, beliefs.belief)
+        b = beliefs.belief[clusterindex]
+        dimclus = length(b.nodelabel)
+        # child ind in the cluster
+        childind = findfirst(b.nodelabel .== i)
+        # find parents: assumes that a cluster has all the parents of a node, which should be the case thanks to findClusterIndex
+        parind = findall([PN.isconnected(prenodes[nl], nodechild) && nl != i for nl in b.nodelabel])
+        all_parent_edges = [PN.getConnectingEdge(prenodes[b.nodelabel[d]], nodechild) for d in parind]
+        all_gammas = zeros(dimclus)
+        all_gammas[parind] = [ee.gamma for ee in all_parent_edges]
+        # parent(s) edge length
+        edge_length = 0.0
+        for ee in all_parent_edges
+            edge_length += ee.gamma * ee.gamma * ee.length
+        end
+        edge_length == 0.0 && continue # if edge has length zero, then the parameter R does not occur in the factor
+        # moments
+        exp_be, _ = integratebelief!(b)
+        vv = inv(b.J)
+        # tip node
+        if (nodechild.leaf) # tip node
+            # TODO: deal with missing data
+            # TODO: is there a more simple way to do that ? Record of data in belief object ?
+            size(vv, 1) == p || error("A leaf node should have only on non-degenerate factor.")
+            # find tip data
+            nodelab = nodechild.name
+            i_row = findfirst(isequal(nodelab), taxa)
+            !isnothing(i_row) || error("A node with data does not match any taxon")
+            tipvalue = [tbl[v][i_row] for v in eachindex(tbl)]
+            # parent node moments are the p first
+            indpar = 1:p
+            diffExp = view(exp_be, indpar) - tipvalue
+            tmp_num += diffExp * transpose(diffExp) ./ edge_length
+            # assumes that vv is a scalar times R_test
+            tmp_den += 1 - vv[1, 1] / edge_length
+        else # internal node
+            # init with child node
+            begic = (childind - 1) * p + 1
+            endic = childind * p
+            diffExp = view(exp_be, begic:endic)
+            diffVar = vv[begic, begic]
+            # sum over parent nodes
+            for d in parind
+                # indexes
+                begi = (d - 1) * p + 1
+                endi = d * p
+                # exp and covar with child
+                diffExp -= all_gammas[d] .* view(exp_be, begi:endi)
+                diffVar -= 2 * all_gammas[d] * vv[begic, begi]
+                # parents var covar
+                for d2 in parind
+                    begi2 = (d2 - 1) * p + 1
+                    diffVar += all_gammas[d] * all_gammas[d2] * vv[begi, begi2]
+                end
             end
+            tmp_num += diffExp * transpose(diffExp) ./ edge_length
+            tmp_den += 1 - diffVar / edge_length
         end
     end
     sigma2_hat = tmp_num ./ tmp_den
     ## TODO: This is the REML estimate. Should we get ML instead ?
 
     ## Get optimal paramters
-    bestθ = (sigma2_hat,mu_hat, zeros(p,p))
+    bestθ = (sigma2_hat, mu_hat, zeros(p, p))
     bestmodel = evomodelfun(bestθ...)
     ## Get associated likelihood
     ## TODO: likelihood for the full BM (not implemented)
@@ -295,4 +330,28 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
     end
 
     return bestmodel, loglikscore
+end
+
+"""
+    findClusterIndex(node::PN.Node, belief_vector)
+
+In the belief in the vector that contains both the node and all its parents.
+Throws an error if this cluster does not ex
+
+"""
+function findClusterIndex(node::PN.Node, belief_vector)
+    nodelab = node.name
+    for i in eachindex(belief_vector)
+        b = belief_vector[i]
+        # only cluster beliefs
+        b.type == bclustertype || continue
+        # label should match
+        occursin(nodelab, String(b.metadata)) || continue
+        # node should be in a cluster with all its parents
+        parentlabels = [nn.name for nn in PN.getparents(node)]
+        all([occursin(ll, String(b.metadata)) for ll in parentlabels]) || continue
+        # if still here, we found the cluster
+        return i
+    end
+    error("Could not find a cluster with the node and all its parents.")
 end
