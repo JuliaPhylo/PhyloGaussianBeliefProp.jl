@@ -887,19 +887,90 @@ function spanningtree_clusterlist(cgraph::MetaGraph, rootj::Integer)
     return parentclust_lab, childclust_lab, parentclust_j, childclust_j
 end
 
+# fixit: move this elsewhere? This wrapper is not defined in MetaGraphsNext.jl,
+# though it should be.
+function Graphs.induced_subgraph(
+    meta_graph::MetaGraph, edge_codes::AbstractVector{<:AbstractEdge})
+    inducedgraph, code_map = induced_subgraph(meta_graph.graph, edge_codes)
+    new_graph = MetaGraph(
+        inducedgraph,
+        empty(meta_graph.vertex_labels),
+        empty(meta_graph.vertex_properties),
+        empty(meta_graph.edge_data),
+        meta_graph.graph_data,
+        meta_graph.weight_function,
+        meta_graph.default_weight,
+    )
+    MetaGraphsNext._copy_props!(meta_graph, new_graph, code_map)
+    return new_graph, code_map
+end
+
+"""
+    spanningtrees_cover_clusterlist(clustergraph, nodevector_preordered)
+
+A vector of spanning trees of `clustergraph`, where each spanning tree is
+specified as a tuple of four vectors that describes a depth-first search
+traversal of the tree (starting from a cluster that contains the network's root),
+as in [`spanningtree_clusterlist`](@ref).
+
+Together the set of spanning trees covers all edges in `clustergraph`.
+"""
+function spanningtrees_cover_clusterlist(cgraph::MetaGraph,
+    prenodes::Vector{PN.Node})
+    T = eltype(cgraph)
+    cg = MetaGraph(Graph{T}(0),
+        Symbol, # vertex label type
+        Tuple{Vector{Symbol}, Vector{T}}, # vertex data type
+        T, # edge data type
+        :edgeweights, # graph tag: hold edge weights to compute min spanning tree
+        edge_data -> edge_data, # edge data holds edge weight
+        zero(T)) # default weight
+    # copy vertices and edges from `cgraph`
+    for clusterlab in labels(cgraph)
+        add_vertex!(cg, clusterlab, getindex(cgraph, clusterlab))
+    end
+    for (clusterlab, clusterlab2) in edge_labels(cgraph)
+        add_edge!(cg, clusterlab, clusterlab2, 0) # initial edge weights are 0
+    end
+    edgenotused = Set(edge_labels(cg)) # track edges not used in any spanning tree
+    # schedule/vector of spanning trees that covers all edges of `cgraph`
+    schedule = Tuple{Vector{Symbol}, Vector{Symbol}, Vector{T}, Vector{T}}[]
+    while !isempty(edgenotused) # till each edge is used in ≥1 spanning tree
+        # vector of min spanning tree edges (specified by cluster codes)
+        mst_edges = kruskal_mst(cg)
+        sg, vmap = induced_subgraph(cg, mst_edges) # spanning tree as `metagraph`
+        #= spanning tree in terms of preorder traversal of edges (specified by
+        cluster labels and cluster codes) =#
+        spt = spanningtree_clusterlist(sg, prenodes)
+        spt[3] .= vmap[spt[3]] # code i in `sg` maps to code vmap[i] in `cg`
+        spt[4] .= vmap[spt[4]]
+        push!(schedule, spt) # append spanning tree to schedule
+        for e in mst_edges
+            parentlab = label_for(cg, src(e))
+            childlab = label_for(cg, dst(e))
+            #= +1 to spanning tree edge weight, so that next min spanning tree
+            found will prioritize edges not used in any spanning tree =#
+            setindex!(cg, getindex(cg, parentlab, childlab)+1, parentlab, childlab)
+            edgelab = MetaGraphsNext.arrange(cg, parentlab, childlab)
+            if edgelab ∈ edgenotused # edge has been used in ≥1 spanning tree
+                pop!(edgenotused, edgelab)
+            end
+        end
+    end
+    return schedule
+end
+
 """
     sub_spanningtree_clusterlist(clustergraph, nodesymbol)
 
-Extract the subgraph (of `clustergraph`) induced by the clusters that contain
-the node labelled `nodesymbol` and build a depth-first search spanning tree of
-this subgraph starting from an arbitrary cluster. Return the spanning tree as a
-schedule of edges expressed as a tuple of four vectors: (`parent_labels`,
-`child_labels`, `parent_indices`, `child_indices`), as in
-[`spanningtree_clusterlist`](@ref).
+A spanning tree of the subgraph of `clustergraph` induced by the clusters that
+contain the node labelled `nodesymbol`. The spanning tree is specified as a
+tuple of four vectors that describes a depth-first search traversal (starting
+from an arbitrary cluster) of the tree, as in [`spanningtree_clusterlist`](@ref).
 
-Each edge of `clustergraph` is contained in ≥1 such (subgraph)spanning trees, so
-iterating over all nodes generates a sequence of schedules that collectively
-covers all edges of `clustergraph`.
+Each edge of `clustergraph` is contained in ≥1 subgraph spanning trees, so
+iterating over all nodes produces a sequence of subgraph spanning trees that
+together covers all edges of `clustergraph`.
 """
 function sub_spanningtree_clusterlist(cgraph::MetaGraph, ns::Symbol)
     cluster_properties = cgraph.vertex_properties

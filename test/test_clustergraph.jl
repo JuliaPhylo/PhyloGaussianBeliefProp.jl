@@ -115,4 +115,28 @@ end
     @test PGBP.isfamilypreserving(cliques, net)[1]
 end
 
+@testset "Traversal" begin
+    net = readTopology(netstr)
+    cg = PGBP.clustergraph!(net, PGBP.Bethe())
+    clusterlabs = Set(labels(cg))
+    nclusters = length(clusterlabs)
+    edgenotused = Set(edge_labels(cg))
+    schedule = PGBP.spanningtrees_cover_clusterlist(cg, net.nodes_changed)
+    ntrees = length(schedule)
+    # Check that `schedule` contains spanning trees of `cg`
+    for (i, spt) in enumerate(schedule)
+        spt_nedges = length(spt[1])
+        @test spt_nedges == nclusters-1
+        spt_edgecodes = [Edge(code_for(cg, spt[1][i]), code_for(cg, spt[2][i]))
+            for i in 1:spt_nedges]
+        sg, _ = induced_subgraph(cg, spt_edgecodes)
+        # (1) `spt` spans the clusters of `cg`, (2) `spt` is a tree
+        @test isequal(Set(labels(sg)), clusterlabs) && is_tree(sg)
+        setdiff!(edgenotused,
+            MetaGraphsNext.arrange(cg, spt[1][i], spt[2][i]) for i in 1:length(spt[1]))
+    end
+    # (3) Set of spanning trees covers all cluster graph edges
+    @test isempty(edgenotused)
+end
+
 end
