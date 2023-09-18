@@ -144,22 +144,6 @@ function mod_beliefs_bethe!(beliefs::ClusterGraphBelief,
 end
 
 """
-    mod_beliefs!(beliefs::ClusterGraphBelief, traitdimension, net,
-        ridgeconstant::Float=1.0)
-"""
-function mod_beliefs!(beliefs::ClusterGraphBelief, numt::Integer,
-    net::HybridNetwork, ϵ::Float64=1.0)
-    # (1) Pick a spanning tree of the cluster graph. Select a root cluster.
-
-    # (2) Do a post-order traversal of spanning tree edges
-
-    # (3) Do a pre-order traversal of spanning tree edges
-
-    #= (4) Repeat the above, but with a different spanning tree. We want the set
-    of spanning trees to cover the edges of the cluster graph. =#
-end
-
-"""
     calibrate!(beliefs::ClusterGraphBelief, schedule, niterations=1)
 
 Propagate messages for each tree in the `schedule` list,

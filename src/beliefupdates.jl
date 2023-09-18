@@ -3,8 +3,8 @@
     marginalizebelief(h,J,g, keep_index)
     marginalizebelief(h,J,g, keep_index, integrate_index)
 
-Canonical form (h,J,g) of the input belief, in which variables at indices
-`keep_index` have been integrated out. If we use `I` and `S` subscripts
+Canonical form (h,J,g) of the input belief, after all variables except those at
+indices `keep_index` have been integrated out. If we use `I` and `S` subscripts
 to denote subvectors and submatrices at indices to integrate out
 (I: `integrate_index`) and indices to keep (S: save for sepset, `keep_index`)
 then the returned belief parameters are:
@@ -39,6 +39,19 @@ function marginalizebelief(h,J,g::Real, keep_index, integrate_index)
     messageh = hk - Jki * μi
     messageg = g + (ni*log2π - LA.logdet(Ji) + sum(hi .* μi))/2
     return (messageh, messageJ, messageg)
+end
+
+"""
+    defaultmessage(d, ϵ::Float64=1.0)
+
+Canonical form (h, J, g) of a default message of dimension `d`.
+
+h is a length-`d` vector of zeroes, J is a `d`-by-`d` identity matrix scaled by
+ϵ, g is 0.
+"""
+function defaultmessage(d::Integer, ϵ::Float64=1.0)
+    # fixit: make this adaptive eventually?
+    return (zeros(d), ϵ*LA.I(d), 0)
 end
 
 """

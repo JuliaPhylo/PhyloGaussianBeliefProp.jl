@@ -355,7 +355,7 @@ end
 
 
 """
-    propagate_belief!(cluster_from, sepset, cluster_to)
+    propagate_belief!(cluster_from, sepset, cluster_to, withdefault::Bool=false)
 
 Update the canonical parameters of the beliefs in `cluster_to` and in `sepset`,
 by marginalizing the belief in `cluster_from` to the sepset's variable and
@@ -366,16 +366,33 @@ or that `sepset` is of sepset type, but does check that the labels and scope
 of `sepset` are included in each cluster.
 """
 function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
-                           cluster_from::AbstractBelief)
+        cluster_from::AbstractBelief, withdefault::Bool=false)
     # 1. compute message: marginalize cluster_from to variables in sepset
     #    requires cluster_from.J[keep,keep] to be invertible
     keepind = scopeindex(sepset, cluster_from)
-    h,J,g = marginalizebelief(cluster_from, keepind)
+    #= `cluster_from` assumed to be nondegenerate wrt the variables to be
+    integrated out =#
+    degenerate = false
+    h,J,g = try
+        marginalizebelief(cluster_from, keepind)
+    catch ex
+        ex::LA.PosDefException && withdefault || throw(ex)
+        degenerate = true
+        #= `cluster_from` is degenerate, so let `cluster_to` receive a default
+        message instead =#
+        defaultmessage(length(keepind))
+    end
     # 2. extend message to scope of cluster_to and propagate
     upind = scopeindex(sepset, cluster_to) # indices to be updated
-    view(cluster_to.h, upind)       .+= h .- sepset.h
-    view(cluster_to.J, upind,upind) .+= J .- sepset.J
-    cluster_to.g[1]                  += g  - sepset.g[1]
+    if !degenerate
+        view(cluster_to.h, upind)        .+= h .- sepset.h
+        view(cluster_to.J, upind, upind) .+= J .- sepset.J
+        cluster_to.g[1]                   += g  - sepset.g[1]
+    else # here, (h, J, g) describes the message received, not sent
+        view(cluster_to.h, upind)        .+= h
+        view(cluster_to.J, upind, upind) .+= J
+        cluster_to.g[1]                   += g
+    end
     # 3. update sepset belief
     sepset.h   .= h
     sepset.J   .= J
