@@ -355,7 +355,7 @@ end
 
 
 """
-    propagate_belief!(cluster_from, sepset, cluster_to, withdefault::Bool=false)
+    propagate_belief!(cluster_from, sepset, cluster_to, withdefault::Bool=true)
 
 Update the canonical parameters of the beliefs in `cluster_to` and in `sepset`,
 by marginalizing the belief in `cluster_from` to the sepset's variable and
@@ -367,7 +367,10 @@ of `sepset` are included in each cluster.
 """
 function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
         cluster_from::AbstractBelief, withdefault::Bool=true)
-    # fixit: discuss the `withdefault` option
+    #= fixit: discuss the `withdefault` option. Should there be an option? If
+    so, then methods that eventually call `propagate_belief!` have to be
+    modified to pass this flag (e.g. `calibrate!`,
+    `propagate_1traversal_postorder!`, `propagate_1traversal_preorder!`) =#
     # 1. compute message: marginalize cluster_from to variables in sepset
     #    requires cluster_from.J[keep,keep] to be invertible
     keepind = scopeindex(sepset, cluster_from)
@@ -401,5 +404,15 @@ function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
         sepset.J   .+= J
         sepset.g[1] += g
     end
+    #= fixit: also return a flag that says if beliefs are calibrated (tolerance
+    needs to be specified)? Then `propagate_1traversal_postorder!` and
+    `propagate1traversal_preorder!` could use this flag to update a new
+    dictionary `iscalibrated` in ClusterGraphBelief that maps edges to whether
+    or not the three beliefs associated (2 cluster, 1 edge) are calibrated.
+    `calibrate!` could then check if the entire clustergraph is calibrated at
+    the end of each iteration. Optional argument(s) could be added that allow
+    `calibrate!` to run till the cluster graph is calibrated or a max no. of
+    iterations has been reached, whichever occurs first (e.g. `auto` and
+    `maxiter`). =#
     return sepset
 end

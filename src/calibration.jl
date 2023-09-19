@@ -116,6 +116,7 @@ Gaussians (i.e. with positive semi-definite variance/precision).
 """
 function mod_beliefs_bethe!(beliefs::ClusterGraphBelief,
     numt::Integer, net::HybridNetwork, ϵ::Float64=1.0)
+    # fixit: to remove? Redundant if we can send default messages on the fly
     # fixit: set ϵ adaptively
     prenodes = net.nodes_changed
     b = beliefs.belief
@@ -171,11 +172,20 @@ function calibrate!(beliefs::ClusterGraphBelief, spt::Tuple)
 end
 
 """
-    iscalibrated(beliefs::ClusterGraphBelief, edge_labels, relative_tolerance)
+    iscalibrated(beliefs::ClusterGraphBelief, edge_labels, rtol::Float64=1e-2)
+
+`true` if each edge belief is *marginally consistent* with the beliefs of the
+pair of clusters that it spans (i.e. their marginal means and variances are
+approximately equal with relative tolerance `rtol`), `false` otherwise.
+
+Mean vectors are compared by their 2-norm and variance matrices are compared by
+the Frobenius norm.
 """
-# fixit: discuss tolerance for comparison
 function iscalibrated(beliefs::ClusterGraphBelief,
         edgelabs::Vector{Tuple{Symbol, Symbol}}, rtol=1e-2)
+    # fixit: discuss tolerance for comparison
+    #= fixit: this will probably be moved to `test_calibration.jl` since it is
+    an inefficient way to check if the cluster graph is calibrated on the fly. =#
     b = beliefs.belief
     belief2meanvar = Dict{Symbol, Tuple{AbstractVector, AbstractMatrix}}()
     for (clustlab1, clustlab2) in edgelabs
@@ -195,17 +205,17 @@ function iscalibrated(beliefs::ClusterGraphBelief,
         end
         sepset = b[sepsetindex(clustlab1, clustlab2, beliefs)]
         sepsetmean, sepsetvar = integratebelief!(sepset)[1], sepset.J \ LA.I
-        upind1 = scopeindex(sepset, clust1)
-        sepsetmean .== clustmean1[upind1]
-        sepsetvar .== clustvar1[upind1, upind1]
-        upind2 = scopeindex(sepset, clust2)
-        sepsetmean .== clustmean2[upind2]
-        sepsetvar .== clustvar2[upind2, upind2]
+        ind1 = scopeindex(sepset, clust1) # indices to be compared
+        sepsetmean .== clustmean1[ind1]
+        sepsetvar .== clustvar1[ind1, ind1]
+        ind2 = scopeindex(sepset, clust2)
+        sepsetmean .== clustmean2[ind2]
+        sepsetvar .== clustvar2[ind2, ind2]
         # check the agreement between cluster and sepset beliefs
-        isapprox(sepsetmean, clustmean1[upind1], rtol=rtol) &&
-        isapprox(sepsetmean, clustmean2[upind2], rtol=rtol) &&
-        isapprox(sepsetvar, clustvar1[upind1, upind1], rtol=rtol) &&
-        isapprox(sepsetvar, clustvar2[upind2, upind2], rtol=rtol) || return false
+        isapprox(sepsetmean, clustmean1[ind1], rtol=rtol) &&
+        isapprox(sepsetmean, clustmean2[ind2], rtol=rtol) &&
+        isapprox(sepsetvar, clustvar1[ind1, ind1], rtol=rtol) &&
+        isapprox(sepsetvar, clustvar2[ind2, ind2], rtol=rtol) || return false
     end
     return true
 end
