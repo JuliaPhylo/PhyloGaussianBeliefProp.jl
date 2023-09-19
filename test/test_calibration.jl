@@ -188,9 +188,11 @@ end
         ct_H1H2I1_ind = PGBP.clusterindex(:H1H2I1, ctb)
         ct_H1H2I1_var = ctb.belief[ct_H1H2I1_ind].J \ I
         ct_H1H2I1_mean = PGBP.integratebelief!(ctb.belief[ct_H1H2I1_ind])[1]
+        # PGBP.integratebelief!(ctb.belief[ct_H1H2I1_ind])[2] # -5.450872671913978
         ct_H3H2I2_ind = PGBP.clusterindex(:H3H2I2, ctb)
         ct_H3H2I2_var = ctb.belief[ct_H3H2I2_ind].J \ I
         ct_H3H2I2_mean = PGBP.integratebelief!(ctb.belief[ct_H3H2I2_ind])[1]
+        # PGBP.integratebelief!(ctb.belief[ct_H3H2I2_ind])[2] # -5.450872671913977
 
         cg = PGBP.clustergraph!(net, PGBP.Bethe())
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
@@ -201,14 +203,17 @@ end
         cg_H1H2I1_ind = PGBP.clusterindex(:H1H2I1, cgb)
         cg_H1H2I1_var = cgb.belief[cg_H1H2I1_ind].J \ I
         cg_H1H2I1_mean = PGBP.integratebelief!(cgb.belief[cg_H1H2I1_ind])[1]
+        # PGBP.integratebelief!(cgb.belief[cg_H1H2I1_ind])[2] # 3145.652666576807
         cg_H3H2I2_ind = PGBP.clusterindex(:H3H2I2, cgb)
         cg_H3H2I2_var = cgb.belief[cg_H3H2I2_ind].J \ I
         cg_H3H2I2_mean = PGBP.integratebelief!(cgb.belief[cg_H3H2I2_ind])[1]
+        # PGBP.integratebelief!(cgb.belief[cg_H3H2I2_ind])[2] # 3145.6526665768074
 
         @test ct_H1H2I1_mean ≈ cg_H1H2I1_mean rtol=1e-3
         @test ct_H3H2I2_mean ≈ cg_H3H2I2_mean rtol=2*1e-3
         @test diag(ct_H1H2I1_var) ≈ diag(cg_H1H2I1_var) rtol=2*1e-1
         @test diag(ct_H3H2I2_var) ≈ diag(cg_H3H2I2_var) rtol=3*1e-1
+        @test PGBP.iscalibrated(cgb, collect(edge_labels(cg)), 1e-2)
     end
     @testset "Hybrid ladder #2" begin
         netstr = "((#H2:0.1::0.4,((A:1.0)#H1:0.1::0.6)#H3:0.1::0.5)I1:1.0,((#H1:0.1::0.4)#H2:0.1::0.6,#H3:0.1::0.5)I2:1.0)I3;"
@@ -226,9 +231,11 @@ end
         ct_I1I2I3_ind = PGBP.clusterindex(:I1I2I3, ctb)
         ct_I1I2I3_var = ctb.belief[ct_I1I2I3_ind].J \ I
         ct_I1I2I3_mean = PGBP.integratebelief!(ctb.belief[ct_I1I2I3_ind])[1]
+        # PGBP.integratebelief!(ctb.belief[ct_I1I2I3_ind])[2] # -2.1270084292518145
         ct_H1H2H3_ind = PGBP.clusterindex(:H1H2H3, ctb)
         ct_H1H2H3_var = ctb.belief[ct_H1H2H3_ind].J \ I
         ct_H1H2H3_mean = PGBP.integratebelief!(ctb.belief[ct_H1H2H3_ind])[1]
+        # PGBP.integratebelief!(ctb.belief[ct_H1H2H3_ind])[2] # -2.1270084292518163
 
         cg = PGBP.clustergraph!(net, PGBP.Bethe())
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
@@ -239,9 +246,11 @@ end
         cg_H1H2H3_ind = PGBP.clusterindex(:H1H2H3, cgb)
         cg_H1H2H3_var = cgb.belief[cg_H1H2H3_ind].J \ I
         cg_H1H2H3_mean = PGBP.integratebelief!(cgb.belief[cg_H1H2H3_ind])[1]
+        PGBP.integratebelief!(cgb.belief[cg_H1H2H3_ind])[2] # -50834.081555779856
         cg_H3I1I2_ind = PGBP.clusterindex(:H3I1I2, cgb)
         cg_H3I1I2_var = cgb.belief[cg_H3I1I2_ind].J \ I
         cg_H3I1I2_mean = PGBP.integratebelief!(cgb.belief[cg_H3I1I2_ind])[1]
+        PGBP.integratebelief!(cgb.belief[cg_H3I1I2_ind])[2] # -50834.08155577985
 
         @test ct_I1I2I3_mean ≈ cg_H3I1I2_mean[2:3] rtol=1e-4
         @test ct_H1H2H3_mean ≈ cg_H1H2H3_mean rtol=1e-4

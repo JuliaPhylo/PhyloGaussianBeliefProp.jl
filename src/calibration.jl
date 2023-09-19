@@ -171,6 +171,46 @@ function calibrate!(beliefs::ClusterGraphBelief, spt::Tuple)
 end
 
 """
+    iscalibrated(beliefs::ClusterGraphBelief, edge_labels, relative_tolerance)
+"""
+# fixit: discuss tolerance for comparison
+function iscalibrated(beliefs::ClusterGraphBelief,
+        edgelabs::Vector{Tuple{Symbol, Symbol}}, rtol=1e-2)
+    b = beliefs.belief
+    belief2meanvar = Dict{Symbol, Tuple{AbstractVector, AbstractMatrix}}()
+    for (clustlab1, clustlab2) in edgelabs
+        clust1 = b[clusterindex(clustlab1, beliefs)]
+        clust2 = b[clusterindex(clustlab2, beliefs)]
+        if haskey(belief2meanvar, clustlab1)
+            clustmean1, clustvar1 = belief2meanvar[clustlab1]
+        else
+            clustmean1, clustvar1 = integratebelief!(clust1)[1], clust1.J \ LA.I
+            belief2meanvar[clustlab1] = (clustmean1, clustvar1)
+        end
+        if haskey(belief2meanvar, clustlab2)
+            clustmean2, clustvar2 = belief2meanvar[clustlab2]
+        else
+            clustmean2, clustvar2 = integratebelief!(clust2)[1], clust2.J \ LA.I
+            belief2meanvar[clustlab2] = (clustmean2, clustvar2)
+        end
+        sepset = b[sepsetindex(clustlab1, clustlab2, beliefs)]
+        sepsetmean, sepsetvar = integratebelief!(sepset)[1], sepset.J \ LA.I
+        upind1 = scopeindex(sepset, clust1)
+        sepsetmean .== clustmean1[upind1]
+        sepsetvar .== clustvar1[upind1, upind1]
+        upind2 = scopeindex(sepset, clust2)
+        sepsetmean .== clustmean2[upind2]
+        sepsetvar .== clustvar2[upind2, upind2]
+        # check the agreement between cluster and sepset beliefs
+        isapprox(sepsetmean, clustmean1[upind1], rtol=rtol) &&
+        isapprox(sepsetmean, clustmean2[upind2], rtol=rtol) &&
+        isapprox(sepsetvar, clustvar1[upind1, upind1], rtol=rtol) &&
+        isapprox(sepsetvar, clustvar2[upind2, upind2], rtol=rtol) || return false
+    end
+    return true
+end
+
+"""
     propagate_1traversal_postorder!(beliefs::ClusterGraphBelief, spanningtree...)
     propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,  spanningtree...)
 
