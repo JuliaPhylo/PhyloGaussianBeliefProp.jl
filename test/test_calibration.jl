@@ -110,6 +110,7 @@ loglikelihood(MvNormal(repeat([μtmp],4), Σnet), tbl.y) # -8.091436736475565
 
 end # of no-optimization
 
+
 @testset "with optimization" begin
 
 # y: 1 trait, no missing values
@@ -168,6 +169,85 @@ mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(cgb, ct, net.nodes_chang
 @test llscore ≈ -14.39029465611705 # -5.174720533524127 -9.215574122592923
 @test mod.μ ≈ [3.500266520382341, -0.26000871507162693]
 @test PGBP.varianceparam(mod) ≈ [11.257682945973125,0.35360518758586457]
+end
+
+@testset "Bethe: no optimization" begin
+    @testset "Hybrid ladder #1" begin
+        netstr = "((#H1:0.1::0.4,#H2:0.1::0.4)I1:1.0,(((A:1.0)#H1:0.1::0.6,#H3:0.1::0.4)#H2:0.1::0.6,(B:1.0)#H3:0.1::0.6)I2:1.0)I3;"
+        net = readTopology(netstr)
+        df = DataFrame(taxon=["A","B"], y=[1.0,-1])
+        tbl_y = columntable(select(df, :y))
+        m = PGBP.UnivariateBrownianMotion(2, 3, 0)
+
+        ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
+        spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b)
+        PGBP.calibrate!(ctb, [spt])
+        ct_H1H2I1_ind = PGBP.clusterindex(:H1H2I1, ctb)
+        ct_H1H2I1_var = ctb.belief[ct_H1H2I1_ind].J \ I
+        ct_H1H2I1_mean = PGBP.integratebelief!(ctb.belief[ct_H1H2I1_ind])[1]
+        ct_H3H2I2_ind = PGBP.clusterindex(:H3H2I2, ctb)
+        ct_H3H2I2_var = ctb.belief[ct_H3H2I2_ind].J \ I
+        ct_H3H2I2_mean = PGBP.integratebelief!(ctb.belief[ct_H3H2I2_ind])[1]
+
+        cg = PGBP.clustergraph!(net, PGBP.Bethe())
+        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+        cgb = PGBP.ClusterGraphBelief(b)
+        schedule = PGBP.spanningtrees_cover_clusterlist(cg, net.nodes_changed)
+        PGBP.calibrate!(cgb, schedule, 5)
+        cg_H1H2I1_ind = PGBP.clusterindex(:H1H2I1, cgb)
+        cg_H1H2I1_var = cgb.belief[cg_H1H2I1_ind].J \ I
+        cg_H1H2I1_mean = PGBP.integratebelief!(cgb.belief[cg_H1H2I1_ind])[1]
+        cg_H3H2I2_ind = PGBP.clusterindex(:H3H2I2, cgb)
+        cg_H3H2I2_var = cgb.belief[cg_H3H2I2_ind].J \ I
+        cg_H3H2I2_mean = PGBP.integratebelief!(cgb.belief[cg_H3H2I2_ind])[1]
+
+        @test ct_H1H2I1_mean ≈ cg_H1H2I1_mean rtol=1e-3
+        @test ct_H3H2I2_mean ≈ cg_H3H2I2_mean rtol=2*1e-3
+        @test diag(ct_H1H2I1_var) ≈ diag(cg_H1H2I1_var) rtol=2*1e-1
+        @test diag(ct_H3H2I2_var) ≈ diag(cg_H3H2I2_var) rtol=3*1e-1
+    end
+    @testset "Hybrid ladder #2" begin
+        netstr = "((#H2:0.1::0.4,((A:1.0)#H1:0.1::0.6)#H3:0.1::0.5)I1:1.0,((#H1:0.1::0.4)#H2:0.1::0.6,#H3:0.1::0.5)I2:1.0)I3;"
+        net = readTopology(netstr)
+        df = DataFrame(taxon=["A"], y=[1.0])
+        tbl_y = columntable(select(df, :y))
+        m = PGBP.UnivariateBrownianMotion(2, 3, 0)
+    
+        ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
+        spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b)
+        PGBP.calibrate!(ctb, [spt])
+        ct_I1I2I3_ind = PGBP.clusterindex(:I1I2I3, ctb)
+        ct_I1I2I3_var = ctb.belief[ct_I1I2I3_ind].J \ I
+        ct_I1I2I3_mean = PGBP.integratebelief!(ctb.belief[ct_I1I2I3_ind])[1]
+        ct_H1H2H3_ind = PGBP.clusterindex(:H1H2H3, ctb)
+        ct_H1H2H3_var = ctb.belief[ct_H1H2H3_ind].J \ I
+        ct_H1H2H3_mean = PGBP.integratebelief!(ctb.belief[ct_H1H2H3_ind])[1]
+
+        cg = PGBP.clustergraph!(net, PGBP.Bethe())
+        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+        cgb = PGBP.ClusterGraphBelief(b)
+        schedule = PGBP.spanningtrees_cover_clusterlist(cg, net.nodes_changed)
+        PGBP.calibrate!(cgb, schedule, 5)
+        cg_H1H2H3_ind = PGBP.clusterindex(:H1H2H3, cgb)
+        cg_H1H2H3_var = cgb.belief[cg_H1H2H3_ind].J \ I
+        cg_H1H2H3_mean = PGBP.integratebelief!(cgb.belief[cg_H1H2H3_ind])[1]
+        cg_H3I1I2_ind = PGBP.clusterindex(:H3I1I2, cgb)
+        cg_H3I1I2_var = cgb.belief[cg_H3I1I2_ind].J \ I
+        cg_H3I1I2_mean = PGBP.integratebelief!(cgb.belief[cg_H3I1I2_ind])[1]
+
+        @test ct_I1I2I3_mean ≈ cg_H3I1I2_mean[2:3] rtol=1e-4
+        @test ct_H1H2H3_mean ≈ cg_H1H2H3_mean rtol=1e-4
+        @test diag(ct_I1I2I3_var) ≈ diag(cg_H3I1I2_var)[2:3] rtol=1e-1
+        @test diag(ct_I1I2I3_var) ≈ diag(cg_H3I1I2_var)[2:3] rtol=1e-1
+    end
 end
 
 end

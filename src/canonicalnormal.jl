@@ -366,7 +366,8 @@ or that `sepset` is of sepset type, but does check that the labels and scope
 of `sepset` are included in each cluster.
 """
 function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
-        cluster_from::AbstractBelief, withdefault::Bool=false)
+        cluster_from::AbstractBelief, withdefault::Bool=true)
+    # fixit: discuss the `withdefault` option
     # 1. compute message: marginalize cluster_from to variables in sepset
     #    requires cluster_from.J[keep,keep] to be invertible
     keepind = scopeindex(sepset, cluster_from)
@@ -376,26 +377,29 @@ function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
     h,J,g = try
         marginalizebelief(cluster_from, keepind)
     catch ex
-        ex::LA.PosDefException && withdefault || throw(ex)
+        isa(ex, LA.PosDefException) && withdefault || throw(ex)
         degenerate = true
         #= `cluster_from` is degenerate, so let `cluster_to` receive a default
         message instead =#
         defaultmessage(length(keepind))
     end
-    # 2. extend message to scope of cluster_to and propagate
     upind = scopeindex(sepset, cluster_to) # indices to be updated
     if !degenerate
+        # 2. extend message to scope of cluster_to and propagate
         view(cluster_to.h, upind)        .+= h .- sepset.h
         view(cluster_to.J, upind, upind) .+= J .- sepset.J
         cluster_to.g[1]                   += g  - sepset.g[1]
+        # 3. update sepset belief
+        sepset.h   .= h
+        sepset.J   .= J
+        sepset.g[1] = g
     else # here, (h, J, g) describes the message received, not sent
         view(cluster_to.h, upind)        .+= h
         view(cluster_to.J, upind, upind) .+= J
         cluster_to.g[1]                   += g
+        sepset.h   .+= h
+        sepset.J   .+= J
+        sepset.g[1] += g
     end
-    # 3. update sepset belief
-    sepset.h   .= h
-    sepset.J   .= J
-    sepset.g[1] = g
     return sepset
 end
