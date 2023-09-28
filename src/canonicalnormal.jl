@@ -381,6 +381,7 @@ function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
     #    requires cluster_from.J[keep,keep] to be invertible
     keepind = scopeindex(sepset, cluster_from)
     # canonical parameters of message received by `cluster_to`
+    # message sent: (h, J, g), message received: (Δh, ΔJ, Δg)
     Δh, ΔJ, Δg = try
         h, J, g = marginalizebelief(cluster_from, keepind)
         # `cluster_from` is nondegenerate wrt the variables to be integrated out
