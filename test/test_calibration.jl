@@ -86,9 +86,9 @@ spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
         cg_H5i4i2_mean = PGBP.integratebelief!(cgb.belief[cgb.cdict[:H5i4i2]])[1]
         cg_i6H5_var = cgb.belief[cgb.cdict[:i6H5]].J \ I
         cg_i6H5_mean = PGBP.integratebelief!(cgb.belief[cgb.cdict[:i6H5]])[1]
-        @test ct_H5i4i2_var ≈ cg_H5i4i2_var rtol 1e-5
-        @test ct_H5i4i2_mean ≈ cg_H5i4i2_mean rtol 1e-5
-        @test ct_i6H5_var ≈ cg_i6H5_var rtol 1e-5
+        @test ct_H5i4i2_var ≈ cg_H5i4i2_var rtol=1e-5
+        @test ct_H5i4i2_mean ≈ cg_H5i4i2_mean rtol=1e-5
+        @test ct_i6H5_var ≈ cg_i6H5_var rtol=1e-5
         @test ct_i6H5_mean ≈ cg_i6H5_mean rtol=1e-5
     end
 

@@ -8,6 +8,9 @@ sepset beliefs coming last. Fields:
 - `cdict`: dictionary to get the index of a cluster belief from its node labels
 - `sdict`: dictionary to get the index of a sepset belief from the labels of
    its two incident clusters.
+- `calibrated`: dictionary to check if a cluster and an incident sepset had
+   calibrated beliefs the last time a message was sent from that cluster across
+   that sepset.
 
 Assumptions:
 - For a cluster belief, the cluster's nodes are stored in the belief's `metadata`.
@@ -22,6 +25,9 @@ struct ClusterGraphBelief{T<:AbstractBelief}
     cdict::Dict{Symbol,Int}
     "dictionary: cluster neighbor labels => sepset index"
     sdict::Dict{Set{Symbol},Int}
+    "dictionary: ordered cluster neighbor labels (cluster_to, cluster_from)
+    defining a message direction => boolean"
+    calibrated::Dict{Tuple{Symbol,Symbol},Bool}
 end
 nbeliefs(obj::ClusterGraphBelief)  = length(obj.belief)
 nclusters(obj::ClusterGraphBelief) = obj.nclusters
@@ -38,7 +44,6 @@ clusterindex(c, obj::ClusterGraphBelief) = clusterindex(c, obj.cdict)
 function clusterindex(clusterlabel, clusterdict)
     clusterdict[clusterlabel]
 end
-
 sepsetindex(c1, c2, obj::ClusterGraphBelief) = sepsetindex(c1, c2, obj.sdict)
 function sepsetindex(clustlabel1, clustlabel2, sepsetdict)
     sepsetdict[Set((clustlabel1, clustlabel2))]
@@ -53,7 +58,8 @@ function ClusterGraphBelief(beliefs)
         error("sepsets are not consecutive")
     cdict = get_clusterindexdictionary(beliefs, nc)
     sdict = get_sepsetindexdictionary(beliefs, nc)
-    return ClusterGraphBelief{eltype(beliefs)}(beliefs,nc,cdict,sdict)
+    calibrated = init_calibrated(beliefs, nc)
+    return ClusterGraphBelief{eltype(beliefs)}(beliefs,nc,cdict,sdict,calibrated)
 end
 function get_clusterindexdictionary(beliefs, nclusters)
     Dict(beliefs[j].metadata => j for j in 1:nclusters)
@@ -61,7 +67,15 @@ end
 function get_sepsetindexdictionary(beliefs, nclusters)
     Dict(Set(beliefs[j].metadata) => j for j in (nclusters+1):length(beliefs))
 end
-
+function init_calibrated(beliefs, nclusters)
+    calibrated = Dict{Tuple{Symbol,Symbol},Bool}()
+    for j in (nclusters+1):length(beliefs)
+        (clustlab1, clustlab2) = beliefs[j].metadata
+        calibrated[(clustlab1, clustlab2)] = false
+        calibrated[(clustlab2, clustlab1)] = false
+    end
+    return calibrated
+end
 
 """
     integratebelief!(obj, beliefindex)
@@ -145,34 +159,57 @@ function mod_beliefs_bethe!(beliefs::ClusterGraphBelief,
 end
 
 """
-    calibrate!(beliefs::ClusterGraphBelief, schedule, niterations=1)
+    calibrate!(beliefs::ClusterGraphBelief, schedule, niterations=1, auto=false)
 
-Propagate messages for each tree in the `schedule` list,
-in postorder then in preorder, and repeats this for `niterations`.
+Propagate messages for each tree in the `schedule` list, in postorder then in
+preorder, and repeat this for `niterations`. `true` **only if** `beliefs` are
+calibrated after all messages have been propagated, `false` otherwise (i.e.
+`beliefs` may be calibrated even if `false`, more explanation below).
 Each schedule "tree" should be a tuple of 4 vectors as output by
-[`spanningtree_clusterlist`](@ref), where each vector provides the
-parent/child label/index of an edge along which to pass a message,
-and where these edges are listed in preorder. For example, the parent
-of the first edge is taken to be the root of the schedule tree.
+[`spanningtree_clusterlist`](@ref), where each vector provides the parent/child
+label/index of an edge along which to pass a message, and where these edges are
+listed in preorder. For example, the parent of the first edge is taken to be the
+root of the schedule tree.
 
-The default of 1 iteration is sufficient for exact calibration if
-the schedule tree is a clique tree for the graphical model.
+Calibration is flagged if, after a schedule "tree" is executed, it is found that
+each possible message sent in the cluster graph was last equal to its moderating
+sepset belief (within some tolerance).
+This condition is sufficient but not necessary for calibration (e.g. the default
+of 1 iteration is sufficient for exact calibration if the schedule tree is a
+clique tree for the graphical model, however calibration will not be flagged).
+If `auto` is true, then return `true` whenever calibration is flagged before
+`niterations` have been completed.
+
+See also: [`flagcalibrated`](@ref)
 """
-function calibrate!(beliefs::ClusterGraphBelief, schedule::AbstractVector, niter=1::Integer)
-    for _ in 1:niter
+function calibrate!(beliefs::ClusterGraphBelief, schedule::AbstractVector,
+    niter::Integer=1, auto::Bool=false)
+    # fixit: input checks?
+    i = 0
+    while i < niter
         # spt = spanningtree_clusterlist(cgraph, prenodes)
-        for spt in schedule
-            calibrate!(beliefs, spt)
+        i += 1
+        for (j, spt) in enumerate(schedule)
+            if calibrate!(beliefs, spt) && auto
+                # stop automatically once calibration is detected
+                # fixit: print more info when calibration is detected early?
+                println("Calibrated after: iter $i, sch $j")
+                return true
+            end
         end
     end
+    # fixit: check calibration properly at the end?
+    return false
 end
 function calibrate!(beliefs::ClusterGraphBelief, spt::Tuple)
     propagate_1traversal_postorder!(beliefs, spt...)
     propagate_1traversal_preorder!(beliefs, spt...)
+    return flagcalibrated(beliefs)
 end
 
 """
     iscalibrated(beliefs::ClusterGraphBelief, edge_labels, rtol::Float64=1e-2)
+    iscalibrated(residual::Tuple, atol::Float64=1e-5)
 
 `true` if each edge belief is *marginally consistent* with the beliefs of the
 pair of clusters that it spans (i.e. their marginal means and variances are
@@ -180,6 +217,10 @@ approximately equal with relative tolerance `rtol`), `false` otherwise.
 
 Mean vectors are compared by their 2-norm and variance matrices are compared by
 the Frobenius norm.
+
+The second form checks if the residual (in terms of canonical parameters: h, J)
+between a new message from a cluster through an edge, and the current edge
+belief is within `atol` of 0, elementwise.
 """
 function iscalibrated(beliefs::ClusterGraphBelief,
         edgelabs::Vector{Tuple{Symbol, Symbol}}, rtol=1e-2)
@@ -219,6 +260,26 @@ function iscalibrated(beliefs::ClusterGraphBelief,
     end
     return true
 end
+function iscalibrated(residual::Tuple, atol=1e-5)
+    # fixit: review
+    Δh, ΔJ = residual
+    return all(isapprox.(Δh, 0, atol=atol)) && all(isapprox.(ΔJ, 0, atol=atol))
+end
+
+"""
+    flagcalibrated(beliefs::ClusterGraphBelief)
+
+True if for each possible message that can be sent in the cluster graph, its
+most recent residual (in terms of canonical parameters: h, J) with the
+moderating sepset belief is zero (within some tolerance). This condition is
+sufficient but not necessary for calibration.
+
+See also: [`iscalibrated(residual, atol)`](@ref)
+"""
+function flagcalibrated(beliefs::ClusterGraphBelief)
+    # fixit: review
+    return all(values(beliefs.calibrated))
+end
 
 """
     propagate_1traversal_postorder!(beliefs::ClusterGraphBelief, spanningtree...)
@@ -238,20 +299,24 @@ tree is produced by [`spanningtree_clusterlist`](@ref) on the same graph.
 function propagate_1traversal_postorder!(beliefs::ClusterGraphBelief,
             pa_lab, ch_lab, pa_j, ch_j)
     b = beliefs.belief
+    calibrated = beliefs.calibrated
     # (parent <- sepset <- child) in postorder
     for i in reverse(1:length(pa_lab))
         ss_j = sepsetindex(pa_lab[i], ch_lab[i], beliefs)
-        propagate_belief!(b[pa_j[i]], b[ss_j], b[ch_j[i]])
+        _, residual = propagate_belief!(b[pa_j[i]], b[ss_j], b[ch_j[i]])
+        calibrated[(pa_lab[i], ch_lab[i])] = iscalibrated(residual)
     end
 end
 
 function propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,
             pa_lab, ch_lab, pa_j, ch_j)
     b = beliefs.belief
+    calibrated = beliefs.calibrated
     # (child <- sepset <- parent) in preorder
     for i in 1:length(pa_lab)
         ss_j = sepsetindex(pa_lab[i], ch_lab[i], beliefs)
-        propagate_belief!(b[ch_j[i]], b[ss_j], b[pa_j[i]])
+        _, residual = propagate_belief!(b[ch_j[i]], b[ss_j], b[pa_j[i]])
+        calibrated[(ch_lab[i], pa_lab[i])] = iscalibrated(residual)
     end
 end
 
