@@ -4,6 +4,7 @@
 Structure to hold a vector of beliefs, with cluster beliefs coming first and
 sepset beliefs coming last. Fields:
 - `belief`: vector of beliefs
+- `factor`: vector of initial cluster beliefs after factor assignment
 - `nclusters`: number of clusters
 - `cdict`: dictionary to get the index of a cluster belief from its node labels
 - `sdict`: dictionary to get the index of a sepset belief from the labels of
@@ -20,7 +21,7 @@ struct ClusterGraphBelief{T<:AbstractBelief}
     "vector of beliefs, cluster beliefs first and sepset beliefs last"
     belief::Vector{T}
     "vector of initial cluster beliefs"
-    init_cbelief::Vector{T} # fixit: review
+    factors::Vector{T} # fixit: review
     "number of clusters"
     nclusters::Int
     "dictionary: cluster label => cluster index"
@@ -51,8 +52,8 @@ function sepsetindex(clustlabel1, clustlabel2, sepsetdict)
     sepsetdict[Set((clustlabel1, clustlabel2))]
 end
 
-# fixit: review addition of `init_beliefs` argument
-function ClusterGraphBelief(beliefs, init_beliefs)
+# fixit: review. Assumes that `beliefs` modified by `init_beliefs_assignfactors!`
+function ClusterGraphBelief(beliefs)
     i = findfirst(b -> b.type == bsepsettype, beliefs)
     nc = (isnothing(i) ? length(beliefs) : i-1)
     all(beliefs[i].type == bclustertype for i in 1:nc) ||
@@ -62,7 +63,8 @@ function ClusterGraphBelief(beliefs, init_beliefs)
     cdict = get_clusterindexdictionary(beliefs, nc)
     sdict = get_sepsetindexdictionary(beliefs, nc)
     calibrated = init_calibrated(beliefs, nc)
-    return ClusterGraphBelief{eltype(beliefs)}(beliefs,init_beliefs,nc,cdict,sdict,calibrated)
+    factors = deepcopy(beliefs[1:nc])
+    return ClusterGraphBelief{eltype(beliefs)}(beliefs,factors,nc,cdict,sdict,calibrated)
 end
 function get_clusterindexdictionary(beliefs, nclusters)
     Dict(beliefs[j].metadata => j for j in 1:nclusters)
@@ -78,6 +80,27 @@ function init_calibrated(beliefs, nclusters)
         calibrated[(clustlab2, clustlab1)] = false
     end
     return calibrated
+end
+
+"""
+    init_beliefs_reset!(beliefs::ClusterGraphBelief)
+
+Reset cluster beliefs to factors, which can be re-initialized with different
+model parameters, and sepset beliefs to h=0, J=0, g=0.
+"""
+function init_beliefs_reset!(beliefs::ClusterGraphBelief)
+    nc, nb = nclusters(beliefs), length(beliefs)
+    b, f = beliefs.belief, beliefs.factors
+    for i in 1:nc
+        b[i].h   .= f[i].h
+        b[i].J   .= f[i].J
+        b[i].g[1] = f[i].g[1]
+    end
+    for i in (nc+1):nb
+        b[i].h   .= 0.0
+        b[i].J   .= 0.0
+        b[i].g[1] = 0.0
+    end
 end
 
 """
@@ -372,11 +395,25 @@ end
 """
     free_energy(beliefs::ClusterGraphBelief)
 
-fixit: add documentation
+Bethe free energy from `beliefs`. This is computed by adding up cluster average
+energies and entropies, and subtracting sepset entropies. It is assumed but not
+checked that `beliefs` are calibrated.
+
+For a calibrated clique tree, -(Bethe free energy) is equal to the
+log-likelihood. For a calibrated cluster graph, -(Bethe free energy) approximates
+the evidence lower bound (ELBO) for the log-likelihood. Thus, minimizing the
+Bethe free energy maximizes an approximation to the ELBO for the log-likelihood.
+
+See also: [`entropy`](@ref), [`average_energy`](@ref), [`iscalibrated`](@ref)
+
+## References
+D. M. Blei, A. Kucukelbir, and J. D. McAuliffe. Variational inference: A Review
+for Statisticians, Journal of the American statistical Association, 112:518,
+859-877, 2017, doi: [10.1080/01621459.2017.1285773](https://doi/org/10.1080/01621459.2017.1285773).
 """
 function free_energy(beliefs::ClusterGraphBelief)
     b = beliefs.belief
-    init_b = beliefs.init_cbelief
+    init_b = beliefs.factors
     nbeliefs = length(b)
     nclusters = beliefs.nclusters
     ave_energy = 0
@@ -388,5 +425,5 @@ function free_energy(beliefs::ClusterGraphBelief)
     for i in (nclusters+1):nbeliefs
         approx_entropy -= entropy(b[i])
     end
-    return (ave_energy, approx_entropy, ave_energy + approx_entropy)
+    return (ave_energy, approx_entropy, ave_energy - approx_entropy)
 end

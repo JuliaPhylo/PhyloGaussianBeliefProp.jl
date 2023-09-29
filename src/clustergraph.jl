@@ -372,7 +372,7 @@ Requires:
 
 R. Mateescu, K. Kask, V.Gogate, and R. Dechter. Join-graph propagation algorithms.
 *Journal of Artificial Intelligence Research*, 37:279-328, 2010
-doi:v[10.1613/jair.2842](https://doi.org/10.1613/jair.2842).
+doi: [10.1613/jair.2842](https://doi.org/10.1613/jair.2842).
 """
 struct JoinGraphStructuring <: AbstractClusterGraphMethod
     maxclustersize::Integer

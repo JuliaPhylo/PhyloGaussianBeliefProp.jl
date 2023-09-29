@@ -30,7 +30,7 @@ struct ClusterBelief{Vlabel<:AbstractVector,T<:Real,P<:AbstractMatrix{T},V<:Abst
     h::V
     J::P
     g::MVector{1,T} # mutable
-    "belief type: cluster (node in cluster grahp) or sepset (edge in cluster graph)"
+    "belief type: cluster (node in cluster graph) or sepset (edge in cluster graph)"
     type::BeliefType
     "metadata, e.g. index in cluster graph"
     metadata::M
@@ -225,6 +225,15 @@ function init_beliefs_reset!(beliefs)
         be.g[1] = 0.0
     end
 end
+function init_beliefs_reset!(beliefs::Vector{AbstractBelief},
+    factors::Vector{AbstractBelief})
+    # fixit: input checks?
+    for (be, fa) in zip(beliefs, factors)
+        be.h .= fa.h
+        be.J .= fa.J
+        be.g[1] = fa.g[1]
+    end
+end
 
 """
     init_beliefs_assignfactors!(beliefs, evolutionarymodel, columntable, taxa,
@@ -404,30 +413,36 @@ function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
 end
 
 """
-    entropy(cluster::AbstractBelief)
+    entropy(belief::AbstractBelief)
 
-fixit: add documentation
+Entropy value for `belief`. `belief` must be non-degenerate over variables in
+scope.
+
 See implementation in [Distributions.jl](https://github.com/JuliaStats/Distributions.jl/blob/e407fa5fd098e50df51801c6d062946eac7a7d0f/src/multivariate/mvnormal.jl#L95).
 """
 function entropy(cluster::AbstractBelief)
-    # fixit: use PDMat here? fails if cholesky fails
+    #= note: errors can arise if `LA.logdet(PDMat(cluster.J))` is used.
+    `current.J` may be detected as non-hermitian?? =#
     (dimension(cluster) * (log2π + 1) - LA.logdet(cluster.J))/2
 end
 
 """
-    average_energy(finalbelief::AbstractBelief, initbelief::AbstractBelief)
+    average_energy(current_belief::AbstractBelief, initial_belief::AbstractBelief)
 
-fixit: add documentation
+Negative expectation (with respect to `current_belief`) of log(`initial_belief`).
+`current_belief` must be non-degenerate over variables in scope.
 """
-function average_energy(finalbelief::AbstractBelief, initbelief::AbstractBelief)
+function average_energy(current::AbstractBelief, initial::AbstractBelief)
     #=
-    E[-(1/2)x'*J_init*x + h_init'x + g_init] wrt β(J_final, h_final)
-    = -(1/2)*(μ_final'*J_init*μ_final + tr(J_init*(J_final)⁻¹)) +
-        h_init'*μ_final + g_init
-    = -(1/2)*(tr(J_init*μ_final*μ_final') + tr(J_init*(J_final)⁻¹)) + ...
+    E[-(1/2)x'*J_init*x + h_init'x + g_init] wrt β(J_curr, h_curr)
+    = -(1/2)*(μ_curr'*J_init*μ_curr + tr(J_init*(J_curr)⁻¹)) +
+        h_init'*μ_curr + g_init
+    = -(1/2)*(tr(J_init*μ_curr*μ_curr') + tr(J_init*(J_curr)⁻¹)) + ...
     =#
-    μ_final, _ = integratebelief!(finalbelief) # v_out
+    μ_curr, _ = integratebelief!(current)
     # fixit: check for more efficient order of operations
-    -0.5*LA.tr(initbelief.J*(μ_final*μ_final' + LA.inv(finalbelief.J))) +
-    initbelief.h'*μ_final + initbelief.g[1]
+    #= note: errors can arise if `LA.inv(PDMat(current.J))` is used.
+    `current.J` may be detected as non-hermitian?? =#
+    0.5*LA.tr(initial.J*(μ_curr*μ_curr' + LA.inv(current.J))) -
+    initial.h'*μ_curr - initial.g[1]
 end

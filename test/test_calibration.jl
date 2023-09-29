@@ -14,7 +14,7 @@ name by cluster graph method used =#
         spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b, deepcopy(b))
+        ctb = PGBP.ClusterGraphBelief(b)
         PGBP.calibrate!(ctb, [spt])
         @test PGBP.default_sepset1(ctb) == 8
         llscore = -10.732857817537196
@@ -25,6 +25,7 @@ name by cluster graph method used =#
             _, tmp = PGBP.integratebelief!(ctb, i)
             @test tmp ≈ llscore
         end
+        @test -PGBP.free_energy(ctb)[3] ≈ llscore
         #= likelihood using PN.vcv and matrix inversion, different params
         σ2tmp = 1; μtmp = -2
         Σnet = σ2tmp .* Matrix(vcv(net)[!,Symbol.(df.taxon)])
@@ -43,7 +44,7 @@ name by cluster graph method used =#
             cg = PGBP.clustergraph!(net, PGBP.Bethe())
             b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
             PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-            cgb = PGBP.ClusterGraphBelief(b, deepcopy(b))
+            cgb = PGBP.ClusterGraphBelief(b)
             #= Modify beliefs of cluster graph so that any schedule is valid (i.e. all
             marginalization operations in the schedule are well-defined). =#
             PGBP.mod_beliefs_bethe!(cgb, PGBP.dimension(m), net)
@@ -70,7 +71,7 @@ name by cluster graph method used =#
             cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3))
             b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
             PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-            cgb = PGBP.ClusterGraphBelief(b, deepcopy(b))
+            cgb = PGBP.ClusterGraphBelief(b)
             pa_lab, ch_lab, pa_j, ch_j =
                 PGBP.minimal_valid_schedule(cg, [:Ai4, :B2i6, :B1i6, :Ci2])
             for i in 1:length(pa_lab)
@@ -109,7 +110,7 @@ name by cluster graph method used =#
             spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
             b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
             PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-            ctb = PGBP.ClusterGraphBelief(b, deepcopy(b))
+            ctb = PGBP.ClusterGraphBelief(b)
             PGBP.calibrate!(ctb, [spt])
             ct_H1H2I1_ind = PGBP.clusterindex(:H1H2I1, ctb)
             ct_H1H2I1_var = ctb.belief[ct_H1H2I1_ind].J \ I
@@ -123,7 +124,7 @@ name by cluster graph method used =#
             cg = PGBP.clustergraph!(net, PGBP.Bethe())
             b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
             PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-            cgb = PGBP.ClusterGraphBelief(b, deepcopy(b))
+            cgb = PGBP.ClusterGraphBelief(b)
             schedule = PGBP.spanningtrees_cover_clusterlist(cg, net.nodes_changed)
             PGBP.calibrate!(cgb, schedule, 5)
             cg_H1H2I1_ind = PGBP.clusterindex(:H1H2I1, cgb)
@@ -135,6 +136,7 @@ name by cluster graph method used =#
             cg_H3H2I2_mean = PGBP.integratebelief!(cgb.belief[cg_H3H2I2_ind])[1]
             # PGBP.integratebelief!(cgb.belief[cg_H3H2I2_ind])[2] # 3145.6526665768074
     
+            @test -PGBP.free_energy(ctb)[3] ≈ PGBP.integratebelief!(ctb)[2]
             @test ct_H1H2I1_mean ≈ cg_H1H2I1_mean rtol=1e-3
             @test ct_H3H2I2_mean ≈ cg_H3H2I2_mean rtol=2*1e-3
             @test diag(ct_H1H2I1_var) ≈ diag(cg_H1H2I1_var) rtol=2*1e-1
@@ -154,7 +156,7 @@ name by cluster graph method used =#
             spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
             b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
             PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-            ctb = PGBP.ClusterGraphBelief(b, deepcopy(b))
+            ctb = PGBP.ClusterGraphBelief(b)
             PGBP.calibrate!(ctb, [spt])
             ct_I1I2I3_ind = PGBP.clusterindex(:I1I2I3, ctb)
             ct_I1I2I3_var = ctb.belief[ct_I1I2I3_ind].J \ I
@@ -168,7 +170,7 @@ name by cluster graph method used =#
             cg = PGBP.clustergraph!(net, PGBP.Bethe())
             b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
             PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-            cgb = PGBP.ClusterGraphBelief(b, deepcopy(b))
+            cgb = PGBP.ClusterGraphBelief(b)
             schedule = PGBP.spanningtrees_cover_clusterlist(cg, net.nodes_changed)
             PGBP.calibrate!(cgb, schedule, 5)
             cg_H1H2H3_ind = PGBP.clusterindex(:H1H2H3, cgb)
@@ -180,6 +182,7 @@ name by cluster graph method used =#
             cg_H3I1I2_mean = PGBP.integratebelief!(cgb.belief[cg_H3I1I2_ind])[1]
             PGBP.integratebelief!(cgb.belief[cg_H3I1I2_ind])[2] # -50834.08155577985
     
+            @test -PGBP.free_energy(ctb)[3] ≈ PGBP.integratebelief!(ctb)[2]
             @test ct_I1I2I3_mean ≈ cg_H3I1I2_mean[2:3] rtol=1e-4
             @test ct_H1H2H3_mean ≈ cg_H1H2H3_mean rtol=1e-4
             @test diag(ct_I1I2I3_var) ≈ diag(cg_H3I1I2_var)[2:3] rtol=1e-1
@@ -203,7 +206,7 @@ end
         # y: 1 trait, no missing values
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b, deepcopy(b))
+        ctb = PGBP.ClusterGraphBelief(b)
         mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(ctb, ct, net.nodes_changed,
             tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (1,-2))
         @test PGBP.integratebelief!(ctb, spt[3][1])[2] ≈ llscore
@@ -233,7 +236,7 @@ end
         # x: 1 trait, some missing values
         b = PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, ct, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b, deepcopy(b))
+        ctb = PGBP.ClusterGraphBelief(b)
         mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(ctb, ct, net.nodes_changed,
             tbl_x, df.taxon, PGBP.UnivariateBrownianMotion, (1,-2))
         @test PGBP.integratebelief!(ctb, spt[3][1])[2] ≈ llscore
@@ -245,7 +248,7 @@ end
         m = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0,0))
         b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b, deepcopy(b))
+        ctb = PGBP.ClusterGraphBelief(b)
         mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(ctb, ct, net.nodes_changed,
             tbl, df.taxon, PGBP.MvDiagBrownianMotion, ((2,1), (1,-1)))
         @test PGBP.integratebelief!(ctb, spt[3][1])[2] ≈ llscore
