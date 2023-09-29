@@ -19,6 +19,8 @@ Assumptions:
 struct ClusterGraphBelief{T<:AbstractBelief}
     "vector of beliefs, cluster beliefs first and sepset beliefs last"
     belief::Vector{T}
+    "vector of initial cluster beliefs"
+    init_cbelief::Vector{T} # fixit: review
     "number of clusters"
     nclusters::Int
     "dictionary: cluster label => cluster index"
@@ -49,7 +51,8 @@ function sepsetindex(clustlabel1, clustlabel2, sepsetdict)
     sepsetdict[Set((clustlabel1, clustlabel2))]
 end
 
-function ClusterGraphBelief(beliefs)
+# fixit: review addition of `init_beliefs` argument
+function ClusterGraphBelief(beliefs, init_beliefs)
     i = findfirst(b -> b.type == bsepsettype, beliefs)
     nc = (isnothing(i) ? length(beliefs) : i-1)
     all(beliefs[i].type == bclustertype for i in 1:nc) ||
@@ -59,7 +62,7 @@ function ClusterGraphBelief(beliefs)
     cdict = get_clusterindexdictionary(beliefs, nc)
     sdict = get_sepsetindexdictionary(beliefs, nc)
     calibrated = init_calibrated(beliefs, nc)
-    return ClusterGraphBelief{eltype(beliefs)}(beliefs,nc,cdict,sdict,calibrated)
+    return ClusterGraphBelief{eltype(beliefs)}(beliefs,init_beliefs,nc,cdict,sdict,calibrated)
 end
 function get_clusterindexdictionary(beliefs, nclusters)
     Dict(beliefs[j].metadata => j for j in 1:nclusters)
@@ -364,4 +367,26 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     bestθ = Optim.minimizer(opt)
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
     return bestmodel, loglikscore, opt
+end
+
+"""
+    free_energy(beliefs::ClusterGraphBelief)
+
+fixit: add documentation
+"""
+function free_energy(beliefs::ClusterGraphBelief)
+    b = beliefs.belief
+    init_b = beliefs.init_cbelief
+    nbeliefs = length(b)
+    nclusters = beliefs.nclusters
+    ave_energy = 0
+    approx_entropy = 0
+    for i in 1:nclusters
+        ave_energy += average_energy(b[i], init_b[i])
+        approx_entropy += entropy(b[i])
+    end
+    for i in (nclusters+1):nbeliefs
+        approx_entropy -= entropy(b[i])
+    end
+    return (ave_energy, approx_entropy, ave_energy + approx_entropy)
 end

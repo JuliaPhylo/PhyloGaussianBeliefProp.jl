@@ -402,3 +402,32 @@ function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
     sepset.g[1] += Δg
     return sepset, (Δh, ΔJ)
 end
+
+"""
+    entropy(cluster::AbstractBelief)
+
+fixit: add documentation
+See implementation in [Distributions.jl](https://github.com/JuliaStats/Distributions.jl/blob/e407fa5fd098e50df51801c6d062946eac7a7d0f/src/multivariate/mvnormal.jl#L95).
+"""
+function entropy(cluster::AbstractBelief)
+    # fixit: use PDMat here? fails if cholesky fails
+    (dimension(cluster) * (log2π + 1) - LA.logdet(cluster.J))/2
+end
+
+"""
+    average_energy(finalbelief::AbstractBelief, initbelief::AbstractBelief)
+
+fixit: add documentation
+"""
+function average_energy(finalbelief::AbstractBelief, initbelief::AbstractBelief)
+    #=
+    E[-(1/2)x'*J_init*x + h_init'x + g_init] wrt β(J_final, h_final)
+    = -(1/2)*(μ_final'*J_init*μ_final + tr(J_init*(J_final)⁻¹)) +
+        h_init'*μ_final + g_init
+    = -(1/2)*(tr(J_init*μ_final*μ_final') + tr(J_init*(J_final)⁻¹)) + ...
+    =#
+    μ_final, _ = integratebelief!(finalbelief) # v_out
+    # fixit: check for more efficient order of operations
+    -0.5*LA.tr(initbelief.J*(μ_final*μ_final' + LA.inv(finalbelief.J))) +
+    initbelief.h'*μ_final + initbelief.g[1]
+end
