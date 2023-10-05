@@ -1,3 +1,22 @@
+abstract type AbstractResidual end
+
+#= fixit: have a simple function that goes through and checks with different
+tolerance values. `missing`s would indicate that a message has not been passed. =#
+struct MessageResidual{T<:Real,P<:AbstractMatrix{T},V<:AbstractVector{T}} <: AbstractResidual
+    Δh::V
+    ΔJ::P
+    # fixit: compute a norm from Δh and ΔJ, to store in `resid`?
+    # resid::MVector{1,T}
+    kldiv::Vector{Union{Missing,T}}
+    iscalibrated_resid::MVector{1,Bool}
+    iscalibrated_kl::MVector{1,Bool}
+end
+
+function MessageResidual(ΔJ::AbstractMatrix{T},
+        Δh::AbstractVector{T}, _) where {T <: Real}
+    MessageResidual(Δh, ΔJ, Union{Missing,T}[missing], MVector(false), MVector(false))
+end
+
 """
     ClusterGraphBelief(belief_vector)
 
@@ -9,9 +28,10 @@ sepset beliefs coming last. Fields:
 - `cdict`: dictionary to get the index of a cluster belief from its node labels
 - `sdict`: dictionary to get the index of a sepset belief from the labels of
    its two incident clusters.
-- `calibrated`: dictionary to check if a cluster and an incident sepset had
-   calibrated beliefs the last time a message was sent from that cluster across
-   that sepset.
+- `messageresidual`: dictionary to log residual information from messages. For
+example, this information can be used to track if a sending cluster and a
+receiving sepset had calibrated beliefs (within some tolerance) at the last
+instance of that message.
 
 Assumptions:
 - For a cluster belief, the cluster's nodes are stored in the belief's `metadata`.
@@ -20,7 +40,7 @@ Assumptions:
 struct ClusterGraphBelief{T<:AbstractBelief}
     "vector of beliefs, cluster beliefs first and sepset beliefs last"
     belief::Vector{T}
-    "vector of initial cluster beliefs"
+    "vector of factors from the graphical model, used to initialize cluster beliefs"
     factors::Vector{T} # fixit: review
     "number of clusters"
     nclusters::Int
@@ -28,9 +48,8 @@ struct ClusterGraphBelief{T<:AbstractBelief}
     cdict::Dict{Symbol,Int}
     "dictionary: cluster neighbor labels => sepset index"
     sdict::Dict{Set{Symbol},Int}
-    "dictionary: ordered cluster neighbor labels (cluster_to, cluster_from)
-    defining a message direction => boolean"
-    calibrated::Dict{Tuple{Symbol,Symbol},Bool}
+    "dictionary: message labels (cluster_to, cluster_from) => residual information"
+    messageresidual::Dict{Tuple{Symbol,Symbol},Union{Missing,AbstractResidual}}
 end
 nbeliefs(obj::ClusterGraphBelief)  = length(obj.belief)
 nclusters(obj::ClusterGraphBelief) = obj.nclusters
@@ -62,9 +81,10 @@ function ClusterGraphBelief(beliefs)
         error("sepsets are not consecutive")
     cdict = get_clusterindexdictionary(beliefs, nc)
     sdict = get_sepsetindexdictionary(beliefs, nc)
-    calibrated = init_calibrated(beliefs, nc)
+    messageresidual = init_messageresidual(beliefs, nc)
     factors = deepcopy(beliefs[1:nc])
-    return ClusterGraphBelief{eltype(beliefs)}(beliefs,factors,nc,cdict,sdict,calibrated)
+    return ClusterGraphBelief{eltype(beliefs)}(beliefs,factors,nc,cdict,sdict,
+        messageresidual)
 end
 function get_clusterindexdictionary(beliefs, nclusters)
     Dict(beliefs[j].metadata => j for j in 1:nclusters)
@@ -72,14 +92,14 @@ end
 function get_sepsetindexdictionary(beliefs, nclusters)
     Dict(Set(beliefs[j].metadata) => j for j in (nclusters+1):length(beliefs))
 end
-function init_calibrated(beliefs, nclusters)
-    calibrated = Dict{Tuple{Symbol,Symbol},Bool}()
+function init_messageresidual(beliefs, nclusters)
+    messageresidual = Dict{Tuple{Symbol,Symbol},Union{Missing,AbstractResidual}}()
     for j in (nclusters+1):length(beliefs)
         (clustlab1, clustlab2) = beliefs[j].metadata
-        calibrated[(clustlab1, clustlab2)] = false
-        calibrated[(clustlab2, clustlab1)] = false
+        messageresidual[(clustlab1, clustlab2)] = missing
+        messageresidual[(clustlab2, clustlab1)] = missing
     end
-    return calibrated
+    return messageresidual
 end
 
 """
@@ -206,7 +226,7 @@ clique tree for the graphical model, however calibration will not be flagged).
 If `auto` is true, then return `true` whenever calibration is flagged before
 `niterations` have been completed.
 
-See also: [`flagcalibrated`](@ref)
+See also: [`iscalibrated_canon`](@ref)
 """
 function calibrate!(beliefs::ClusterGraphBelief, schedule::AbstractVector,
     niter::Integer=1, auto::Bool=false)
@@ -230,7 +250,7 @@ end
 function calibrate!(beliefs::ClusterGraphBelief, spt::Tuple)
     propagate_1traversal_postorder!(beliefs, spt...)
     propagate_1traversal_preorder!(beliefs, spt...)
-    return flagcalibrated(beliefs)
+    return iscalibrated_canon(beliefs)
 end
 
 """
@@ -286,25 +306,60 @@ function iscalibrated(beliefs::ClusterGraphBelief,
     end
     return true
 end
-function iscalibrated(residual::Tuple, atol=1e-5)
-    # fixit: review
-    Δh, ΔJ = residual
-    return all(isapprox.(Δh, 0, atol=atol)) && all(isapprox.(ΔJ, 0, atol=atol))
-end
 
 """
-    flagcalibrated(beliefs::ClusterGraphBelief)
+    iscalibrated_canonical(beliefs::ClusterGraphBelief)
+    iscalibrated_kl(beliefs::ClusterGraphBelief)
 
 True if for each possible message that can be sent in the cluster graph, its
-most recent residual (in terms of canonical parameters: h, J) with the
-moderating sepset belief is zero (within some tolerance). This condition is
-sufficient but not necessary for calibration.
+most recent residual (in terms of canonical parameters: h, J) with the receiving
+sepset's belief is zero (within some tolerance). False otherwise. This condition
+is sufficient but not necessary for calibration.
 
 See also: [`iscalibrated(residual, atol)`](@ref)
 """
-function flagcalibrated(beliefs::ClusterGraphBelief)
+function iscalibrated_canon(beliefs::ClusterGraphBelief)
     # fixit: review
-    return all(values(beliefs.calibrated))
+    all(x -> !ismissing(x) && x.iscalibrated_resid[1],
+        values(beliefs.messageresidual))
+end
+
+"""
+    iscalibrated_kl(beliefs::ClusterGraphBelief)
+
+True if for each possible message that can be sent in the cluster graph, its
+most recent KL divergence with the receiving sepset's belief is zero (within
+some tolerance). False otherwise. This condition is sufficient but not
+necessary for calibration.
+"""
+function iscalibrated_KL(beliefs::ClusterGraphBelief)
+    # fixit: review
+    all(x -> !ismissing(x) && x.iscalibrated_kl[1],
+        values(beliefs.messageresidual))
+end
+
+"""
+    iscalibrated_canon!(res::AbstractResidual, atol=1e-5)
+
+True if the canonical parameters of the message residual (`res.Δh` and `res.ΔJ`)
+are within `atol` of 0, elementwise. False otherwise.
+"""
+function iscalibrated_canon!(res::AbstractResidual, atol=1e-5)
+    # fixit: review
+    res.iscalibrated_resid[1] = all(isapprox.(res.Δh, 0.0, atol=atol)) &&
+        all(isapprox.(res.ΔJ, 0, atol=atol))
+end
+
+"""
+    iscalibrated_kl!(res::AbstractResidual, atol=1e-5)
+
+True if the KL divergence between the message (whose most recent residual
+information is stored in `res`) received by a sepset and its belief prior to
+receiving that message is within `atol` of 0. False otherwise.
+"""
+function iscalibrated_kl!(res::AbstractResidual, atol=1e-5)
+    # fixit: review
+    res.iscalibrated_kl[1] = isapprox(res.kldiv[1], 0.0, atol=atol)
 end
 
 """
@@ -325,24 +380,41 @@ tree is produced by [`spanningtree_clusterlist`](@ref) on the same graph.
 function propagate_1traversal_postorder!(beliefs::ClusterGraphBelief,
             pa_lab, ch_lab, pa_j, ch_j)
     b = beliefs.belief
-    calibrated = beliefs.calibrated
+    mr = beliefs.messageresidual
     # (parent <- sepset <- child) in postorder
     for i in reverse(1:length(pa_lab))
         ss_j = sepsetindex(pa_lab[i], ch_lab[i], beliefs)
-        _, residual = propagate_belief!(b[pa_j[i]], b[ss_j], b[ch_j[i]])
-        calibrated[(pa_lab[i], ch_lab[i])] = iscalibrated(residual)
+        sepset, residual = propagate_belief!(b[pa_j[i]], b[ss_j], b[ch_j[i]])
+        if !ismissing(mr[(pa_lab[i], ch_lab[i])])
+            mr[(pa_lab[i], ch_lab[i])].ΔJ .= residual[1]
+            mr[(pa_lab[i], ch_lab[i])].Δh .= residual[2]
+            iscalibrated_canon!(mr[(pa_lab[i], ch_lab[i])])
+        else
+            mr[(pa_lab[i], ch_lab[i])] = MessageResidual(residual...)
+        end
+        # KL div. between message received by sepset and its previous belief
+        # mr[(pa_lab[i], ch_lab[i])].kldiv[1] = -average_energy(sepset, residual)
+        # iscalibrated_kl!(mr[(pa_lab[i], ch_lab[i])])
     end
 end
 
 function propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,
             pa_lab, ch_lab, pa_j, ch_j)
     b = beliefs.belief
-    calibrated = beliefs.calibrated
+    mr = beliefs.messageresidual
     # (child <- sepset <- parent) in preorder
     for i in 1:length(pa_lab)
         ss_j = sepsetindex(pa_lab[i], ch_lab[i], beliefs)
-        _, residual = propagate_belief!(b[ch_j[i]], b[ss_j], b[pa_j[i]])
-        calibrated[(ch_lab[i], pa_lab[i])] = iscalibrated(residual)
+        sepset, residual = propagate_belief!(b[ch_j[i]], b[ss_j], b[pa_j[i]])
+        if !ismissing(mr[(ch_lab[i], pa_lab[i])])
+            mr[(ch_lab[i], pa_lab[i])].ΔJ .= residual[1]
+            mr[(ch_lab[i], pa_lab[i])].Δh .= residual[2]
+            iscalibrated_canon!(mr[(ch_lab[i], pa_lab[i])])
+        else
+            mr[(ch_lab[i], pa_lab[i])] = MessageResidual(residual...)
+        end
+        # mr[(ch_lab[i], pa_lab[i])].kldiv[1] = -average_energy(sepset, residual)
+        # iscalibrated_kl!(mr[(ch_lab[i], pa_lab[i])])
     end
 end
 
@@ -390,40 +462,4 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     bestθ = Optim.minimizer(opt)
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
     return bestmodel, loglikscore, opt
-end
-
-"""
-    free_energy(beliefs::ClusterGraphBelief)
-
-Bethe free energy from `beliefs`. This is computed by adding up cluster average
-energies and entropies, and subtracting sepset entropies. It is assumed but not
-checked that `beliefs` are calibrated.
-
-For a calibrated clique tree, -(Bethe free energy) is equal to the
-log-likelihood. For a calibrated cluster graph, -(Bethe free energy) approximates
-the evidence lower bound (ELBO) for the log-likelihood. Thus, minimizing the
-Bethe free energy maximizes an approximation to the ELBO for the log-likelihood.
-
-See also: [`entropy`](@ref), [`average_energy`](@ref), [`iscalibrated`](@ref)
-
-## References
-D. M. Blei, A. Kucukelbir, and J. D. McAuliffe. Variational inference: A Review
-for Statisticians, Journal of the American statistical Association, 112:518,
-859-877, 2017, doi: [10.1080/01621459.2017.1285773](https://doi/org/10.1080/01621459.2017.1285773).
-"""
-function free_energy(beliefs::ClusterGraphBelief)
-    b = beliefs.belief
-    init_b = beliefs.factors
-    nbeliefs = length(b)
-    nclusters = beliefs.nclusters
-    ave_energy = 0
-    approx_entropy = 0
-    for i in 1:nclusters
-        ave_energy += average_energy(b[i], init_b[i])
-        approx_entropy += entropy(b[i])
-    end
-    for i in (nclusters+1):nbeliefs
-        approx_entropy -= entropy(b[i])
-    end
-    return (ave_energy, approx_entropy, ave_energy - approx_entropy)
 end

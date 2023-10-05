@@ -405,44 +405,13 @@ function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
     view(cluster_to.h, upind)        .+= Δh
     view(cluster_to.J, upind, upind) .+= ΔJ
     cluster_to.g[1]                   += Δg
+    #= Compute the KL divergence between a message and the sepset belief that
+    will moderate it:
+    + average_energy((h, J), sepset) - entropy(J)
+    =#
     # 3. update sepset belief
     sepset.h   .+= Δh
     sepset.J   .+= ΔJ
     sepset.g[1] += Δg
-    return sepset, (Δh, ΔJ)
-end
-
-"""
-    entropy(belief::AbstractBelief)
-
-Entropy value for `belief`. `belief` must be non-degenerate over variables in
-scope.
-
-See implementation in [Distributions.jl](https://github.com/JuliaStats/Distributions.jl/blob/e407fa5fd098e50df51801c6d062946eac7a7d0f/src/multivariate/mvnormal.jl#L95).
-"""
-function entropy(cluster::AbstractBelief)
-    #= note: errors can arise if `LA.logdet(PDMat(cluster.J))` is used.
-    `current.J` may be detected as non-hermitian?? =#
-    (dimension(cluster) * (log2π + 1) - LA.logdet(cluster.J))/2
-end
-
-"""
-    average_energy(current_belief::AbstractBelief, initial_belief::AbstractBelief)
-
-Negative expectation (with respect to `current_belief`) of log(`initial_belief`).
-`current_belief` must be non-degenerate over variables in scope.
-"""
-function average_energy(current::AbstractBelief, initial::AbstractBelief)
-    #=
-    E[-(1/2)x'*J_init*x + h_init'x + g_init] wrt β(J_curr, h_curr)
-    = -(1/2)*(μ_curr'*J_init*μ_curr + tr(J_init*(J_curr)⁻¹)) +
-        h_init'*μ_curr + g_init
-    = -(1/2)*(tr(J_init*μ_curr*μ_curr') + tr(J_init*(J_curr)⁻¹)) + ...
-    =#
-    μ_curr, _ = integratebelief!(current)
-    # fixit: check for more efficient order of operations
-    #= note: errors can arise if `LA.inv(PDMat(current.J))` is used.
-    `current.J` may be detected as non-hermitian?? =#
-    0.5*LA.tr(initial.J*(μ_curr*μ_curr' + LA.inv(current.J))) -
-    initial.h'*μ_curr - initial.g[1]
+    return sepset, (ΔJ, Δh, Δg)
 end

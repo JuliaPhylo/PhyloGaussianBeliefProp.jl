@@ -22,5 +22,6 @@ include("evomodels.jl")
 include("canonicalnormal.jl")
 include("beliefupdates.jl")
 include("calibration.jl")
+include("score.jl")
 
 end

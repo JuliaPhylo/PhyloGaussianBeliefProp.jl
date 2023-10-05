@@ -52,7 +52,7 @@ name by cluster graph method used =#
             for n in net.nodes_changed
                 ns = Symbol(n.name)
                 sspt = PGBP.sub_spanningtree_clusterlist(cg, ns)
-                isempty(spt[1]) && continue
+                isempty(sspt[1]) && continue
                 push!(sch, sspt)
             end
             PGBP.calibrate!(cgb, sch, 2)
