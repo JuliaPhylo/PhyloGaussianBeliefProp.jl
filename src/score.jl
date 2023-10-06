@@ -17,41 +17,46 @@ function entropy(cluster::AbstractBelief)
 end
 
 """
-    average_energy(refcanon::Tuple{AbstractMatrix, AbstractVector},
-        targetcanon::Tuple{AbstractMatrix, AbstractVector})
-    average_energy(reference::AbstractBelief, target::AbstractBelief)
-    average_energy(reference::AbstractBelief,
-        targetcanon::Tuple{AbstractMatrix, AbstractVector})
+    average_energy(refcanon, targetcanon, dropg::Bool=false)
+    average_energy(refbelief, targetbelief, dropg::Bool=false)
+    average_energy(refbelief, targetcanon, dropg::Bool=false)
 
-Average energy (also known as cross-entropy) of a cluster/sepset belief
-(specified by canonical parameters `targetcanon`) with respect to a
-non-degenerate multivariate Gaussian (specified by canonical parameters `canon`).
+Average energy (i.e. negative expected log) of a target canonical form with
+parameters `targetcanon=(Jₜ, hₜ, gₜ)` with respect to a normalized non-degenerate
+reference canonical form with parameters `refcanon=(Jᵣ, hᵣ)` (specifying `gᵣ` is
+unnecessary to compute this quantity). When the target canonical form is also
+normalized and non-degenerate, this is equivalent to their cross-entropy. If
+`dropg=true`, then average energy is computed assuming that `gₜ=0`.
 
 The second version takes two possible beliefs (`reference`, `target`) for a given
 cluster/sepset and computes the average energy of `target` with respect to
 `reference` by applying the first version to their canonical parameters.
-`reference` is assumed to correspond to a non-degenerate multivariate Gaussian.
+`reference` is assumed to be non-degenerate (i.e. `Jᵣ` is positive-definite).
 
-The third version is similar to the second one, except that `target` is replaced
-by its canonical parameters `targetcanon`.
+The third version is similar to the second one, except that the target canonical
+form is specified by its canonical parameters `targetcanon`.
 """
-function average_energy(refcanon::Tuple{AbstractMatrix, AbstractVector},
-    targetcanon::Tuple{AbstractMatrix, AbstractVector, AbstractFloat})
-    #= `canon`: 𝒞(J, h, _) ≡ 𝒩(μ=J⁻¹h, Σ=J⁻¹), `belief`: 𝒞(Jₜ, hₜ, gₜ)
-    E[-(1/2)x'*Jₜ*x + hₜ'x + gₜ] where x ∼ 𝒞(J,h,_)
-    = -(1/2)*(μ'*Jₜ*μ + tr(Jₜ*J⁻¹)) + hₜ'*μ + gₜ
-    = -(1/2)*(tr(Jₜ*μ*μ') + tr(Jₜ*J⁻¹)) + ... =#
-    J = LA.cholesky(refcanon[1])
-    μ = J \ refcanon[2]
+function average_energy(refcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}},
+    targetcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}, T}, 
+    dropg::Bool=false) where T <: AbstractFloat
+    #= `refcanon`: C(Jᵣ, hᵣ, _) ≡ 𝒩(μ=Jᵣ⁻¹hᵣ, Σ=Jᵣ⁻¹), `belief`: C(Jₜ, hₜ, gₜ)
+    E[-(1/2)x'*Jₜ*x + hₜ'x + gₜ] where x ∼ C(Jᵣ, hᵣ, _)
+    = -(1/2)*(μᵣ'*Jₜ*μᵣ + tr(Jₜ*Jᵣ⁻¹)) + hₜ'*μᵣ + gₜ
+    = -(1/2)*(tr(Jₜ*μᵣ*μᵣ') + tr(Jₜ*Jᵣ⁻¹)) + ... =#
+    Jᵣ = LA.cholesky(refcanon[1])
+    μᵣ = Jᵣ \ refcanon[2]
     (Jₜ, hₜ, gₜ) = targetcanon
     # fixit: check for more efficient order of operations
-    0.5*LA.tr(Jₜ*(μ*μ' + LA.inv(J))) - hₜ'*μ - gₜ
+    if dropg gₜ = 0.0 end
+    0.5*LA.tr(Jₜ*(μᵣ*μᵣ' + LA.inv(Jᵣ))) - hₜ'*μᵣ - gₜ
 end
-average_energy(reference::AbstractBelief, target::AbstractBelief) =
-    average_energy((reference.J, reference.h), (target.J, target.h, target.g[1]))
+average_energy(reference::AbstractBelief, target::AbstractBelief,
+    drop::Bool=false) = average_energy((reference.J, reference.h),
+        (target.J, target.h, target.g[1]), drop)
 average_energy(reference::AbstractBelief,
-    targetcanon::Tuple{AbstractMatrix, AbstractVector, AbstractFloat}) =
-    average_energy((reference.J, reference.h), targetcanon)
+    targetcanon::Tuple{AbstractMatrix, AbstractVector, AbstractFloat},
+    drop::Bool=false) = average_energy((reference.J, reference.h),
+        targetcanon, drop)
 
 """
     free_energy(beliefs::ClusterGraphBelief)

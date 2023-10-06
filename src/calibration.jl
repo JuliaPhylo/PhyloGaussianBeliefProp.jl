@@ -1,17 +1,43 @@
 abstract type AbstractResidual end
 
-#= fixit: have a simple function that goes through and checks with different
-tolerance values. `missing`s would indicate that a message has not been passed. =#
+#= The ReactiveMP.jl `Message` structure
+(https://biaslab.github.io/ReactiveMP.jl/stable/lib/message/#ReactiveMP.Message)
+stores a message parameterized as some distribution and contains an `addons`
+field that stores the computation history of the message.
+
+Here, we are introducing a similar ("in spirit") data structure to track the
+message residual (in belief-update BP, this is the message received by a cluster
+rather than the message sent towards a cluster) to facilitate adaptive
+scheduling (e.g. residual BP).
+=#
+"""
+    MessageResidual <: AbstractResidual
+
+Structure to store the most recent computation history of a message. Fields:
+- `Δh`: canonical parameter of message residual
+- `ΔJ`: canonical parameter of message residual
+- `kldiv`: kl divergence between message and sepset belief
+- `iscalibrated_resid`: flag if message and sepset belief are equal (within
+some tolerance) in terms of canonical parameters
+- `iscalibrated_kl`: flat if message and sepset belief are equal (within some
+tolerance) in terms of KL divergence
+"""
 struct MessageResidual{T<:Real,P<:AbstractMatrix{T},V<:AbstractVector{T}} <: AbstractResidual
     Δh::V
     ΔJ::P
-    # fixit: compute a norm from Δh and ΔJ, to store in `resid`?
-    # resid::MVector{1,T}
-    kldiv::Vector{Union{Missing,T}}
+    kldiv::Vector{Union{Missing,T}} # note: can't mutate MVector{1, Union{Missing,T}}
     iscalibrated_resid::MVector{1,Bool}
     iscalibrated_kl::MVector{1,Bool}
 end
 
+"""
+    MessageResidual(ΔJ, Δh, Δg)
+
+Constructor to allocate memory for a `MessageResidual` object given the
+canonical parameters `(ΔJ, Δh, Δg)` of a message residual. `kldiv` is initalized
+to `[missing]`, and `iscalibrated_resid` and `iscalibrated_kl` are initialized
+to `false`. 
+"""
 function MessageResidual(ΔJ::AbstractMatrix{T},
         Δh::AbstractVector{T}, _) where {T <: Real}
     MessageResidual(Δh, ΔJ, Union{Missing,T}[missing], MVector(false), MVector(false))
@@ -363,6 +389,25 @@ function iscalibrated_kl!(res::AbstractResidual, atol=1e-5)
 end
 
 """
+    approximate_kl!(res::AbstractResidual, sepset, residcanon)
+
+Update `res` with an approximation to the KL divergence between the message
+residual with canonical parameters `residcanon=(Jᵣ, hᵣ, gᵣ)` and the `sepset`
+belief. This approximation drops the `g` canonical parameter of the target
+distribution (here, the sepset belief). See [`average_energy`](@ref) for more
+explanation.
+"""
+function approximate_kl!(res::AbstractResidual, sepset::AbstractBelief,
+    residcanon::Tuple{AbstractMatrix, AbstractVector, AbstractFloat})
+    # note: `isposdef` returns true for size (0,0) MMatrices and the [0.0] MMatrix
+    if LA.isposdef(sepset.J) && size(sepset.J)[1] > 0 &&
+        (size(sepset.J)[1] > 1 || sepset.J[1] > 0)
+        res.kldiv[1] = -average_energy(sepset, residcanon, true)
+        iscalibrated_kl!(res)
+    end
+end
+
+"""
     propagate_1traversal_postorder!(beliefs::ClusterGraphBelief, spanningtree...)
     propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,  spanningtree...)
 
@@ -392,13 +437,8 @@ function propagate_1traversal_postorder!(beliefs::ClusterGraphBelief,
         else
             mr[(pa_lab[i], ch_lab[i])] = MessageResidual(residual...)
         end
-        # KL div. between message received by sepset and its previous belief
-        # !!note: `isposdef` returns true for size (0,0) MMatrices and the [0.0] MMatrix
-        if LA.isposdef(sepset.J) && size(sepset.J)[1] > 0 && (size(sepset.J)[1] > 1 || sepset.J[1] > 0)
-            # fixit: debug
-            mr[(pa_lab[i], ch_lab[i])].kldiv[1] = -average_energy(sepset, residual)
-            iscalibrated_kl!(mr[(pa_lab[i], ch_lab[i])])
-        end
+        # compute KL div. between message and sepset
+        approximate_kl!(mr[(pa_lab[i], ch_lab[i])], sepset, residual)
     end
 end
 
@@ -417,14 +457,7 @@ function propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,
         else
             mr[(ch_lab[i], pa_lab[i])] = MessageResidual(residual...)
         end
-        # !!note: `isposdef` returns true for size (0,0) MMatrices and the [0.0] MMatrix
-        if LA.isposdef(sepset.J) && size(sepset.J)[1] > 0 && (size(sepset.J)[1] > 1 || sepset.J[1] > 0)
-            #= fixit: introduce a second method for `average_energy` that ignores
-            the `g` parameter of the target distribution (here, the sepset belief).
-            This second method should replace the first one here. =#
-            mr[(ch_lab[i], pa_lab[i])].kldiv[1] = -average_energy(sepset, residual)
-            iscalibrated_kl!(mr[(ch_lab[i], pa_lab[i])])
-        end
+        approximate_kl!(mr[(ch_lab[i], pa_lab[i])], sepset, residual)
     end
 end
 
