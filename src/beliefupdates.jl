@@ -51,7 +51,7 @@ h is a length-`d` vector of zeroes, J is a `d`-by-`d` identity matrix scaled by
 """
 function defaultmessage(d::Integer, ϵ::Float64=1.0)
     # fixit: make this adaptive eventually?
-    return (zeros(d), ϵ*LA.I(d), 0)
+    return (zeros(d), ϵ*LA.I(d), 0.0)
 end
 
 """

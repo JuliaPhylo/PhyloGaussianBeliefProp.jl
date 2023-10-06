@@ -405,10 +405,6 @@ function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
     view(cluster_to.h, upind)        .+= Δh
     view(cluster_to.J, upind, upind) .+= ΔJ
     cluster_to.g[1]                   += Δg
-    #= Compute the KL divergence between a message and the sepset belief that
-    will moderate it:
-    + average_energy((h, J), sepset) - entropy(J)
-    =#
     # 3. update sepset belief
     sepset.h   .+= Δh
     sepset.J   .+= ΔJ

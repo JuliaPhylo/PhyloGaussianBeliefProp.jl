@@ -393,8 +393,12 @@ function propagate_1traversal_postorder!(beliefs::ClusterGraphBelief,
             mr[(pa_lab[i], ch_lab[i])] = MessageResidual(residual...)
         end
         # KL div. between message received by sepset and its previous belief
-        # mr[(pa_lab[i], ch_lab[i])].kldiv[1] = -average_energy(sepset, residual)
-        # iscalibrated_kl!(mr[(pa_lab[i], ch_lab[i])])
+        # !!note: `isposdef` returns true for size (0,0) MMatrices and the [0.0] MMatrix
+        if LA.isposdef(sepset.J) && size(sepset.J)[1] > 0 && (size(sepset.J)[1] > 1 || sepset.J[1] > 0)
+            # fixit: debug
+            mr[(pa_lab[i], ch_lab[i])].kldiv[1] = -average_energy(sepset, residual)
+            iscalibrated_kl!(mr[(pa_lab[i], ch_lab[i])])
+        end
     end
 end
 
@@ -413,8 +417,14 @@ function propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,
         else
             mr[(ch_lab[i], pa_lab[i])] = MessageResidual(residual...)
         end
-        # mr[(ch_lab[i], pa_lab[i])].kldiv[1] = -average_energy(sepset, residual)
-        # iscalibrated_kl!(mr[(ch_lab[i], pa_lab[i])])
+        # !!note: `isposdef` returns true for size (0,0) MMatrices and the [0.0] MMatrix
+        if LA.isposdef(sepset.J) && size(sepset.J)[1] > 0 && (size(sepset.J)[1] > 1 || sepset.J[1] > 0)
+            #= fixit: introduce a second method for `average_energy` that ignores
+            the `g` parameter of the target distribution (here, the sepset belief).
+            This second method should replace the first one here. =#
+            mr[(ch_lab[i], pa_lab[i])].kldiv[1] = -average_energy(sepset, residual)
+            iscalibrated_kl!(mr[(ch_lab[i], pa_lab[i])])
+        end
     end
 end
 
