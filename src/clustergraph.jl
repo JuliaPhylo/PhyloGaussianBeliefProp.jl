@@ -222,7 +222,7 @@ end
 """
     AbstractClusterGraphMethod
 
-Abstract type for method of cluster graph construction.
+Abstract type for cluster graph construction algorithms.
 """
 abstract type AbstractClusterGraphMethod end
 
@@ -266,7 +266,8 @@ Trees Running Intersection Property* algorithm of Streicher & du Preez (2017).
 
 - clusters: vector of clusters, required to be family-preserving
   with respect to some HybridNetwork -- see [`isfamilypreserving`](@ref).
-  each cluster is required to be sorted in decreasing order (for postorder)
+  Within each cluster, nodes (identified by their preorder index in the network)
+  are required to be sorted in decreasing order (for postorder)
 
 ## Constructors
 
@@ -283,12 +284,13 @@ They assume, *with no check*, that `net` already has a preordering.
 1. An initial graph G is considered, in which each input cluster is a node.
    An edge (C1,C2) is added if clusters C1 and C2 share at least 1 node (in `net`).
    The weight of edge (C1,C2) is defined as the size of the intersection C1 ∩ C2.
-   Weights are then adjusted as follows:
-   * the max-weight edges are identified, then
-   * the weight of each edge is increased by the number of max-weight edges
-     that either of its endpoints adjacent to.
-2. For each node `n` in `net`, LTRIP finds a maximum-weight spanning tree of
-   the subgraph of G induced by the clusters containing `n`. The edges of this
+2. For each node `n` in `net`,
+   the subgraph of G induced by the clusters containing `n`, G_n, has its
+   weights adjusted as follows:
+     * the edges of maximum weight (within G_n) are identified, then
+     * the weight of each edge is increased by the number of max-weight edges
+       that either of its endpoints adjacent to.
+   Then, LTRIP finds a maximum-weight spanning tree of G_n. The edges of this
    tree are all labelled with `{n}` (or its label or preorder index).
 3. The spanning trees for each node are layered on one another to form a cluster
    graph. In other words, an edge (C1,C2) is added if it is present is any
@@ -326,7 +328,7 @@ Subtype of [`AbstractClusterGraphMethod`](@ref).
 ## Fieldnames
 
 - `maxclustersize`: upper limit for cluster size.
-  This value that must be ≥ the size of the largest node family in
+  This value must be at least the size of the largest node family in
   the input phylogenetic network, normally 3 if the network is bicombining
   (each hybrid node has 2 parents, never more). See [`nodefamilies(net)`](@ref).
 
@@ -379,8 +381,8 @@ struct JoinGraphStructuring <: AbstractClusterGraphMethod
 end
 function JoinGraphStructuring(maxclustersize::Integer, net::HybridNetwork)
     maxindegree = maximum(n -> length(getparents(n)), net.hybrid)
-    maxclustersize ≥ (maxindegree + 1) || error("`maxclustersize` is smaller
-    than the size of largest node family, $maxindegree +1.")
+    maxclustersize ≥ (maxindegree + 1) ||
+        error("`maxclustersize` is smaller than the size of largest node family, $maxindegree +1.")
     return JoinGraphStructuring(maxclustersize)
 end
 
@@ -398,7 +400,7 @@ Subtype of [`AbstractClusterGraphMethod`](@ref).
 4. calculate the edge weight between each pair of maximal cliques as the size of
    their intersection
 5. find a maximum-weight spanning tree
-6. labeled the retained edges (in the spanning tree) by their intersection of
+6. label the retained edges (in the spanning tree) by the intersection of
    the two cliques they connect.
 
 ## References
@@ -488,7 +490,7 @@ See [`LTRIP`](@ref)
 """
 function ltripclustergraph(net::HybridNetwork, method::LTRIP)
     T = vgraph_eltype(net)
-    clustergraph = init_clustergraph(T, :ltrip)
+    clustg = init_clustergraph(T, :ltrip) # 'clustergraph' is a function already
     cg = MetaGraph(Graph{T}(0), # auxiliary graph to hold connection weights
         Symbol, # vertex label
         Tuple{Vector{Symbol}, Vector{T}}, # vertex data: nodes in cluster
@@ -500,68 +502,60 @@ function ltripclustergraph(net::HybridNetwork, method::LTRIP)
     node2cluster = Dict{T, Vector{T}}() # for joining clusters later
     clusters = getclusters(method)
     prenodes_names = [Symbol(n.name) for n in net.nodes_changed]
+    # build nodes in clustg and in auxiliary cg
     for (code, nodeindlist) in enumerate(clusters) # nodeindlist assumed sorted, decreasing
         cdat = prenodes_names[nodeindlist]
         cname = Symbol(cdat...)
         # cluster data: (node labels, node preorder index), sorted in postorder
-        add_vertex!(clustergraph, cname, (cdat, nodeindlist))
-        add_vertex!(cg,           cname, (cdat, nodeindlist))
+        add_vertex!(clustg, cname, (cdat, nodeindlist))
+        add_vertex!(cg,     cname, (cdat, nodeindlist))
         for ni in nodeindlist
             if haskey(node2cluster, ni)
                 push!(node2cluster[ni], T(code))
             else node2cluster[ni] = [T(code)]
             end
         end
+        # add edges in auxiliary cg: to calculate intersection size only once
+        for code2 in 1:(code-1)
+            c2name = label_for(cg, code2)
+            c2nodeindlist = clusters[code2]
+            w = length(intersect(nodeindlist, c2nodeindlist))
+            w > 0 && add_edge!(cg, cname, c2name, w)
+        end
     end
-    # compute edge weights using auxiliary graph
-    # fixit: calculate connection weights in loop outside of loop to build node-specific spanning trees???
+
+    clustweight = Dict(lab => 0 for lab in labels(cg)) # clusters score in cg's subgraph sg
     for ni in sort!(collect(keys(node2cluster)), rev=true)
         # sepsets will be sorted by nodes' postorder
         clusterindlist = node2cluster[ni]
+        # build subgraph sg of auxiliary cg, then adjust its edge weights
         sg, _ = induced_subgraph(cg, clusterindlist)
-        node2edge = Dict{Symbol, Vector{Symbol}}() # for updating edge weights later
-        topscoring = Symbol[] # track strongly-connected clusters in `sg`
-        topscore = 0 # track top score for cluster "connectivity"
-        for (i1, cl1) in enumerate(clusterindlist)
-            lab1 = label_for(clustergraph, cl1)
-            maxw = 0 # track the max no. of elements `cl1` shares with its neighbors
-            for i2 in 1:(i1-1)
-                cl2 = clusterindlist[i2]
-                lab2 = label_for(clustergraph, cl2)
-                w = length(intersect(sg[lab1], sg[lab2]))
-                maxw = (w > maxw) ? w : maxw
-                add_edge!(sg, lab1, lab2, w)
+        ne(sg) > 0 || continue # e.g leaves: only 1 cluster, no edge to add
+        maxw = maximum(sg[e...] for e in edge_labels(sg))
+        for e in edge_labels(sg)
+            if sg[e...] == maxw # if a sepset edge has maximum weigh, then
+                clustweight[e[1]] += 1 # add 1 to each adjacent cluster's score
+                clustweight[e[2]] += 1
             end
-            # mark clusters that are incident to a max-weight edge
-            if maxw > topscore # mark cluster `cl1` and unmark all others
-                topscoring, topscore = [lab1], maxw
-            elseif maxw == topscore # mark cluster `cl1`
-                push!(topscoring, lab1)
-            end
+        end # separate loop below: adjust weights *after* testing for max weight
+        for e in edge_labels(sg)
+            sg[e...] += clustweight[e[1]] + clustweight[e[2]]
         end
-        # update edge weights
-        for cl in topscoring # topscoring nodes have incident max-weight edges
-            neighborlabs = neighbor_labels(sg, cl)
-            # count no. of incident max-weight edges and add this no. to weights
-            # for all incident edges
-            Δw = length([sg[cl, ncl] == topscore for ncl in neighborlabs])
-            for ncl in neighborlabs
-                sg[cl, ncl] += Δw
-            end
-        end
-        mst_edges = kruskal_mst(sg, minimize=false)
-
+        # reset clustweight before next cluster
+        for cl in keys(clustweight) clustweight[cl]=0; end
+        mst_edges = kruskal_mst(sg, minimize=false) # mst: maximum spanning tree
+        # augment sepsets in clustg, based on edges in max spanning tree
         for e in mst_edges
             lab1 = label_for(sg, src(e))
             lab2 = label_for(sg, dst(e))
-            if haskey(clustergraph, lab1, lab2) # if has edge {lab1, lab2}
-                clustergraph[lab1, lab2] = push!(clustergraph[lab1, lab2], ni)
-            else
-                add_edge!(clustergraph, lab1, lab2, [ni])
+            if haskey(clustg, lab1, lab2) # if (lab1, lab2) is an edge
+                clustg[lab1, lab2] = push!(clustg[lab1, lab2], ni) # augment sepset
+            else # create the edge, initialize sepset
+                add_edge!(clustg, lab1, lab2, [ni])
             end
         end
     end
-    return clustergraph
+    return clustg
 end
 
 """

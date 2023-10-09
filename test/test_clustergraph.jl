@@ -53,43 +53,28 @@ end
 
 @testset "LTRIP cluster graph" begin
     net = readTopology(netstr)
-    T = PGBP.vgraph_eltype(net)
-    # Clusters specified as vectors of preorder indices. The clusters used here
-    # correspond to the node families in net, except {root}
-    clusters = Vector{T}[
+    clusters = Vector{Int8}[ # node families, nodes specified as preorder indices
         [11, 8], [10, 9], [7, 6], [5, 4], [2, 1],
         [9, 8, 6], [8, 3], [6, 4], [4, 3], [3, 1]]
-
-    # Check if input clusters are valid
-    @test(try
-        PGBP.LTRIP(clusters, net); true
-    catch
-        false
-    end)
-    
+    # below: would error (test would fail) if `clusters` not family-preserving for net
     cg = PGBP.clustergraph!(net, PGBP.LTRIP(clusters, net))
-
-    # Compare input and output clusters (and hence check if family-preserving)
-    cluster_properties = cg.vertex_properties
-    output_clusters = collect(v[2][2] for v in values(cluster_properties))
+    output_clusters = collect(v[2][2] for v in values(cg.vertex_properties))
     @test sort(clusters) == sort(output_clusters)
-
-    @test length(connected_components(cg)) == 1
+    @test is_connected(cg)
     @test all(t[2] for t in PGBP.check_runningintersection(cg, net))
 
-    cg2 = PGBP.clustergraph!(net, PGBP.LTRIP(net))
-    @test all(t[2] for t in PGBP.check_runningintersection(cg2, net))
-    clusters2 = [v[2][2] for v in values(cg2.vertex_properties)]
+    cg = PGBP.clustergraph!(net, PGBP.LTRIP(net))
+    @test all(t[2] for t in PGBP.check_runningintersection(cg, net))
+    clusters2 = [v[2][2] for v in values(cg.vertex_properties)] # has extra root cluster
     @test PGBP.isfamilypreserving(clusters2, net)[1]
 
-    clusters3 = Vector{T}[
+    clusters3 = Vector{Int8}[
         [11, 8], [10, 9], [7, 6], [5, 4], [2, 1],
         [9, 8], [8, 3], [6, 4], [4, 3], [3, 1]] # not family-preserving
-    @test_throws ErrorException PGBP.clustergraph!(net,
-        PGBP.LTRIP(clusters3, net))
+    @test_throws ErrorException PGBP.LTRIP(clusters3, net)
 end
 
-@testset "Join-graph struturing" begin
+@testset "Join-graph structuring" begin
     net = readTopology(netstr)
     cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3))
 
