@@ -213,6 +213,13 @@ end
         @test llscore ≈ -5.174720533524127
         @test mod.μ ≈ -0.26000871507162693
         @test PGBP.varianceparam(mod) ≈ 0.35360518758586457
+        PGBP.init_beliefs_reset!(ctb)
+        mod, fenergy, opt = PGBP.calibrate_optimize_clustergraph!(ctb, ct,
+            net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (1,-2))
+        @test PGBP.integratebelief!(ctb, spt[3][1])[2] ≈ -fenergy
+        @test -fenergy ≈ -5.174720533524127
+        @test mod.μ ≈ -0.26000871507162693
+        @test PGBP.varianceparam(mod) ≈ 0.35360518758586457
 
         #= ML solution the matrix-way, analytical for BM:
         # for y: univariate
@@ -243,6 +250,13 @@ end
         @test llscore ≈ -9.215574122592923
         @test mod.μ ≈ 3.500266520382341
         @test PGBP.varianceparam(mod) ≈ 11.257682945973125
+        PGBP.init_beliefs_reset!(ctb)
+        mod, fenergy, opt = PGBP.calibrate_optimize_clustergraph!(ctb, ct,
+            net.nodes_changed, tbl_x, df.taxon, PGBP.UnivariateBrownianMotion, (1,-2))
+        @test PGBP.integratebelief!(ctb, spt[3][1])[2] ≈ -fenergy
+        @test -fenergy ≈ -9.215574122592923
+        @test mod.μ ≈ 3.500266520382341
+        @test PGBP.varianceparam(mod) ≈ 11.257682945973125
 
         # x,y: 2 traits, some missing values
         m = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0,0))
@@ -253,6 +267,13 @@ end
             tbl, df.taxon, PGBP.MvDiagBrownianMotion, ((2,1), (1,-1)))
         @test PGBP.integratebelief!(ctb, spt[3][1])[2] ≈ llscore
         @test llscore ≈ -14.39029465611705 # -5.174720533524127 -9.215574122592923
+        @test mod.μ ≈ [3.500266520382341, -0.26000871507162693]
+        @test PGBP.varianceparam(mod) ≈ [11.257682945973125,0.35360518758586457]
+        PGBP.init_beliefs_reset!(ctb)
+        mod, fenergy, opt = PGBP.calibrate_optimize_clustergraph!(ctb, ct,
+            net.nodes_changed, tbl, df.taxon, PGBP.MvDiagBrownianMotion, ((2,1), (1,-1)))
+        @test PGBP.integratebelief!(ctb, spt[3][1])[2] ≈ -fenergy
+        @test -fenergy ≈ -14.39029465611705
         @test mod.μ ≈ [3.500266520382341, -0.26000871507162693]
         @test PGBP.varianceparam(mod) ≈ [11.257682945973125,0.35360518758586457]
     end

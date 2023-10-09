@@ -131,11 +131,11 @@ end
 """
     init_beliefs_reset!(beliefs::ClusterGraphBelief)
 
-Reset cluster beliefs to factors, which can be re-initialized with different
-model parameters, and sepset beliefs to h=0, J=0, g=0.
+Reset cluster beliefs to factors and sepset beliefs to h=0, J=0, g=0.
 """
 function init_beliefs_reset!(beliefs::ClusterGraphBelief)
-    nc, nb = nclusters(beliefs), length(beliefs)
+    # fixit: change name of method?
+    nc, nb = nclusters(beliefs), length(beliefs.belief)
     b, f = beliefs.belief, beliefs.factors
     for i in 1:nc
         b[i].h   .= f[i].h
@@ -146,6 +146,22 @@ function init_beliefs_reset!(beliefs::ClusterGraphBelief)
         b[i].h   .= 0.0
         b[i].J   .= 0.0
         b[i].g[1] = 0.0
+    end
+end
+
+"""
+    factors_reset!(beliefs::ClusterGraphBelief)
+
+Reset factors to initial cluster beliefs for a different instantiation of model
+parameters (i.e. after [`init_beliefs_reset!`](@ref) and
+[`init_beliefs_assignfactors!`](@ref) are run for different parameter values).
+"""
+function factors_reset!(beliefs::ClusterGraphBelief)
+    b, f = beliefs.belief, beliefs.factors
+    for i in 1:nclusters(beliefs)
+        f[i].h   .= b[i].h
+        f[i].J   .= b[i].J
+        f[i].g[1] = b[i].g[1]
     end
 end
 
@@ -493,6 +509,7 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
         model = evomodelfun(params_original(mod, θ)...)
         init_beliefs_reset!(beliefs.belief)
         init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
+        factors_reset!(beliefs) # reset factors each time θ changes
         propagate_1traversal_postorder!(beliefs, spt...)
         _, res = integratebelief!(beliefs, rootj) # drop conditional mean
         return -res # score to be minimized (not maximized)
@@ -505,4 +522,46 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     bestθ = Optim.minimizer(opt)
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
     return bestmodel, loglikscore, opt
+end
+
+"""
+    calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief, clustergraph,
+        nodevector_preordered, tbl::Tables.ColumnTable, taxa::AbstractVector,
+        evolutionarymodel_name, evolutionarymodel_startingparameters,
+        max_iterations)
+
+Same as [`calibrate_optimize_cliquetree!`](@ref) above, except that the user can
+supply an arbitrary `clustergraph` (including a clique tree) for the input
+network. Optimization aims to maximize a free energy approximation (the negative
+Bethe [`free_energy`](@ref)) to the ELBO for the log-likelihood of the data.
+When `clustergraph` is a clique tree, the free energy approximation is exactly
+equal to the ELBO and the log-likelihood.
+
+The calibration repeatedly loops through a minimal set of spanning trees (see
+[`spanningtrees_cover_clusterlist`](@ref)) that covers all edges in the cluster
+graph, and does a postorder-preorder traversal for each tree. The loop runs till
+calibration is detected or till `max_iterations` have passed, whichever occurs
+first.
+"""
+function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
+    cgraph, prenodes::Vector{PN.Node},
+    tbl::Tables.ColumnTable, taxa::AbstractVector,
+    evomodelfun, # constructor function
+    evomodelparams, maxiter::Integer=100)
+    sch = spanningtrees_cover_clusterlist(cgraph, prenodes)
+    mod = evomodelfun(evomodelparams...) # model with starting values
+    function score(θ)
+        model = evomodelfun(params_original(mod, θ)...)
+        init_beliefs_reset!(beliefs.belief)
+        init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
+        factors_reset!(beliefs)
+        # fixit: raise warning if calibration is not attained within `maxiter`?
+        calibrate!(beliefs, sch, maxiter, true)
+        return free_energy(beliefs)[3] # minimize Bethe free energy
+    end
+    opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS())
+    fenergy = Optim.minimum(opt) 
+    bestθ = Optim.minimizer(opt)
+    bestmodel = evomodelfun(params_original(mod, bestθ)...)
+    return bestmodel, fenergy, opt
 end
