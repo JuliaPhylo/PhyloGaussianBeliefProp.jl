@@ -570,12 +570,14 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
     # preorder indices sorted in elimination order
     eliminationorder2preorder = [g[ns] for ns in ordering]
 
-    # initialize `buckets`
+    #= steps 1-3: initialize `buckets` and their minibuckets
+    i: elimination order for the node labeling the bucket
+    buckets[i][1]: node symbol
+    buckets[i][2]: dictionary minibucket size => minibucket(s)
+    =#
     buckets = Dict{T, Tuple{Symbol, Dict{T, Vector{Vector{T}}}}}(
         i => (ns, Dict()) for (i, ns) in enumerate(ordering)
-    ) # i: elimination order for the node labeling the bucket
-    # buckets[i][1]: node symbol
-    # buckets[i][2]: dictionary minibucket size => minibucket(s)
+    )
     # node families (represented as vectors of preorder indices) = initial factors
     node2family = nodefamilies(net)
     maxclustersize = T(getmaxclustersize(method)) # size limit for minibuckets
@@ -590,64 +592,57 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
         # merge `mb` with existing minibucket or add as new minibucket, depending on max size
         assign!(di, mb, maxclustersize)
     end
-
+    # steps 4-6: marginalize the bucket label from each minibucket
     for i in eachindex(ordering)
         _, bd = buckets[i] # bucket symbol, bucket dictionary
         bi = eliminationorder2preorder[i] # preorder index of bucket labeling node
-        for minibuckets in values(bd)
-            # connect minibuckets in a "chain", where the sepset is the bucket
-            # variable `bs`, which corresponds to preorder index `bi`
-            for (j, mb) in enumerate(minibuckets)
-                nodeindlist = eliminationorder2preorder[mb]
-                o = sortperm(nodeindlist, rev=true)
-                nodeindlist .= nodeindlist[o]
-                vdat = ordering[mb][o]
-                lab = Symbol(vdat...)
-                # add cluster corresponding to `mb` to `cg`
-                add_vertex!(cg, lab, (vdat, nodeindlist))
-                # fixit: bug? `prev` not defined below, because defined later in loop scope
-                if j > 1
-                    # connect `mb` to current tail of "chain"
-                    add_edge!(cg, prev, lab, bi)
-                end
-                prev = lab # `mb` becomes new tail of "chain"
-                mb_new = copy(mb) # initialize new minibucket
-                popfirst!(mb_new) # remove ("marginalize") bucket variable
-                if !isempty(mb_new)
-                    #= Assign to bucket corresponding to highest priority element
-                    and check if `mb_new` can be merged with an existing minibucket
-                    (starting with the smallest) in the assigned bucket. If so,
-                    complete the merge and update the size => minibucket
-                    dictionary (no. of minibuckets decreases by 1) =#
-
-                    #= If `mb2` is empty, then `mb1` == `mb_new`. Otherwise, it
-                    # is merged with `mb2` (an existing minibucket) to produce
-                    `mb1`. It may be that `mb2` == `mb1` =#
-                    (mb1, mb2) = assign!(buckets[mb_new[1]][2], mb_new,
-                        maxclustersize)
-                    nodeindlist1 = eliminationorder2preorder[mb1]
-                    o1 = sortperm(nodeindlist1, rev=true)
-                    nodeindlist1 .= nodeindlist1[o1]
-                    vdat1 = ordering[mb1][o1]
-                    lab1 = Symbol(vdat1...)
-                    # add new cluster for `mb1`
-                    add_vertex!(cg, lab1, (vdat1, nodeindlist1))
-                    add_edge!(cg, lab, lab1,
-                        filter(ni -> ni != bi, nodeindlist))
-                    if length(mb1) != length(mb2) # mb1 != mb2
-                        # cluster for `mb2` is replaced by new cluster for `mb1`
-                        o2 = sortperm(eliminationorder2preorder[mb2], rev=true)
-                        vdat2 = ordering[mb2][o2]
-                        lab2 = Symbol(vdat2...)
-                        if haskey(cg, lab2)
-                            # connect edges into `mb2` to `mb1`
-                            for labn in neighbor_labels(cg, lab2)
-                                add_edge!(cg, lab1, labn,
-                                    cg[lab2, labn])
-                            end
-                            delete!(cg, lab2) # delete `mb2`
-                        end
+        previous_mb_label = nothing
+        for minibuckets in values(bd), mb in minibuckets
+            # create cluster in `cg` corresponding to minibucket `mb`
+            nodeindlist = eliminationorder2preorder[mb]
+            o = sortperm(nodeindlist, rev=true)
+            nodeindlist .= nodeindlist[o]
+            vdat = ordering[mb][o]
+            lab = Symbol(vdat...)
+            add_vertex!(cg, lab, (vdat, nodeindlist))
+            # chain minibuckets: sepset = bucket labeling node, whose preorder is bi
+            # fixit: bug? `prev` not defined below, because defined later in loop scope
+            isnothing(previous_mb_label) || # connect `mb` to chain of current bucket
+                add_edge!(cg, previous_mb_label, lab, bi) # fixit: why data bi?
+            previous_mb_label = lab # `mb` becomes new tail of "chain"
+            # new minibucket: marginalize bucket labeling node bi
+            mb_new = copy(mb)
+            popfirst!(mb_new)
+            isempty(mb_new) && continue # below: mb_new is not empty
+            #= Assign to bucket labeled by highest priority element mb_new[1]:
+               merge mb_new with an existing minibucket (mb2) to get mb1.
+               - if possible: great. It may be that mb1=mb2, if mb_new is a subset of mb2.
+               - else: mb1=mb_new and mb2 is empty.
+            =#
+            (mb1, mb2) = assign!(buckets[mb_new[1]][2], mb_new, maxclustersize)
+            # create cluster corresponding to marginalized & merged minibucket
+            # fixit: what if mb2=mb1, and mb2 already exists as a cluster in cg?
+            nodeindlist1 = eliminationorder2preorder[mb1]
+            o1 = sortperm(nodeindlist1, rev=true)
+            nodeindlist1 .= nodeindlist1[o1]
+            vdat1 = ordering[mb1][o1]
+            lab1 = Symbol(vdat1...)
+            add_vertex!(cg, lab1, (vdat1, nodeindlist1))
+            # connect mb to mb1 in cluster graph cg
+            add_edge!(cg, lab, lab1,
+                filter(ni -> ni != bi, nodeindlist)) # fixit: why this edge data?
+            if length(mb1) != length(mb2) # mb1 != mb2
+                # cluster for `mb2` is replaced by new cluster for `mb1`
+                o2 = sortperm(eliminationorder2preorder[mb2], rev=true)
+                vdat2 = ordering[mb2][o2]
+                lab2 = Symbol(vdat2...)
+                if haskey(cg, lab2)
+                    # connect edges into `mb2` to `mb1`
+                    for labn in neighbor_labels(cg, lab2)
+                        add_edge!(cg, lab1, labn,
+                            cg[lab2, labn])
                     end
+                    delete!(cg, lab2) # delete `mb2`
                 end
             end
         end
@@ -657,6 +652,7 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
     # sepset information, due to alternating edge/vertex additions in its
     # construction, this messes with edge (and consequently edge metadata) access 
     # fixit: rewrite in a more efficient and stable way
+    # fixit: "clustergraph" is a function name already. avoid as variable name
     clustergraph = init_clustergraph(T, :jgstr)
     for lab in values(cg.vertex_labels)
         add_vertex!(clustergraph, lab, cg[lab])
