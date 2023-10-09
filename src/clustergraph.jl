@@ -559,22 +559,9 @@ function ltripclustergraph(net::HybridNetwork, method::LTRIP)
 end
 
 """
-    joingraph(net, method)
+    joingraph(net, method::JoinGraphStructuring)
 
 See [`JoinGraphStructuring`](@ref)
-
-1. Sort node families into buckets. These are the initial clusters for each
-bucket.
-2. Loop through buckets
-    i. For each bucket, partition clusters into minibuckets (subject to
-    maxclustersize) and connect minibuckets to one another. The sepset for this
-    connection is the bucket variable. There is some degree of freedom in how
-    clusters are partitioned into minibuckets.
-    ii. For each minibucket in a bucket, create a subminibucket (by
-    marginalizing out the bucket variable) and assign it to the relevant bucket.
-    Connect each minibucket to its corresponding subminibucket. The sepset for
-    this connection is their full intersection (all nodes except for the bucket
-    variable).
 """
 function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
     g = moralize(net)
@@ -586,30 +573,27 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
     # initialize `buckets`
     buckets = Dict{T, Tuple{Symbol, Dict{T, Vector{Vector{T}}}}}(
         i => (ns, Dict()) for (i, ns) in enumerate(ordering)
-    )
-    # node families (represented as vectors of preorder indices) correspond to
-    # initial factors
+    ) # i: elimination order for the node labeling the bucket
+    # buckets[i][1]: node symbol
+    # buckets[i][2]: dictionary minibucket size => minibucket(s)
+    # node families (represented as vectors of preorder indices) = initial factors
     node2family = nodefamilies(net)
     maxclustersize = T(getmaxclustersize(method)) # size limit for minibuckets
     cg = init_clustergraph(T, :auxiliary)
     for nf in node2family
-        # minibucket: node family specified in elimination order indices and
-        # sorted in elimination order
+        # minibucket: node family, represented then sorted by elimination order
         mb = Vector{T}(indexin(nf, eliminationorder2preorder))
         sort!(mb)
-        # first element in minibucket always has highest priority wrt elimination
-        # order. assign `mb` to bucket corresponding to that element
-        bi = mb[1]
-        # dictionary mapping minibucket size to minibucket(s) within bucket
-        di = buckets[bi][2]
-        # merge `mb` (if within size limits) with existing minibuckets within
-        # bucket, otherwise just add to bucket
+        # first node has lowest elimination order: highest priority
+        bi = mb[1] # assign `mb` to bucket corresponding to this first node
+        di = buckets[bi][2] # dictionary minibucket size => minibucket(s)
+        # merge `mb` with existing minibucket or add as new minibucket, depending on max size
         assign!(di, mb, maxclustersize)
     end
 
-    for i in 1:length(ordering)
-        bs, bd = buckets[i] # bucket symbol, bucket dictionary
-        bi = eliminationorder2preorder[i] # preorder index for `bs`
+    for i in eachindex(ordering)
+        _, bd = buckets[i] # bucket symbol, bucket dictionary
+        bi = eliminationorder2preorder[i] # preorder index of bucket labeling node
         for minibuckets in values(bd)
             # connect minibuckets in a "chain", where the sepset is the bucket
             # variable `bs`, which corresponds to preorder index `bi`
@@ -621,6 +605,7 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
                 lab = Symbol(vdat...)
                 # add cluster corresponding to `mb` to `cg`
                 add_vertex!(cg, lab, (vdat, nodeindlist))
+                # fixit: bug? `prev` not defined below, because defined later in loop scope
                 if j > 1
                     # connect `mb` to current tail of "chain"
                     add_edge!(cg, prev, lab, bi)
@@ -682,43 +667,43 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
     end
     return clustergraph
 end
+
 """
     assign!(bucket, new_minibucket, max_minibucket_size)
 
-Attempts to merge `new_minibucket` with one of the minibuckets contained in
-`bucket` (in order of increasing size), subject to the constraint that the
-resulting minibucket does not exceed `max_minibucket_size`. If a successful
-merge is found, then (`resulting_minibucket`, `minibucket_merged_into`) is
-returned. Otherwise, (`new_minibucket`, []) is returned.
+Merge `new_minibucket` with one of the minibuckets contained in `bucket`
+(in order of decreasing size) subject to the constraint that the resulting
+minibucket does not exceed `max_minibucket_size`. If this is not possible,
+then `new_minibucket` is added to `bucket` as a new minibucket.
+The bucket should be represented as a dictionary:
+minibucket_size => vector of minibuckets of that size,
+where each minibucket is itself represented as a vector of indices.
+
+Output:
+- (`resulting_minibucket`, `minibucket_merged_into`) if a successful merge is found
+- (`new_minibucket`, []) otherwise
 """
 function assign!(bucket::Dict{T, Vector{Vector{T}}},
-    new::Vector{T}, maxsize::T) where {T <: Integer}
-    if !isempty(bucket) # there exist potential minibuckets to merge into
-        # loop through different size collections of minibuckets, in order of
-        # decreasing size
-        for sz in sort(collect(keys(bucket)), rev=true)
-            minibuckets = bucket[sz] # minibuckets with size `sz`
-            for (i, mb) in enumerate(minibuckets)
-                merged = sort(union(new, mb))
-                mergedsz = length(merged)
-                if mergedsz ≤ maxsize
-                    popat!(minibuckets, i) # remove minibucket being merged with
-                    if isempty(minibuckets) # remove any empty size categories
-                        pop!(bucket, sz)
-                    end
-                    # insert result of merge into appropriate size category
-                    if haskey(bucket, mergedsz)
-                        push!(bucket[mergedsz], merged)
-                    else
-                        bucket[mergedsz] = [merged]
-                    end
-                    return (merged, mb)
+                 new::Vector{T}, maxsize::T) where {T <: Integer}
+    for sz in sort(collect(keys(bucket)), rev=true) # favor merging with large minibuckets
+        minibuckets = bucket[sz] # minibuckets of size `sz`
+        for (i, mb) in enumerate(minibuckets)
+            merged = sort(union(new, mb))
+            mergedsz = length(merged)
+            if mergedsz ≤ maxsize
+                popat!(minibuckets, i) # remove minibucket being merged with
+                isempty(minibuckets)  && pop!(bucket, sz) # remove any empty size categories
+                # insert result of merge into appropriate size category
+                if haskey(bucket, mergedsz)
+                    push!(bucket[mergedsz], merged)
+                else
+                    bucket[mergedsz] = [merged]
                 end
+                return (merged, mb)
             end
         end
     end
-    # `new` cannot be merged with any existing minibucket within `bucket`, then
-    # insert it whole into the appropriate size collection in `bucket`
+    # no merging: insert `new` to `bucket`
     sz = length(new)
     if haskey(bucket, sz)
         push!(bucket[sz], new)

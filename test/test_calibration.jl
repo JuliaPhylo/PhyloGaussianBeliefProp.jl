@@ -234,7 +234,7 @@ end
         =#
 
         # x: 1 trait, some missing values
-        b = PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, ct, m);
+        b = (@test_logs (:error,"tip B2 in network without any data") PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, ct, m))
         PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed);
         ctb = PGBP.ClusterGraphBelief(b)
         mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(ctb, ct, net.nodes_changed,
