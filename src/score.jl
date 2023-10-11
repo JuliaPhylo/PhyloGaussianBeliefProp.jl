@@ -48,6 +48,8 @@ by its canonical parameters.
 function average_energy(refcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}},
     targetcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}, T}, 
     dropg::Bool=false) where T <: AbstractFloat
+    # fixit: review. If reference is constant, then return `g` param of target.
+    isempty(refcanon[1]) && return -targetcanon[3]
     Jᵣ = LA.cholesky(refcanon[1])
     μᵣ = Jᵣ \ refcanon[2]
     (Jₜ, hₜ, gₜ) = targetcanon

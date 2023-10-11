@@ -3,7 +3,36 @@
 #= Nest testsets by "optimization"/"no optimization", then network used, then
 name by cluster graph method used =#
 @testset "no optimization" begin
-    @testset "4-taxon, level-1" begin
+    @testset "4-taxon, level-1: #1" begin
+        netstr = "(A:2.5,((B:1,#H1:0.5::0.1):1,(C:1,(D:0.5)#H1:0.5::0.9):1):0.5);"
+        net = readTopology(netstr)
+        df = DataFrame(y=[11.275034507978296, 10.032494469945764,
+            11.49586603350308, 11.004447427824012], taxon=["A","B","C", "D"])
+        tbl_y = columntable(select(df, :y))
+        @testset "Bethe" begin
+            m = PGBP.UnivariateBrownianMotion(1, 10, 0)
+            cg = PGBP.clustergraph!(net, PGBP.Bethe())
+            b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
+            PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+            cgb = PGBP.ClusterGraphBelief(b)
+            schedule = PGBP.spanningtrees_cover_clusterlist(cg, net.nodes_changed)
+            @test PGBP.calibrate!(cgb, schedule, 20; auto=true)
+
+            # Compare posterior expectations with RxInfer
+            posmeans = [PGBP.integratebelief!(cgb.belief[i])[1][1] for i in
+                [PGBP.clusterindex(s, cgb) for s in [:I1,:H1,:I2,:I3]]]
+            @test all([isapprox(m1, m2, rtol=1e-4) for (m1, m2) in
+                zip(posmeans, [10.162833376432536, 10.932362054678077,
+                    10.952187456727945, 10.27875520829012])])
+            # Compare posterior variances with RxInfer
+            posvars = [(cgb.belief[i].J \ I)[1] for i in
+                [PGBP.clusterindex(s, cgb) for s in [:I1,:H1,:I2,:I3]]]
+            @test all([isapprox(v1, v2, rtol=1e-4) for (v1, v2) in
+                zip(posvars, [0.5768644029378899, 0.31991746006101257,
+                    0.3847763603363032, 0.31694527029261793])])
+        end
+    end
+    @testset "4-taxon, level-1: #2" begin
         netstr = "(((A:4.0,((B1:1.0,B2:1.0)i6:0.6)#H5:1.1::0.9)i4:0.5,(#H5:2.0::0.1,C:0.1)i2:1.0)i1:3.0);"
         net = readTopology(netstr)
         df = DataFrame(taxon=["A","B1","B2","C"], y=[1.0,.9,1,-1])
@@ -191,7 +220,27 @@ name by cluster graph method used =#
     end
 end
 @testset "with optimization" begin
-    @testset "4-taxon, level-1" begin
+    @testset "4-taxon, level-1: #1" begin
+        netstr = "(A:2.5,((B:1,#H1:0.5::0.1):1,(C:1,(D:0.5)#H1:0.5::0.9):1):0.5);"
+        net = readTopology(netstr)
+        df = DataFrame(y=[11.275034507978296, 10.032494469945764,
+            11.49586603350308, 11.004447427824012], taxon=["A","B","C", "D"])
+        tbl_y = columntable(select(df, :y))
+        @testset "Bethe" begin
+            cg = PGBP.clustergraph!(net, PGBP.Bethe())
+            b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg,
+                PGBP.UnivariateBrownianMotion(1, 0, 0));
+            cgb = PGBP.ClusterGraphBelief(b)
+            mod, fenergy, opt = PGBP.calibrate_optimize_clustergraph!(cgb, cg,
+                net.nodes_changed, tbl_y, df.taxon,
+                PGBP.UnivariateBrownianMotion, (1,0))
+            # Compare with RxInfer + Optim
+            @test fenergy ≈ 3.4312133894974126 rtol=1e-4
+            @test mod.μ ≈ 10.931640613828181 rtol=1e-4
+            @test mod.σ2 ≈ 0.15239159696122745 rtol=1e-4
+        end
+    end
+    @testset "4-taxon, level-1: #2" begin
         netstr = "(((A:4.0,((B1:1.0,B2:1.0)i6:0.6)#H5:1.1::0.9)i4:0.5,(#H5:2.0::0.1,C:0.1)i2:1.0)i1:3.0);"
         net = readTopology(netstr)
         df = DataFrame(taxon=["A","B1","B2","C"], x=[10,10,missing,0], y=[1.0,.9,1,-1])
