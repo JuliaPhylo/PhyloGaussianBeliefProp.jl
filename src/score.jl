@@ -17,32 +17,37 @@ function entropy(cluster::AbstractBelief)
 end
 
 """
-    average_energy(refcanon, targetcanon, dropg::Bool=false)
-    average_energy(refbelief, targetbelief, dropg::Bool=false)
-    average_energy(refbelief, targetcanon, dropg::Bool=false)
+    average_energy(ref::Tuple, target::Tuple, dropg::Bool=false)
+    average_energy(ref::AbstractBelief, target::AbstractBelief, dropg::Bool=false)
+    average_energy(ref::AbstractBelief, target::Tuple, dropg::Bool=false)
 
-Average energy (i.e. negative expected log) of a target canonical form with
-parameters `targetcanon=(Jₜ, hₜ, gₜ)` with respect to a normalized non-degenerate
-reference canonical form with parameters `refcanon=(Jᵣ, hᵣ)` (specifying `gᵣ` is
+Average energy (i.e. negative expected log) of a `target` canonical form with
+parameters `(Jₜ, hₜ, gₜ)` with respect to a normalized non-degenerate reference
+(`ref`) canonical form with parameters `(Jᵣ, hᵣ)` (specifying `gᵣ` is
 unnecessary to compute this quantity). When the target canonical form is also
-normalized and non-degenerate, this is equivalent to their cross-entropy. If
+normalized and non-degenerate, this is equal to their cross-entropy. If
 `dropg=true`, then average energy is computed assuming that `gₜ=0`.
 
-The second version takes two possible beliefs (`reference`, `target`) for a given
-cluster/sepset and computes the average energy of `target` with respect to
-`reference` by applying the first version to their canonical parameters.
-`reference` is assumed to be non-degenerate (i.e. `Jᵣ` is positive-definite).
+## Calculation:
+    `ref`: f(x) = C(Jᵣ, hᵣ, _) ≡ x ~ 𝒩(μ=Jᵣ⁻¹hᵣ, Σ=Jᵣ⁻¹)
+    `target`: C(Jₜ, hₜ, gₜ)
 
-The third version is similar to the second one, except that the target canonical
-form is specified by its canonical parameters `targetcanon`.
+        E[-log C(Jₜ, hₜ, gₜ)]
+    = E[(1/2)x'*Jₜ*x - hₜ'x - gₜ)] where x ∼ C(Jᵣ, hᵣ, _)
+    = (1/2)*(μᵣ'*Jₜ*μᵣ + tr(Jₜ*Jᵣ⁻¹)) - hₜ'*μᵣ - gₜ
+    = (1/2)*(tr(Jₜ*μᵣ*μᵣ') + tr(Jₜ*Jᵣ⁻¹)) - hₜ'*μᵣ - gₜ
+
+The second version takes two possible beliefs (`ref`, `target`) for a given
+cluster/sepset and computes the average energy of `target` with respect to `ref`
+by applying the first version to their canonical parameters. `ref` is assumed to
+be non-degenerate (i.e. `Jᵣ` is positive-definite).
+
+The third version is similar to the second one, except that `target` is specified
+by its canonical parameters.
 """
 function average_energy(refcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}},
     targetcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}, T}, 
     dropg::Bool=false) where T <: AbstractFloat
-    #= `refcanon`: C(Jᵣ, hᵣ, _) ≡ 𝒩(μ=Jᵣ⁻¹hᵣ, Σ=Jᵣ⁻¹), `belief`: C(Jₜ, hₜ, gₜ)
-    E[-(1/2)x'*Jₜ*x + hₜ'x + gₜ] where x ∼ C(Jᵣ, hᵣ, _)
-    = -(1/2)*(μᵣ'*Jₜ*μᵣ + tr(Jₜ*Jᵣ⁻¹)) + hₜ'*μᵣ + gₜ
-    = -(1/2)*(tr(Jₜ*μᵣ*μᵣ') + tr(Jₜ*Jᵣ⁻¹)) + ... =#
     Jᵣ = LA.cholesky(refcanon[1])
     μᵣ = Jᵣ \ refcanon[2]
     (Jₜ, hₜ, gₜ) = targetcanon

@@ -25,7 +25,7 @@ tolerance) in terms of KL divergence
 struct MessageResidual{T<:Real,P<:AbstractMatrix{T},V<:AbstractVector{T}} <: AbstractResidual
     Δh::V
     ΔJ::P
-    kldiv::Vector{Union{Missing,T}} # note: can't mutate MVector{1, Union{Missing,T}}
+    kldiv::MVector{1,T}
     iscalibrated_resid::MVector{1,Bool}
     iscalibrated_kl::MVector{1,Bool}
 end
@@ -35,12 +35,12 @@ end
 
 Constructor to allocate memory for a `MessageResidual` object given the
 canonical parameters `(ΔJ, Δh, Δg)` of a message residual. `kldiv` is initalized
-to `[missing]`, and `iscalibrated_resid` and `iscalibrated_kl` are initialized
-to `false`. 
+to `[-1.0]`, and `iscalibrated_resid` and `iscalibrated_kl` are initialized to
+`false`. 
 """
 function MessageResidual(ΔJ::AbstractMatrix{T},
         Δh::AbstractVector{T}, _) where {T <: Real}
-    MessageResidual(Δh, ΔJ, Union{Missing,T}[missing], MVector(false), MVector(false))
+    MessageResidual(Δh, ΔJ, MVector(-1.0), MVector(false), MVector(false))
 end
 
 """
@@ -247,47 +247,49 @@ function mod_beliefs_bethe!(beliefs::ClusterGraphBelief,
 end
 
 """
-    calibrate!(beliefs::ClusterGraphBelief, schedule, niterations=1, auto=false)
+    calibrate!(beliefs::ClusterGraphBelief, schedule, niterations=1;
+        auto::Bool=false, info::Bool=true)
 
-Propagate messages for each tree in the `schedule` list, in postorder then in
-preorder, and repeat this for `niterations`. `true` **only if** `beliefs` are
-calibrated after all messages have been propagated, `false` otherwise (i.e.
-`beliefs` may be calibrated even if `false`, more explanation below).
-Each schedule "tree" should be a tuple of 4 vectors as output by
-[`spanningtree_clusterlist`](@ref), where each vector provides the parent/child
-label/index of an edge along which to pass a message, and where these edges are
-listed in preorder. For example, the parent of the first edge is taken to be the
-root of the schedule tree.
+Propagate messages in postorder then preorder for each tree in the `schedule`
+list, and loop through for `niterations`. Each schedule "tree" should be a tuple
+of 4 vectors as output by [`spanningtree_clusterlist`](@ref), where each vector
+provides the parent/child label/index of an edge along which to pass a message,
+and where these edges are listed in preorder. For example, the parent of the
+first edge is taken to be the root of the schedule tree.
 
-Calibration is flagged if, after a schedule "tree" is executed, it is found that
-each possible message sent in the cluster graph was last equal to its moderating
-sepset belief (within some tolerance).
-This condition is sufficient but not necessary for calibration (e.g. the default
-of 1 iteration is sufficient for exact calibration if the schedule tree is a
-clique tree for the graphical model, however calibration will not be flagged).
-If `auto` is true, then return `true` whenever calibration is flagged before
-`niterations` have been completed.
+Calibration is flagged when after a schedule "tree" is run, it is found that each
+possible message sent in the cluster graph was last equal to its moderating
+sepset belief (within some tolerance). If `info=true`, then prints the
+iteration number and tree index when calibration is flagged, or that `niterations`
+have passed without calibration being flagged.
+
+If `auto=true`, then `true` if calibration is flagged within `niterations`
+(returns upon detection) and `false` otherwise.
+
+The conditions for flagging calibration are sufficient but not necessary (e.g.
+the default of 1 iteration is sufficient for exact calibration if the schedule
+tree is a clique tree for the graphical model, but an additional iteration is
+required to detect that all messages have not changed).
 
 See also: [`iscalibrated_canon`](@ref)
 """
 function calibrate!(beliefs::ClusterGraphBelief, schedule::AbstractVector,
-    niter::Integer=1, auto::Bool=false)
+    niter::Integer=1; auto::Bool=false, info::Bool=false)
     # fixit: input checks?
     i = 0
+    iscal = false
     while i < niter
-        # spt = spanningtree_clusterlist(cgraph, prenodes)
         i += 1
         for (j, spt) in enumerate(schedule)
-            if calibrate!(beliefs, spt) && auto
-                # stop automatically once calibration is detected
-                # fixit: print more info when calibration is detected early?
-                println("Calibrated after: iter $i, sch $j")
-                return true
+            if calibrate!(beliefs, spt) && (iscal = true)
+                info && @info "Calibration detected: iter $i, sch $j"
+                auto && return true # stop if calibration is detected
             end
         end
     end
+    iscal || info && @info "`niter` reached before calibration detected"
     # fixit: check calibration properly at the end?
-    return false
+    auto && return false
 end
 function calibrate!(beliefs::ClusterGraphBelief, spt::Tuple)
     propagate_1traversal_postorder!(beliefs, spt...)
@@ -405,13 +407,29 @@ function iscalibrated_kl!(res::AbstractResidual, atol=1e-5)
 end
 
 """
-    approximate_kl!(res::AbstractResidual, sepset, residcanon)
+    approximate_kl!(residual::AbstractResidual, sepset::AbstractBelief,
+        canonicalparams::Tuple)
 
-Update `res` with an approximation to the KL divergence between the message
-residual with canonical parameters `residcanon=(Jᵣ, hᵣ, gᵣ)` and the `sepset`
-belief. This approximation drops the `g` canonical parameter of the target
-distribution (here, the sepset belief). See [`average_energy`](@ref) for more
-explanation.
+Update `residual` information with an approximation to the KL divergence between
+a message (specified by `canonicalparams`) sent through a sepset, and the sepset
+belief before the belief-update, given its belief after (`sepset`).
+This approximation computes the negative average energy of the residual canonical
+parameters, with the `g` parameter set to 0, with respect to the message
+canonical parameters.
+
+## Calculation:
+    message sent: f(x) = C(Jₘ, hₘ, _) ≡ x ~ 𝒩(μ=Jₘ⁻¹hₘ, Σ=Jₘ⁻¹)
+    sepset (before belief-update): C(Jₛ, hₛ, gₛ)
+    sepset (after belief-update): C(Jₘ, hₘ, gₘ)
+    residual: C(ΔJ = Jₘ - Jₛ, Δh = hₘ - hₛ, Δg = gₘ - gₛ)
+
+        KL(C(Jₘ, hₘ, gₘ) || C(Jₛ, hₛ, gₛ))
+    = E[log C(Jₘ, hₘ, gₘ)/C(Jₛ, hₛ, gₛ)] where x ∼ C(Jₘ, hₘ, gₘ)
+    = E[-(1/2)x'*ΔJ*x + Δh'x + Δg)]
+    ≈ E[-(1/2)x'*ΔJ*x + Δh'x], Δg dropped
+    = -average_energy(C(Jₘ, hₘ, _), C(ΔJ, Δh, 0))
+
+See also: [`average_energy`](@ref)
 """
 function approximate_kl!(res::AbstractResidual, sepset::AbstractBelief,
     residcanon::Tuple{AbstractMatrix, AbstractVector, AbstractFloat})
@@ -525,7 +543,7 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
 end
 
 """
-    calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief, clustergraph,
+    calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief, clustergraph,
         nodevector_preordered, tbl::Tables.ColumnTable, taxa::AbstractVector,
         evolutionarymodel_name, evolutionarymodel_startingparameters,
         max_iterations)
@@ -556,7 +574,7 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
         init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
         factors_reset!(beliefs)
         # fixit: raise warning if calibration is not attained within `maxiter`?
-        calibrate!(beliefs, sch, maxiter, true)
+        calibrate!(beliefs, sch, maxiter, auto=true)
         return free_energy(beliefs)[3] # minimize Bethe free energy
     end
     opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS())

@@ -606,9 +606,9 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
             lab = Symbol(vdat...)
             add_vertex!(cg, lab, (vdat, nodeindlist))
             # chain minibuckets: sepset = bucket labeling node, whose preorder is bi
-            # fixit: bug? `prev` not defined below, because defined later in loop scope
             isnothing(previous_mb_label) || # connect `mb` to chain of current bucket
-                add_edge!(cg, previous_mb_label, lab, bi) # fixit: why data bi?
+                # sepset is [bi] even if minibuckets have a larger intersection
+                add_edge!(cg, previous_mb_label, lab, [bi])
             previous_mb_label = lab # `mb` becomes new tail of "chain"
             # new minibucket: marginalize bucket labeling node bi
             mb_new = copy(mb)
@@ -622,6 +622,7 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
             (mb1, mb2) = assign!(buckets[mb_new[1]][2], mb_new, maxclustersize)
             # create cluster corresponding to marginalized & merged minibucket
             # fixit: what if mb2=mb1, and mb2 already exists as a cluster in cg?
+            # BT: if mb2 already exists, then `add_vertex!` does not modify `cg`
             nodeindlist1 = eliminationorder2preorder[mb1]
             o1 = sortperm(nodeindlist1, rev=true)
             nodeindlist1 .= nodeindlist1[o1]
@@ -630,7 +631,7 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
             add_vertex!(cg, lab1, (vdat1, nodeindlist1))
             # connect mb to mb1 in cluster graph cg
             add_edge!(cg, lab, lab1,
-                filter(ni -> ni != bi, nodeindlist)) # fixit: why this edge data?
+                filter(ni -> ni != bi, nodeindlist))
             if length(mb1) != length(mb2) # mb1 != mb2
                 # cluster for `mb2` is replaced by new cluster for `mb1`
                 o2 = sortperm(eliminationorder2preorder[mb2], rev=true)
@@ -648,20 +649,19 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
         end
     end
 
-    # copy `cg` onto `clustergraph`. Though `cg` stores the correct cluster and
+    # copy `cg` onto `clustg`. Though `cg` stores the correct cluster and
     # sepset information, due to alternating edge/vertex additions in its
     # construction, this messes with edge (and consequently edge metadata) access 
     # fixit: rewrite in a more efficient and stable way
-    # fixit: "clustergraph" is a function name already. avoid as variable name
-    clustergraph = init_clustergraph(T, :jgstr)
+    clustg = init_clustergraph(T, :jgstr)
     for lab in values(cg.vertex_labels)
-        add_vertex!(clustergraph, lab, cg[lab])
+        add_vertex!(clustg, lab, cg[lab])
     end
     edges = cg.edge_data
     for (lab1, lab2) in keys(edges)
-        add_edge!(clustergraph, lab1, lab2, edges[(lab1, lab2)])
+        add_edge!(clustg, lab1, lab2, edges[(lab1, lab2)])
     end
-    return clustergraph
+    return clustg
 end
 
 """
@@ -688,7 +688,7 @@ function assign!(bucket::Dict{T, Vector{Vector{T}}},
             mergedsz = length(merged)
             if mergedsz ≤ maxsize
                 popat!(minibuckets, i) # remove minibucket being merged with
-                isempty(minibuckets)  && pop!(bucket, sz) # remove any empty size categories
+                isempty(minibuckets) && pop!(bucket, sz) # remove any empty size categories
                 # insert result of merge into appropriate size category
                 if haskey(bucket, mergedsz)
                     push!(bucket[mergedsz], merged)
