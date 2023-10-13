@@ -82,7 +82,7 @@ end
     clusters = [v[2][2] for v in values(cg.vertex_properties)]
     @test PGBP.isfamilypreserving(clusters, net)[1]
     @test maximum(cl -> length(cl), clusters) ≤ 3 # max cluster size is respected
-    # catch invalid max cluster size
+    # maxclustersize smaller than largest family:
     @test_throws ErrorException PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(2))
 end
 

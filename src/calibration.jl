@@ -534,6 +534,7 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     end
     # autodiff does not currently work with ForwardDiff, ReverseDiff of Zygote,
     # because they cannot differentiate array mutation, as in: view(be.h, factorind) .+= h
+    # consider solutions suggested here: https://fluxml.ai/Zygote.jl/latest/limitations/
     opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS())
     # fixit: if BM and fixed root, avoid optimization bc there exists an exact alternative
     loglikscore = - Optim.minimum(opt)

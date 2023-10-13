@@ -382,7 +382,7 @@ end
 function JoinGraphStructuring(maxclustersize::Integer, net::HybridNetwork)
     maxindegree = maximum(n -> length(getparents(n)), net.hybrid)
     maxclustersize ≥ (maxindegree + 1) ||
-        error("`maxclustersize` is smaller than the size of largest node family, $maxindegree +1.")
+        error("maxclustersize $maxclustersize is smaller than the size of largest node family $(maxindegree+1).")
     return JoinGraphStructuring(maxclustersize)
 end
 
@@ -604,7 +604,7 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
             nodeindlist .= nodeindlist[o]
             vdat = ordering[mb][o]
             lab = Symbol(vdat...)
-            add_vertex!(cg, lab, (vdat, nodeindlist))
+            add_vertex!(cg, lab, (vdat, nodeindlist)) # nothing happens if cg already has lab
             # chain minibuckets: sepset = bucket labeling node, whose preorder is bi
             isnothing(previous_mb_label) || # connect `mb` to chain of current bucket
                 # sepset is [bi] even if minibuckets have a larger intersection
@@ -621,29 +621,25 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
             =#
             (mb1, mb2) = assign!(buckets[mb_new[1]][2], mb_new, maxclustersize)
             # create cluster corresponding to marginalized & merged minibucket
-            # fixit: what if mb2=mb1, and mb2 already exists as a cluster in cg?
-            # BT: if mb2 already exists, then `add_vertex!` does not modify `cg`
             nodeindlist1 = eliminationorder2preorder[mb1]
             o1 = sortperm(nodeindlist1, rev=true)
             nodeindlist1 .= nodeindlist1[o1]
             vdat1 = ordering[mb1][o1]
             lab1 = Symbol(vdat1...)
-            add_vertex!(cg, lab1, (vdat1, nodeindlist1))
+            add_vertex!(cg, lab1, (vdat1, nodeindlist1)) # nothing happens if cg already has lab1
             # connect mb to mb1 in cluster graph cg
-            add_edge!(cg, lab, lab1,
-                filter(ni -> ni != bi, nodeindlist))
-            if length(mb1) != length(mb2) # mb1 != mb2
-                # cluster for `mb2` is replaced by new cluster for `mb1`
+            add_edge!(cg, lab, lab1, filter(ni -> ni != bi, nodeindlist))
+            # if mb2 ⊂ mb1 strictly and if mb2 was already a cluster in cg
+            # then contract mb1-mb2, leaving mb1 only
+            if length(mb1) != length(mb2) # mb1 ≠ mb2 bc mb2 ⊆ mb1
                 o2 = sortperm(eliminationorder2preorder[mb2], rev=true)
                 vdat2 = ordering[mb2][o2]
                 lab2 = Symbol(vdat2...)
-                if haskey(cg, lab2)
-                    # connect edges into `mb2` to `mb1`
-                    for labn in neighbor_labels(cg, lab2)
-                        add_edge!(cg, lab1, labn,
-                            cg[lab2, labn])
+                if haskey(cg, lab2) # then replace mb2 by mb1:
+                    for labn in neighbor_labels(cg, lab2) # connect mb2's neibhbors to mb1
+                        add_edge!(cg, lab1, labn, cg[lab2, labn])
                     end
-                    delete!(cg, lab2) # delete `mb2`
+                    delete!(cg, lab2) # delete mb2 from cg
                 end
             end
         end
@@ -653,6 +649,7 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
     # sepset information, due to alternating edge/vertex additions in its
     # construction, this messes with edge (and consequently edge metadata) access 
     # fixit: rewrite in a more efficient and stable way
+    #=
     clustg = init_clustergraph(T, :jgstr)
     for lab in values(cg.vertex_labels)
         add_vertex!(clustg, lab, cg[lab])
@@ -662,6 +659,8 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
         add_edge!(clustg, lab1, lab2, edges[(lab1, lab2)])
     end
     return clustg
+    =#
+    return cg
 end
 
 """
