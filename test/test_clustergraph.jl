@@ -77,7 +77,7 @@ end
 @testset "Join-graph structuring" begin
     net = readTopology(netstr)
     cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3))
-
+    [cg[lab...] for lab in edge_labels(cg)]
     @test all(t[2] for t in PGBP.check_runningintersection(cg, net))
     clusters = [v[2][2] for v in values(cg.vertex_properties)]
     @test PGBP.isfamilypreserving(clusters, net)[1]

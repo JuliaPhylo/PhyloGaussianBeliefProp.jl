@@ -640,26 +640,20 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
                         add_edge!(cg, lab1, labn, cg[lab2, labn])
                     end
                     delete!(cg, lab2) # delete mb2 from cg
+                    #= MetaGraphsNext bug here: see
+                    issue #69 https://github.com/JuliaGraphs/MetaGraphsNext.jl/issues/69
+                    fixit: delete work-around below after the issue is fixed in MetaGraphsNext
+                    =#
+                    for (l1,l2) in edge_labels(cg)
+                        haskey(cg.edge_data, (l1,l2)) && continue
+                        haskey(cg.edge_data, (l2,l1)) || error("edge_data is lacking an edge")
+                        cg.edge_data[(l1,l2)] = cg.edge_data[(l2,l1)]
+                        delete!(cg.edge_data, (l1,l2))
+                    end
                 end
             end
         end
     end
-
-    # copy `cg` onto `clustg`. Though `cg` stores the correct cluster and
-    # sepset information, due to alternating edge/vertex additions in its
-    # construction, this messes with edge (and consequently edge metadata) access 
-    # fixit: rewrite in a more efficient and stable way
-    #=
-    clustg = init_clustergraph(T, :jgstr)
-    for lab in values(cg.vertex_labels)
-        add_vertex!(clustg, lab, cg[lab])
-    end
-    edges = cg.edge_data
-    for (lab1, lab2) in keys(edges)
-        add_edge!(clustg, lab1, lab2, edges[(lab1, lab2)])
-    end
-    return clustg
-    =#
     return cg
 end
 
