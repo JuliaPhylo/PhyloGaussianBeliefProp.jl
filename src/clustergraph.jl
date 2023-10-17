@@ -595,6 +595,7 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
     # steps 4-6: marginalize the bucket label from each minibucket
     for i in eachindex(ordering)
         _, bd = buckets[i] # bucket symbol, bucket dictionary
+        # @info "node $i, bd has $(sum(length(mb) for mb in values(bd))) minibuckets"
         bi = eliminationorder2preorder[i] # preorder index of bucket labeling node
         previous_mb_label = nothing
         for minibuckets in values(bd), mb in minibuckets
@@ -648,7 +649,7 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
                         haskey(cg.edge_data, (l1,l2)) && continue
                         haskey(cg.edge_data, (l2,l1)) || error("edge_data is lacking an edge")
                         cg.edge_data[(l1,l2)] = cg.edge_data[(l2,l1)]
-                        delete!(cg.edge_data, (l1,l2))
+                        delete!(cg.edge_data, (l2,l1))
                     end
                 end
             end

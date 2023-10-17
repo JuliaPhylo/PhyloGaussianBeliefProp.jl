@@ -76,12 +76,14 @@ end
 
 @testset "Join-graph structuring" begin
     net = readTopology(netstr)
+    # fixit: use a more complex network with multiple minibuckets within 1 bucket: see @info around line 598
     cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3))
-    [cg[lab...] for lab in edge_labels(cg)]
     @test all(t[2] for t in PGBP.check_runningintersection(cg, net))
-    clusters = [v[2][2] for v in values(cg.vertex_properties)]
+    clusters = [[2,1], [3], [3,1], [4,3], [5,4], [6,4,3], [7,6], [8,6,3], [9,8,6], [10,9], [11,8]]
+    @test sort([v[2][2] for v in values(cg.vertex_properties)]) == clusters
+    sepsets = [[1], [3], [3], [4], [4,3], [6], [6,3], [8], [8,6], [9]]
+    @test sort([cg[l1,l2] for (l1,l2) in edge_labels(cg)]) == sepsets
     @test PGBP.isfamilypreserving(clusters, net)[1]
-    @test maximum(cl -> length(cl), clusters) ≤ 3 # max cluster size is respected
     # maxclustersize smaller than largest family:
     @test_throws ErrorException PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(2))
 end
