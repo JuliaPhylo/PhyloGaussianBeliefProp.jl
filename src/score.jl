@@ -47,7 +47,8 @@ by its canonical parameters.
 """
 function average_energy(refcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}},
     targetcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}, T}, 
-    dropg::Bool=false) where T <: AbstractFloat
+    dropg::Bool=false) where T <: Real
+    #TODO: Used Real instead of AbstractFloat for compatibility with the rest of the code (otherwise ForwardDiff fails).
     # fixit: review. If reference is constant, then return `g` param of target.
     isempty(refcanon[1]) && return -targetcanon[3]
     Jᵣ = LA.cholesky(refcanon[1])
@@ -61,9 +62,11 @@ average_energy(reference::AbstractBelief, target::AbstractBelief,
     drop::Bool=false) = average_energy((reference.J, reference.h),
         (target.J, target.h, target.g[1]), drop)
 average_energy(reference::AbstractBelief,
-    targetcanon::Tuple{AbstractMatrix, AbstractVector, AbstractFloat},
-    drop::Bool=false) = average_energy((reference.J, reference.h),
+    targetcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}, T},
+    drop::Bool=false) where {T <: Real} = average_energy((reference.J, reference.h),
         targetcanon, drop)
+    #TODO: Specified type here for compatibility with ForwardDiff
+
 
 """
     free_energy(beliefs::ClusterGraphBelief)

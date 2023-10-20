@@ -40,7 +40,19 @@ to `[-1.0]`, and `iscalibrated_resid` and `iscalibrated_kl` are initialized to
 """
 function MessageResidual(ΔJ::AbstractMatrix{T},
         Δh::AbstractVector{T}, _) where {T <: Real}
-    MessageResidual(Δh, ΔJ, MVector(-1.0), MVector(false), MVector(false))
+    MessageResidual{T,typeof(ΔJ),typeof(Δh)}(Δh, ΔJ, MVector(-1.0), MVector(false), MVector(false))
+end
+
+"""
+MessageResidual(cldim,T=Float64)
+
+Constructor to allocate memory for one residual, and initialize objects with 0s.
+"""
+function MessageResidual(cldim::Integer,T=Float64::Type)
+    Δh = MVector{cldim,T}(zero(T) for _ in 1:cldim)
+    ΔJ = MMatrix{cldim,cldim,T}(zero(T) for _ in 1:(cldim*cldim))
+    #TODO: Is all zeros a good initialisation ?
+    MessageResidual{T,typeof(ΔJ),typeof(Δh)}(Δh, ΔJ, MVector(-1.0), MVector(false), MVector(false))
 end
 
 """
@@ -107,7 +119,7 @@ function ClusterGraphBelief(beliefs)
         error("sepsets are not consecutive")
     cdict = get_clusterindexdictionary(beliefs, nc)
     sdict = get_sepsetindexdictionary(beliefs, nc)
-    messageresidual = init_messageresidual(beliefs, nc)
+    messageresidual = init_messageresidual(beliefs, cdict, nc)
     factors = deepcopy(beliefs[1:nc])
     return ClusterGraphBelief{eltype(beliefs)}(beliefs,factors,nc,cdict,sdict,
         messageresidual)
@@ -118,12 +130,22 @@ end
 function get_sepsetindexdictionary(beliefs, nclusters)
     Dict(Set(beliefs[j].metadata) => j for j in (nclusters+1):length(beliefs))
 end
-function init_messageresidual(beliefs, nclusters)
+function init_messageresidual(beliefs, cdict, nclusters)
     messageresidual = Dict{Tuple{Symbol,Symbol},Union{Missing,AbstractResidual}}()
     for j in (nclusters+1):length(beliefs)
         (clustlab1, clustlab2) = beliefs[j].metadata
-        messageresidual[(clustlab1, clustlab2)] = missing
-        messageresidual[(clustlab2, clustlab1)] = missing
+        cluster_1 = beliefs[clusterindex(clustlab1, cdict)]
+        cluster_2 = beliefs[clusterindex(clustlab2, cdict)]
+        keepind_1to2 = scopeindex(beliefs[j], cluster_2)
+        keepind_2to1 = scopeindex(beliefs[j], cluster_1)
+        messageresidual[(clustlab1, clustlab2)] = MessageResidual(length(keepind_1to2), eltype(beliefs[j].h)) # defaultmessage(cluster_1, length(keepind_1to2))
+        messageresidual[(clustlab2, clustlab1)] = MessageResidual(length(keepind_2to1), eltype(beliefs[j].h)) # defaultmessage(cluster_2, length(keepind_2to1))
+        #=
+        TODO: For ForwardDiff to work well with GeneralLazyBufferCache,
+        we need to allocate all the objects *before hand*
+        (and not on the fly as was done before, with "missing" by default.)
+        Is that the correct way to do it ?
+        =#
     end
     return messageresidual
 end
@@ -482,7 +504,8 @@ canonical parameters.
 See also: [`average_energy`](@ref)
 """
 function approximate_kl!(res::AbstractResidual, sepset::AbstractBelief,
-    residcanon::Tuple{AbstractMatrix, AbstractVector, AbstractFloat})
+    residcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}, T}) where {T <: Real}
+    # TODO: For ForwardDiff to work well with GeneralLazyBufferCache, type T must be specified.
     #=
     isposdef(C::Union{Cholesky,CholeskyPivoted}) = C.info == 0
     There is a bug in StaticArrays.jl
@@ -523,6 +546,7 @@ function propagate_1traversal_postorder!(beliefs::ClusterGraphBelief,
             mr[(pa_lab[i], ch_lab[i])].Δh .= residual[2]
             iscalibrated_canon!(mr[(pa_lab[i], ch_lab[i])])
         else
+            # TODO: Should never be missing now (cf initialisation), remove ?
             mr[(pa_lab[i], ch_lab[i])] = MessageResidual(residual...)
         end
         # compute KL div. between message and sepset
@@ -543,6 +567,7 @@ function propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,
             mr[(ch_lab[i], pa_lab[i])].Δh .= residual[2]
             iscalibrated_canon!(mr[(ch_lab[i], pa_lab[i])])
         else
+            # TODO: Should never be missing now (cf initialisation), remove ?
             mr[(ch_lab[i], pa_lab[i])] = MessageResidual(residual...)
         end
         approximate_kl!(mr[(ch_lab[i], pa_lab[i])], sepset, residual)
@@ -589,9 +614,57 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     # autodiff does not currently work with ForwardDiff, ReverseDiff of Zygote,
     # because they cannot differentiate array mutation, as in: view(be.h, factorind) .+= h
     # consider solutions suggested here: https://fluxml.ai/Zygote.jl/latest/limitations/
+    # Could this cache technique be used ?
+    # https://github.com/JuliaDiff/ForwardDiff.jl/issues/136#issuecomment-237941790
+    # https://juliadiff.org/ForwardDiff.jl/dev/user/limitations/
+    # See PreallocationTools.jl package (below)
     opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS())
     # fixit: if BM and fixed root, avoid optimization bc there exists an exact alternative
     loglikscore = - Optim.minimum(opt)
+    bestθ = Optim.minimizer(opt)
+    bestmodel = evomodelfun(params_original(mod, bestθ)...)
+    return bestmodel, loglikscore, opt
+end
+
+function calibrate_optimize_cliquetree_autodiff!(bufferbeliefs::GeneralLazyBufferCache,
+    cgraph, prenodes::Vector{PN.Node},
+    tbl::Tables.ColumnTable, taxa::AbstractVector,
+    evomodelfun, # constructor function
+    evomodelparams)
+    spt = spanningtree_clusterlist(cgraph, prenodes)
+    rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
+    mod = evomodelfun(evomodelparams...) # model with starting values
+    #= 
+    TODO: externalize the cache to avoid re-alocation (as done here) ?
+    Or define cache inside of the function ?
+    Note that the second option needs net in the arguments.
+    lbc = PreallocationTools.GeneralLazyBufferCache(function (paramOriginal)
+         model = evomodelfun(paramOriginal...)
+         belief = init_beliefs_allocate(tbl, taxa, net, cgraph, model);
+         return ClusterGraphBelief(belief)
+     end)
+    =#
+    #= 
+    TODO: GeneralLazyBufferCache is the "laziest" solution from PreallocationTools
+    there might be more efficient solutions using lower level caches. 
+    =#
+    # score function using cache
+    function score(θ) # θ: unconstrained parameters, e.g. log(σ2)
+        paramOriginal = params_original(mod, θ)
+        model = evomodelfun(paramOriginal...)
+        dualBeliefs = bufferbeliefs[paramOriginal]
+        init_beliefs_reset!(dualBeliefs.belief)
+        init_beliefs_assignfactors!(dualBeliefs.belief, model, tbl, taxa, prenodes)
+        factors_reset!(dualBeliefs) # reset factors each time θ changes
+        propagate_1traversal_postorder!(dualBeliefs, spt...)
+        _, res = integratebelief!(dualBeliefs, rootj) # drop conditional mean
+        return -res # score to be minimized (not maximized)
+    end
+    # optim using autodiff
+    od = OnceDifferentiable(score, params_optimize(mod); autodiff = :forward);
+    opt = Optim.optimize(od, params_optimize(mod), Optim.LBFGS())
+    # fixit: if BM and fixed root, avoid optimization bc there exists an exact alternative
+    loglikscore = -Optim.minimum(opt)
     bestθ = Optim.minimizer(opt)
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
     return bestmodel, loglikscore, opt
