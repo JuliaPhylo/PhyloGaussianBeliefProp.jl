@@ -193,55 +193,105 @@ function default_sepset1(beliefs::AbstractVector, n::Integer)
     return j
 end
 
+# """
+#     mod_beliefs_bethe!(beliefs::ClusterGraphBelief, traitdimension,
+#         net, ridgeconstant::Float=1.0)
+
+# Modify naively initialized beliefs (see [`init_beliefs_assignfactors!`](@ref))
+# of a Bethe cluster graph so that:
+# 1. messages sent/received between neighbor clusters are well-defined, and
+# 2. messages sent from a hybrid cluster are non-degenerate.
+
+# For each hybrid cluster belief, add `ridgeconstant` to the diagonal elements of 
+# its precision matrix that correspond to the parent nodes in the cluster, so that
+# the affected principal submatrix is stably invertible (the first `traitdimension`
+# rows/columns of the precision matrix correspond to the hybrid node).
+# For the edge beliefs associated with the parent nodes in a hybrid cluster, add
+# `ridgeconstant` to the diagonal elements of its precision matrix so as to
+# preserve the cluster graph invariant (i.e. the product of cluster beliefs
+# divided by the product of edge beliefs is invariant throughout belief
+# propagation).
+
+# Send a message along each affected edge from hybrid cluster to variable cluster,
+# so that all subsequent messages received by these hybrid clusters are valid
+# Gaussians (i.e. with positive semi-definite variance/precision).
+# """
+# function mod_beliefs_bethe!(beliefs::ClusterGraphBelief,
+#     numt::Integer, net::HybridNetwork, ϵ::Float64=1.0)
+#     # fixit: to remove? Redundant if we can send default messages on the fly
+#     # fixit: set ϵ adaptively
+#     prenodes = net.nodes_changed
+#     b = beliefs.belief
+#     # modify beliefs of hybrid clusters and their incident sepsets
+#     for n in net.hybrid
+#         o = sort!(indexin(getparents(n), prenodes), rev=true)
+#         parentnames = [pn.name for pn in prenodes[o]]
+#         clustlabel = Symbol(n.name, parentnames...)
+#         cbi = clusterindex(clustlabel, beliefs) # cluster belief index
+#         sb_idx = [sepsetindex(clustlabel, clustlabel2, beliefs) for clustlabel2
+#             in Symbol.(parentnames)] # sepset belief indices for parent nodes
+#         #= Add ϵ to diagonal entries of principal submatrix (for parent nodes)
+#         of cluster belief precision. The first `numt` coordinates are for the
+#         hybrid node. =#
+#         b[cbi].J[(numt+1):end, (numt+1):end] .+= ϵ*LA.I(length(sb_idx)*numt)
+#         for (i, sbi) in enumerate(sb_idx)
+#             #= Add ϵ to diagonal entries of sepset belief precision to preserve
+#             the cluster graph invariant. =#
+#             b[sbi].J .+= ϵ*LA.I(numt)
+#             #= Send non-degenerate message from hybrid cluster to neighbor
+#             variable clusters for each parent node. =#
+#             propagate_belief!(b[clusterindex(Symbol(parentnames[i]), beliefs)],
+#                 b[sbi], b[cbi])
+#         end
+#     end
+# end
+
 """
-    mod_beliefs_bethe!(beliefs::ClusterGraphBelief, traitdimension,
-        net, ridgeconstant::Float=1.0)
+    init_messages!(beliefs::ClusterGraphBelief, clustergraph)
 
-Modify naively initialized beliefs (see [`init_beliefs_assignfactors!`](@ref))
-of a Bethe cluster graph so that:
-1. messages sent/received between neighbor clusters are well-defined, and
-2. messages sent from a hybrid cluster are non-degenerate.
+Modify naively assigned beliefs (see [`init_beliefs_assignfactors!`](@ref)) of a
+cluster graph (while preserving the cluster graph invariant) so that all cluster
+beliefs are non-degenerate, and for any subsequent schedule of messages:
 
-For each hybrid cluster belief, add `ridgeconstant` to the diagonal elements of 
-its precision matrix that correspond to the parent nodes in the cluster, so that
-the affected principal submatrix is stably invertible (the first `traitdimension`
-rows/columns of the precision matrix correspond to the hybrid node).
-For the edge beliefs associated with the parent nodes in a hybrid cluster, add
-`ridgeconstant` to the diagonal elements of its precision matrix so as to
-preserve the cluster graph invariant (i.e. the product of cluster beliefs
-divided by the product of edge beliefs is invariant throughout belief
-propagation).
+        (1) cluster/sepset beliefs stay non-degenerate (i.e. positive definite)
+        (2) all received messages are well-defined (i.e. positive semi-definite)
 
-Send a message along each affected edge from hybrid cluster to variable cluster,
-so that all subsequent messages received by these hybrid clusters are valid
-Gaussians (i.e. with positive semi-definite variance/precision).
+## Algorithm
+1. All clusters are considered unprocessed and no messages have been sent.
+2. Pick an arbitary unprocessed cluster and let it receive default messages from
+all neighbor clusters that have not sent it a message.
+3. Compute and send a message from this cluster to any neighbor cluster that has
+not received a message from it. The selected cluster is now marked as processed.
+4. Repeat steps 2-3 until all clustes have been processed.
+
+Step 2 (the receipt of non-degenerate messages from all neighbors) guarantees
+that all cluster beliefs will be non-degenerate, while step 3 (the use, where
+possible, of messages that can be computed instead of default messages)
+guarantees that all subsequent received messages are well-defined.
 """
-function mod_beliefs_bethe!(beliefs::ClusterGraphBelief,
-    numt::Integer, net::HybridNetwork, ϵ::Float64=1.0)
-    # fixit: to remove? Redundant if we can send default messages on the fly
-    # fixit: set ϵ adaptively
-    prenodes = net.nodes_changed
+function init_messages!(beliefs::ClusterGraphBelief, cgraph::MetaGraph)
+    # (clust1, clust2) ∈ messagesent => clust1 has sent a message to clust2
+    messagesent = Set{NTuple{2,Symbol}}()
     b = beliefs.belief
-    # modify beliefs of hybrid clusters and their incident sepsets
-    for n in net.hybrid
-        o = sort!(indexin(getparents(n), prenodes), rev=true)
-        parentnames = [pn.name for pn in prenodes[o]]
-        clustlabel = Symbol(n.name, parentnames...)
-        cbi = clusterindex(clustlabel, beliefs) # cluster belief index
-        sb_idx = [sepsetindex(clustlabel, clustlabel2, beliefs) for clustlabel2
-            in Symbol.(parentnames)] # sepset belief indices for parent nodes
-        #= Add ϵ to diagonal entries of principal submatrix (for parent nodes)
-        of cluster belief precision. The first `numt` coordinates are for the
-        hybrid node. =#
-        b[cbi].J[(numt+1):end, (numt+1):end] .+= ϵ*LA.I(length(sb_idx)*numt)
-        for (i, sbi) in enumerate(sb_idx)
-            #= Add ϵ to diagonal entries of sepset belief precision to preserve
-            the cluster graph invariant. =#
-            b[sbi].J .+= ϵ*LA.I(numt)
-            #= Send non-degenerate message from hybrid cluster to neighbor
-            variable clusters for each parent node. =#
-            propagate_belief!(b[clusterindex(Symbol(parentnames[i]), beliefs)],
-                b[sbi], b[cbi])
+    for clusterlab in labels(cgraph)
+        tosend = NTuple{3,Int}[] # track messages to send after updating belief
+        from = clusterindex(clusterlab, beliefs) # sending-cluster index
+        for nblab in neighbor_labels(cgraph, clusterlab)
+            to = clusterindex(nblab, beliefs) # receiving-cluster index
+            by = sepsetindex(clusterlab, nblab, beliefs) # sepset index
+            if (nblab, clusterlab) ∉ messagesent
+                propagate_belief!(b[from], b[by]) # receive default message
+                push!(messagesent, (nblab, clusterlab))
+            end
+            if (clusterlab, nblab) ∉ messagesent
+                push!(tosend, (to, by, from))
+                push!(messagesent, (clusterlab, nblab))
+            end
+        end
+        for (to, by, from) in tosend
+            #= `false`: raise error if message is ill-defined instead of
+            handling it by sending a default message =#
+            propagate_belief!(b[to], b[by], b[from], false)
         end
     end
 end
@@ -433,6 +483,10 @@ See also: [`average_energy`](@ref)
 """
 function approximate_kl!(res::AbstractResidual, sepset::AbstractBelief,
     residcanon::Tuple{AbstractMatrix, AbstractVector, AbstractFloat})
+    #=
+    isposdef(C::Union{Cholesky,CholeskyPivoted}) = C.info == 0
+    There is a bug in StaticArrays.jl
+    =#
     # note: `isposdef` returns true for size (0,0) MMatrices and the [0.0] MMatrix
     if LA.isposdef(sepset.J) && size(sepset.J)[1] > 0 &&
         (size(sepset.J)[1] > 1 || sepset.J[1] > 0)
@@ -575,6 +629,7 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
         init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
         factors_reset!(beliefs)
         # fixit: raise warning if calibration is not attained within `maxiter`?
+        init_messages!(beliefs, cgraph)
         calibrate!(beliefs, sch, maxiter, auto=true)
         return free_energy(beliefs)[3] # minimize Bethe free energy
     end

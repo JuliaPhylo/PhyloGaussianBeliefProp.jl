@@ -15,6 +15,7 @@ name by cluster graph method used =#
             b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
             PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
             cgb = PGBP.ClusterGraphBelief(b)
+            PGBP.init_messages!(cgb, cg)
             schedule = PGBP.spanningtrees_cover_clusterlist(cg, net.nodes_changed)
             @test PGBP.calibrate!(cgb, schedule, 20; auto=true)
 
@@ -76,7 +77,8 @@ name by cluster graph method used =#
             cgb = PGBP.ClusterGraphBelief(b)
             #= Modify beliefs of cluster graph so that any schedule is valid (i.e. all
             marginalization operations in the schedule are well-defined). =#
-            PGBP.mod_beliefs_bethe!(cgb, PGBP.dimension(m), net)
+            # PGBP.mod_beliefs_bethe!(cgb, PGBP.dimension(m), net)
+            PGBP.init_messages!(cgb, cg)
             sch = [] # schedule that covers all edges of cluster graph
             for n in net.nodes_changed
                 ns = Symbol(n.name)
@@ -101,12 +103,13 @@ name by cluster graph method used =#
             b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
             PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
             cgb = PGBP.ClusterGraphBelief(b)
-            pa_lab, ch_lab, pa_j, ch_j =
-                PGBP.minimal_valid_schedule(cg, [:Ai4, :B2i6, :B1i6, :Ci2])
-            for i in 1:length(pa_lab)
-                ss_j = PGBP.sepsetindex(pa_lab[i], ch_lab[i], cgb)
-                PGBP.propagate_belief!(b[ch_j[i]], b[ss_j], b[pa_j[i]])
-            end
+            # pa_lab, ch_lab, pa_j, ch_j =
+            #     PGBP.minimal_valid_schedule(cg, [:Ai4, :B2i6, :B1i6, :Ci2])
+            # for i in 1:length(pa_lab)
+            #     ss_j = PGBP.sepsetindex(pa_lab[i], ch_lab[i], cgb)
+            #     PGBP.propagate_belief!(b[ch_j[i]], b[ss_j], b[pa_j[i]])
+            # end
+            PGBP.init_messages!(cgb, cg)
             sch = [] # schedule that covers all edges of cluster graph
             for n in net.nodes_changed
                 ns = Symbol(n.name)
@@ -154,6 +157,7 @@ name by cluster graph method used =#
             b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
             PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
             cgb = PGBP.ClusterGraphBelief(b)
+            PGBP.init_messages!(cgb, cg)
             schedule = PGBP.spanningtrees_cover_clusterlist(cg, net.nodes_changed)
             PGBP.calibrate!(cgb, schedule, 5)
             cg_H1H2I1_ind = PGBP.clusterindex(:H1H2I1, cgb)
@@ -200,6 +204,7 @@ name by cluster graph method used =#
             b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
             PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
             cgb = PGBP.ClusterGraphBelief(b)
+            PGBP.init_messages!(cgb, cg)
             schedule = PGBP.spanningtrees_cover_clusterlist(cg, net.nodes_changed)
             PGBP.calibrate!(cgb, schedule, 5)
             cg_H1H2H3_ind = PGBP.clusterindex(:H1H2H3, cgb)

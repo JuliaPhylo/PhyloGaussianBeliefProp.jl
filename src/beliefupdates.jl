@@ -42,15 +42,40 @@ function marginalizebelief(h,J,g::Real, keep_index, integrate_index)
 end
 
 """
-    defaultmessage(d, ϵ::Float64=1.0)
+    defaultmessage(cluster_to::AbstractBelief, d::Integer)
 
-Canonical form (h, J, g) of a default message of dimension `d`.
+Canonical form (Δh, ΔJ, Δg) of a default received message for `cluster_to`
+(received messages are represented as (Δh, ΔJ, Δg), and sent messages as
+(h, J, g)). `d` is the dimension of the message, and is determined by the
+dimension of the sepset (i.e. no. of traits × trait dimension) through which the
+message is sent.
 
-h is a length-`d` vector of zeroes, J is a `d`-by-`d` identity matrix scaled by
-ϵ, g is 0.
+Δh is a length-`d` vector of zeroes, g is 0, and J is a `d`-by-`d` identity
+matrix scaled by ϵ, where ϵ is set adaptively based on `cluster_to`.
 """
-function defaultmessage(d::Integer, ϵ::Float64=1.0)
-    # fixit: make this adaptive eventually?
+function defaultmessage(cluster_to::AbstractBelief, d::Integer)
+    #= Other options tried:
+    (1) ϵ = 1.0
+    (2) ϵ = eps() # machine epsilon ≈ e-16
+    (3) ϵ = minimum(abs, cluster_to.J)
+
+    Option (1) works for the existing test cases ("test_calibration.jl") when
+    default messages are generated on the fly (withdefault=true in
+    `propagate_belief!`) whenever the sending-cluster's belief is degenerate
+    (semi-definite) so that marginalization produces ∞
+
+    Options (1) - (3) each fail for one or more of the existing test cases
+    when we do not generate default messages on the fly and instead initialize
+    the cluster/sepset beliefs (`init_messages!`) so that all subsequent
+    messages (i.e. sepset belief candidates) are positive-definite. In this case,
+    bad choice of ϵ wrt cluster_to.J (e.g. ϵ=1.0 >> entries of cluster_to.J in
+    magnitude, which can happen if a very large σ² is tried out during
+    optimization) can introduce rounding errors, semi-definite messages, and
+    degenerate beliefs.
+    =#
+    #= fixit: happens to work for existing test cases, but needs to be more
+    robust if we are opting NOT to generate default messages on the fly =#
+    ϵ = maximum(abs, cluster_to.J)
     return (zeros(d), ϵ*LA.I(d), 0.0)
 end
 
