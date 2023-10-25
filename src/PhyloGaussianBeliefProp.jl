@@ -5,7 +5,7 @@ using Distributions: MvNormalCanon, MvNormal, AbstractMvNormal
 using Graphs
 import LinearAlgebra as LA
 using MetaGraphsNext
-using Optim
+using Optim, PreallocationTools, ForwardDiff
 using PDMats
 using StaticArrays
 using StatsFuns
@@ -22,5 +22,6 @@ include("evomodels.jl")
 include("canonicalnormal.jl")
 include("beliefupdates.jl")
 include("calibration.jl")
+include("score.jl")
 
 end

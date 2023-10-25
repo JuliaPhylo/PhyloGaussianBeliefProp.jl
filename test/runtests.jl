@@ -2,7 +2,9 @@ using PhyloGaussianBeliefProp
 
 using DataFrames
 using Graphs, MetaGraphsNext
+using LinearAlgebra
 using PhyloNetworks
+using PreallocationTools
 using Tables
 using Test
 

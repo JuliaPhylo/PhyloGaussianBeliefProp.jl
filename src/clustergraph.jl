@@ -6,6 +6,14 @@ end
 
 """
     preprocessnet!(net::HybridNetwork, prefix="I")
+
+Create or update the pre-ordering of nodes in `net` using `PhyloNetworks.preorder!`,
+then name unnamed internal nodes, with names starting with `prefix`.
+Nodes in phylogenetic networks need to have names to build cluster graphs,
+in which a cluster contains network nodes. Pre-ordering is also used to traverse
+the network for building cluster graphs.
+
+See [`clustergraph!`](@ref).
 """
 function preprocessnet!(net::HybridNetwork, prefix="I")
     PN.preorder!(net)
@@ -119,103 +127,94 @@ function filledges!(fe, vertex_code, graph::AbstractGraph)
 end
 
 """
-    minimalclusters!(net)
+    nodefamilies(net)
 
-The *minimal clusters* of a network is its collection of node families. Each
-cluster comprises a node and its parent(s). Thus, each cluster either corresponds
-to a tree edge (e.g. {child, parent}), or a set of hybrid edges into the same
-node (e.g. {child, parent-1, parent-2, ..., parent-k}).
+Vector `v` with elements of type `Vector{T}`.
+`v[i]` first lists `i`, the preorder index of node `net.nodes_changed[i]`,
+followed by the preorder index of all of this node's parents in `net`,
+sorted in decreasing order. Due to pre-ordering,
+all of the parents' indices are listed after the node (their child) index.
+A given node and its parents is called a "node family".
 
-Returns a dictionary that maps each node's preorder index to a vector containing
-its preorder index and those of its parents. Within each vector, the preorder
-indices are sorted in decreasing order so that the parents' indices come after
-the child's.
+**Warning**: `net` is assumed preordered, see [`preprocessnet!`](@ref) and
+[`PhyloNetworks.preorder!`](https://crsl4.github.io/PhyloNetworks.jl/latest/lib/public/#PhyloNetworks.preorder!)).
 """
-function minimalclusters!(net::HybridNetwork)
-    preprocessnet!(net)
+function nodefamilies(net::HybridNetwork)
     T = vgraph_eltype(net)
-    node2family = Dict{T, Vector{T}}()
-    preordernames = [n.name for n in net.nodes_changed]
-    for (code, n) in enumerate(net.nodes_changed)
-        o = sort!(indexin([p.name for p in getparents(n)], preordernames),
-            rev=true)
-        node2family[code] = [code; o]
+    prenodes = net.nodes_changed
+    node2family = Vector{Vector{T}}(undef, length(prenodes))
+    for (code, n) in enumerate(prenodes)
+        o = sort!(indexin(getparents(n), prenodes), rev=true)
+        pushfirst!(o, code)
+        node2family[code] = o # then node2family[code][1] = code
     end
     return node2family
 end
 
 """
-    isfamilypreserving!(clusters, net)
+    isfamilypreserving(clusters, net)
 
-`clusters` is *family-preserving* with respect to `net` if each minimal cluster
-(see [`minimalclusters!`](@ref)) of `net` is contained in ≥1 cluster in
-`clusters`.
+Tuple `(ispreserving, isfamily_incluster)`:
+1. `ispreserving`: true (false) if `clusters` is (is not) family-preserving
+   with respect to `net`, that is: if each node family (a node and all of its parents)
+   in `net` is contained in at least 1 cluster in `clusters`.
+   `clusters` should be a vector, where each element describes one cluster,
+   given as a vector of preorder indices. Index `i` corresponds to node number `i`
+   in `net` according the node pre-ordering: `net.nodes_changed[i]`.
+2. `isfamily_incluster`: vector of `BitVector`s. `isfamily_incluster[i][j]` is
+   true (false) if the family of node `i` is (is not) fully contained in cluster [j].
+   `i` is taken as the preorder index of a node in `net`.
+   `ispreserving` is true if every element (bit vector) in `isfamily_incluster`
+    contains at least 1 true value.
 
-Returns a tuple: `(isfamilypreserving::Bool, family2cluster::Dict{T, BitVector})`,
-where `isfamilypreserving` indicates if `clusters` is family-preserving with
-respect to `net`, and `family2cluster` is a dictionary that maps each node
-family (represented by the preorder index for its child node) to a vector
-indicating which clusters in `clusters` contain that node family.
+**Warning**: assumes that `net` is preordered, see
+[`PhyloNetworks.preorder!`](https://crsl4.github.io/PhyloNetworks.jl/latest/lib/public/#PhyloNetworks.preorder!)).
+
+See also [`nodefamilies`](@ref) to get node families.
 """
-function isfamilypreserving!(clusters::Vector{Vector{T}},
-    net::HybridNetwork) where {T <: Integer}
-    T1 = vgraph_eltype(net)
-    isa(T, Type{T1}) || error("Supply `clusters` as Vector{Vector{$T1}} object")
-    node2family = minimalclusters!(net)
-    family2cluster = Dict{T, BitVector}()
-    isfamilypreserving = true
-    for ni in keys(node2family)
-        nf = node2family[ni]
-        ch = nf[1] # index family by child node
-        # mark which clusters (if any) each node family is contained in
-        family2cluster[ch] = BitArray(nf ⊆ cl for cl in clusters)
-        # check for potential violation only if family-preserving so far
-        isfamilypreserving && (isfamilypreserving = any(family2cluster[ch]))
+function isfamilypreserving(clusters::Vector{Vector{T}},
+                            net::HybridNetwork) where {T <: Integer}
+    node2family = nodefamilies(net) # vectors of type vgraph_eltype(net)
+    isfamilyincluster = Vector{BitVector}(undef, length(node2family))
+    for nf in node2family
+        ch = nf[1] # preorder index of family's child. also: node2family[ch] = nf
+        isfamilyincluster[ch] = BitArray(nf ⊆ cl for cl in clusters)
     end
-    return (isfamilypreserving, family2cluster)
+    ifp = all(any.(isfamilyincluster)) # *every* node family is in *some* cluster
+    return (ifp, isfamilyincluster)
 end
 
 """
-    checkRI(clustergraph, net)
+    check_runningintersection(clustergraph, net)
 
-`clustergraph` satisfies the *running-intersection* (RI) property if for each
-node in `net`, the subgraph of `clustergraph` induced by the clusters containing
-that node is a tree.
+Vector of tuples. Each tuple is of the form `(nodelabel, istree)`, where
+`nodelabel::Symbol` is the label of a node in `net` and `istree` is true (false)
+if the node's cluster subgraph is (is not) a tree.
+This "cluster subgraph" for a given node is the subgraph of `clustergraph`
+induced by the clusters containing the node
+and by the edges whose sepset contain the node.
 
-Assumes that `net` has been preordered ([`preorder!`](@ref)).
+`clustergraph` satisfies the generalized *running-intersection* property if
+`istree` is true for all nodes in `net`.
 
-**Warning**: does *not* check that `clustergraph` has been correctly constructed.
-
-Returns a vector of tuples: `[(t1::Symbol, t2::Bool), ...]`, where `t1` is a node
-label and `t2` indicates if the sub(cluster)graph induced by the clusters
-containing that node is a tree. `clustergraph` satisfies the RI property if `t2`
-is `true` for all nodes.
+**Warning**:
+- assumes that `net` has been preordered, and
+- does *not* check if `clustergraph` has been correctly constructed.
 """
-function checkRI(clustergraph::MetaGraph, net::HybridNetwork)
-    cluster_properties = clustergraph.vertex_properties
-    subgraphs = Tuple{Symbol, MetaGraph}[]
-    for n in net.nodes_changed
-        # clusters as vectors of node symbols
-        clusters_s = filter(cl -> Symbol(n.name) ∈ cluster_properties[cl][2][1],
-            keys(cluster_properties))
-        # clusters as vectors of preorder indices
-        clusters_i = [cluster_properties[cl][1] for cl in clusters_s]
-        sg_n, _ = induced_subgraph(clustergraph, clusters_i)
-        push!(subgraphs, (Symbol(n.name), sg_n))
-    end
+function check_runningintersection(clustergraph::MetaGraph, net::HybridNetwork)
     res = Tuple{Symbol, Bool}[]
-    for (i, (nl, sg)) in enumerate(subgraphs)
-        # loop through edges of the induced subgraph `sg`, and delete any that
-        # do not contain the variable of interest `nl`
-        for e in collect(keys(sg.edge_data))
-            cl1, cl2 = e[1], e[2]
-            nodelabs1 = sg[cl1][1]
-            nodelabs2 = sg[cl2][1]
-            if (nl ∉ nodelabs1) & (nl ∉ nodelabs2)
-                delete!(sg, cl1, cl2)
+    for (nod_ind, n) in enumerate(net.nodes_changed)
+        nodelab = Symbol(n.name)
+        # indices of clusters containing the node of interest
+        clusters_i = findall(nodelab ∈ clustergraph[clab][1] for clab in labels(clustergraph))
+        sg, _ = induced_subgraph(clustergraph, clusters_i)
+        # in subgraph, delete any edge whose sepset lacks nod_ind, the node's preorder index
+        for e in edge_labels(sg)
+            if nod_ind ∉ sg[e...] # edge data = vector of nodes preorder indices
+                delete!(sg, e...)
             end
         end
-        push!(res, (nl, is_tree(sg))) # check if the subgraph remaining is a tree
+        push!(res, (nodelab, is_tree(sg)))
     end
     return res
 end
@@ -223,7 +222,7 @@ end
 """
     AbstractClusterGraphMethod
 
-Abstract type for method of cluster graph construction.
+Abstract type for cluster graph construction algorithms.
 """
 abstract type AbstractClusterGraphMethod end
 
@@ -237,19 +236,21 @@ getmaxclustersize(obj::AbstractClusterGraphMethod) =
 
 Subtype of [`AbstractClusterGraphMethod`](@ref).
 
-## Algorithm:
+## Algorithm
+
 A Bethe cluster graph (also known as factor graph) has:
-- a factor-cluster for each node-family (except for the singleton containing the
-root node) in the network, and
-- a variable-cluster for each node in the network
+- a factor-cluster `{v, parents(v}}` for each node-family in the network, that is,
+  for each non-root node `v` (a family is a child node and all of its parents)
+- a variable-cluster `{v}` for each node `v` in the network.
 
-Each variable-cluster is joined to the factor-clusters that contain it. The
-sepset for each edge is the variable-cluster that it is incident to.
+Each variable-cluster `{v}` is joined to the factor-clusters that contain `v`,
+by an edge labelled with sepset `{v}`.
 
-## References:
+## References
+
 D. Koller and N. Friedman. *Probabilistic graphical models: principles and
-techniques*. MIT Press, 2009. ISBN 9780262013192. doi:
-[10.5555/1795555](https://doi.org/10.5555/1795555).
+techniques*. MIT Press, 2009. ISBN 9780262013192.
+doi: [10.5555/1795555](https://doi.org/10.5555/1795555).
 """
 struct Bethe <: AbstractClusterGraphMethod end
 
@@ -261,155 +262,180 @@ A HybridNetwork and a valid LTRIP are passed to [`clustergraph!`](@ref) to
 construct a cluster graph from the user-provided clusters based on the *Layered
 Trees Running Intersection Property* algorithm of Streicher & du Preez (2017).
 
-## Fieldnames:
-- clusters: a vector of user-specified clusters that has to be family-preserving
-([`isfamilypreserving!`](@ref)) with respect to some HybridNetwork
+## Fieldnames
 
-## Constructors:
-- `LTRIP!(net)`: uses minimal clusters ([`minimalclusters!(net)`](@ref)), which
-are guaranteed to be family-preserving
-- `LTRIP!(clusters, net)`: checks if that clusters provided are family-preserving
+- clusters: vector of clusters, required to be family-preserving
+  with respect to some HybridNetwork -- see [`isfamilypreserving`](@ref).
+  Within each cluster, nodes (identified by their preorder index in the network)
+  are required to be sorted in decreasing order (for postorder)
 
-## Algorithm:
-1. For each node, LTRIP finds a spanning-tree for the clusters that contain that
-node. The edges of this spanning-tree are all labelled with the singleton
-containing that node.
-    1. For the clusters containing a particular node, the edge weight for any
-    pair of clusters is set to the size of their intersection.
-    2. The max-weight edges are identified, then the weight of each edge is
-    increased by the number of max-weight edges that either of its endpoints
-    adjacent to.
-    3. A maximum spanning-tree based on the set of augmented edge weights is
-    returned.
-2. The spanning-trees for each node are layered on one another so that the
-sepset for any edge is the union of its labels across the different
-spanning-trees.
+## Constructors
 
-## References:
+- `LTRIP(net)`: uses [`nodefamilies(net)`](@ref) as input clusters,
+  which are guaranteed to be family-preserving
+- `LTRIP(clusters, net)`: checks if that clusters provided are family-preserving,
+   then sorts each cluster in decreasing order (modifying them in place!)
+   before creating the LTRIP object.
+
+They assume, *with no check*, that `net` already has a preordering.
+
+## Algorithm
+
+1. An initial graph G is considered, in which each input cluster is a node.
+   An edge (C1,C2) is added if clusters C1 and C2 share at least 1 node (in `net`).
+   The weight of edge (C1,C2) is defined as the size of the intersection C1 ∩ C2.
+2. For each node `n` in `net`,
+   the subgraph of G induced by the clusters containing `n`, G_n, has its
+   weights adjusted as follows:
+     * the edges of maximum weight (within G_n) are identified, then
+     * the weight of each edge is increased by the number of max-weight edges
+       that either of its endpoints adjacent to.
+   Then, LTRIP finds a maximum-weight spanning tree of G_n. The edges of this
+   tree are all labelled with `{n}` (or its label or preorder index).
+3. The spanning trees for each node are layered on one another to form a cluster
+   graph. In other words, an edge (C1,C2) is added if it is present is any
+   spanning tree. If so, its sepset is the union of its labels across the
+   different spanning trees.
+
+## References
+
 S. Streicher and J. du Preez. Graph Coloring: Comparing Cluster Graphs to Factor
 Graphs. In *Proceedings of the ACM Multimedia 2017 Workshop on South African
-Academic Participation, pages 35-42, 2017. doi:
-[10.1145/3132711.3132717](https://doi.org/10.1145/3132711.3132717).
+Academic Participation, pages 35-42, 2017.
+doi: [10.1145/3132711.3132717](https://doi.org/10.1145/3132711.3132717).
 """
 struct LTRIP{T<:Integer} <: AbstractClusterGraphMethod
     clusters::Vector{Vector{T}}
 end
-function LTRIP!(net::HybridNetwork)
-    node2family = minimalclusters!(net)
-    clusters = collect(values(node2family))
+function LTRIP(net::HybridNetwork)
+    clusters = nodefamilies(net)
     return LTRIP(clusters)
 end
-function LTRIP!(clusters::Vector{Vector{T}}, net::HybridNetwork) where {T <: Integer}
-    isfamilypreserving!(clusters, net)[1] ||
+function LTRIP(clusters::Vector{Vector{T}}, net::HybridNetwork) where {T <: Integer}
+    isfamilypreserving(clusters, net)[1] ||
     error("`clusters` is not family preserving with respect to `net`")
+    for cl in clusters
+        issorted(cl, rev=true) || sort!(cl, rev=true)
+    end
     return LTRIP(clusters)
 end
 
 """
-    JoinGraphStr
+    JoinGraphStructuring
 
 Subtype of [`AbstractClusterGraphMethod`](@ref).
 
-*Join-graph structuring* algorithm of Mateescu et al. (2010).
+## Fieldnames
 
-## Fieldnames:
-- maxclustersize: upper limit for cluster size that must be ≥ size of the
-largest minimal cluster ([`minimalclusters!(net)`](@ref))
+- `maxclustersize`: upper limit for cluster size.
+  This value must be at least the size of the largest node family in
+  the input phylogenetic network, normally 3 if the network is bicombining
+  (each hybrid node has 2 parents, never more). See [`nodefamilies(net)`](@ref).
 
-## Constructors:
-- `JoinGraphStr(maxclustersize, net)`: checks that max cluster size provided is
-valid
+## Constructors
 
-## Algorithm:
+- `JoinGraphStructuring(maxclustersize, net)`:
+   checks that the input `maxclustersize` is valid for `net`
+
+## Algorithm, by Mateescu et al. (2010)
+
 Requires:
-- user-specified max cluster size
-- an elimination order for the nodes in the HybridNetwork that is expected to
-yield a small induced-width (e.g. from a heuristic such as greedy min-fill
-([`triangulate_minfill!(graph)`](@ref)))
+- a user-specified maximum cluster size
+- an elimination order for the nodes in the HybridNetwork, hopefully yielding
+  a small induced-width, e.g. from a heuristic such as greedy min-fill
+  (see [`triangulate_minfill!(graph)`](@ref)).
 
-1. Each node in the HybridNetwork labels a "bucket", and these buckets are ordered
-according to the elimination order (e.g. the highest-priority bucket is labelled
-by the first node in the elimination order).
+1. Each node in `net` labels a "bucket", and these buckets are ordered according
+   to the elimination order, e.g. the highest-priority bucket is labelled by the
+   first node in the elimination order.
 2. Node families are assigned to buckets based on the highest-priority node they
-contain (e.g. if {1, 4, 9} forms a node family and node 4 is higher in the
-elimination order than nodes 1 or 9, then {1, 4, 9} gets assigned to bucket 4).
+   contain. For example, if {1,4,9} forms a node family and if node 4 is
+   higher in the elimination order than nodes 1 or 9, then {1,4,9} gets assigned
+   to bucket 4.
 3. Node families are clusters (of nodes), and we refer to the clusters within a
-bucket as "minibuckets". Minibuckets within a bucket can be merged as long as
-the size of their union does not exceed the max cluster size provided (there is
-some degree of freedom for how this can be done).
+   bucket as "minibuckets". Minibuckets within a bucket can be merged as long as
+   the size of their union does not exceed the maximum cluster size allowed.
+   Sometimes, this can be done in multiple ways.
 4. Starting with the highest-priority bucket, we create new minibuckets by
-"marginalizing out" the bucket label from each existing minibucket (these are
-left unchanged in the process).
+   "marginalizing out" the bucket label from each existing minibucket
+   (these are left unchanged in the process).
 5. Each new minibucket is joined to its "originator" minibucket by an edge that
-is labeled by their intersection (i.e. the variables in the new minibucket).
-Each new minibucket is then reassigned to a new (and necessarily lower-priority)
-bucket based on its highest priority node. Merging can take place during
-reassignment as long as the the max cluster size is respected. The union of 2
-minibuckets retains the edges of each of minibucket.
+   is labeled by their intersection (i.e. the variables in the new minibucket).
+   Each new minibucket is then reassigned to a new (and necessarily lower-priority)
+   bucket based on its highest priority node. Merging can take place during
+   reassignment as long as the the maximum cluster size is respected.
+   The union of 2 minibuckets retains the edges of each of minibucket.
 6. Steps 4 & 5 are carried out for each bucket in order of priority.
 7. The resulting minibuckets in each bucket are then joined in a chain (there is
-some degree of freedom for how this can be done), where each edge is labelled by
-the bucket label.
+   some degree of freedom for how this can be done),
+   where each edge is labelled by the bucket label.
 
-## References:
+## References
+
 R. Mateescu, K. Kask, V.Gogate, and R. Dechter. Join-graph propagation algorithms.
-*Journal of Artificial Intelligence Research*, 37:279-328, 2010. doi:
-[10.1613/jair.2842](https://doi.org/10.1613/jair.2842).
+*Journal of Artificial Intelligence Research*, 37:279-328, 2010
+doi: [10.1613/jair.2842](https://doi.org/10.1613/jair.2842).
 """
-struct JoinGraphStr <: AbstractClusterGraphMethod
+struct JoinGraphStructuring <: AbstractClusterGraphMethod
     maxclustersize::Integer
 end
-function JoinGraphStr(maxclustersize::Integer, net::HybridNetwork)
-    maxindegree = maximum(n -> length(getparents(n)), net.node)
-    maxclustersize ≥ (maxindegree + 1) || error("`maxclustersize` is smaller
-    than size of largest minimal cluster")
-    return JoinGraphStr(maxclustersize)
+function JoinGraphStructuring(maxclustersize::Integer, net::HybridNetwork)
+    maxindegree = maximum(n -> length(getparents(n)), net.hybrid)
+    maxclustersize ≥ (maxindegree + 1) ||
+        error("maxclustersize $maxclustersize is smaller than the size of largest node family $(maxindegree+1).")
+    return JoinGraphStructuring(maxclustersize)
 end
 
 """
     Cliquetree
 
-## Algorithm:
+Subtype of [`AbstractClusterGraphMethod`](@ref).
 
-1. Moralizes ([`moralize`](@ref)) the HybridNetwork.
-2. Triangulates the resulting undirected graph using greedy min-fill
-([`triangulate_minfill!(graph)`](@ref)).
-3. Extracts the maximal cliques of the resulting chordal graph.
-4. Defines the edge weight between each pair of maximal cliques as the size of
-their intersection, then finds a maximum spanning tree. Edges between cliques
-are labelled by their intersection.
+## Algorithm
 
-## References:
+1. [`moralize`](@ref) the network (connect partners that share a child).
+2. triangulate the resulting undirected graph using greedy min-fill,
+   see [`triangulate_minfill!(graph)`](@ref).
+3. extract the maximal cliques of the resulting chordal graph.
+4. calculate the edge weight between each pair of maximal cliques as the size of
+   their intersection
+5. find a maximum-weight spanning tree
+6. label the retained edges (in the spanning tree) by the intersection of
+   the two cliques they connect.
+
+## References
+
 D. Koller and N. Friedman. *Probabilistic graphical models: principles and
-techniques*. MIT Press, 2009. ISBN 9780262013192. doi:
-[10.5555/1795555](https://doi.org/10.5555/1795555).
+techniques*. MIT Press, 2009. ISBN 9780262013192.
+doi: [10.5555/1795555](https://doi.org/10.5555/1795555).
 """
 struct Cliquetree <: AbstractClusterGraphMethod end
 
 """
     clustergraph!(net, method)
+    clustergraph( net, method)
 
-Cluster graph `U` for an input network `net`, a `method` of cluster graph
-construction.
+Cluster graph `U` for an input network `net` and a `method` of cluster graph
+construction. The following methods are supported:
+- [`Bethe`](@ref)
+- [`LTRIP`](@ref)
+- [`JoinGraphStructuring`](@ref)
+- [`Cliquetree`](@ref)
 
-The following methods for cluster graph construction are supported:
-    - [`Bethe`](@ref)
-    - [`LTRIP`](@ref)
-    - [`JoinGraphStr`](@ref)
-    - [`Cliquetree`](@ref)
+The first method pre-processes `net`, which may modify it in place,
+see [`preprocessnet!`](@ref).
+The second method assumes that `net` is already pre-processed.
 """
 function clustergraph!(net::HybridNetwork, method::AbstractClusterGraphMethod)
     preprocessnet!(net)
     return clustergraph(net, method)
 end
 
-clustergraph(net::HybridNetwork, ::Bethe) = betheclustergraph(net)
+@doc (@doc clustergraph!) clustergraph
+clustergraph(net::HybridNetwork, ::Bethe)       = betheclustergraph(net)
 clustergraph(net::HybridNetwork, method::LTRIP) = ltripclustergraph(net, method)
-
-function clustergraph(net::HybridNetwork, method::JoinGraphStr)
-    joingraph(net, JoinGraphStr(getmaxclustersize(method), net))
-end
-
+clustergraph(net::HybridNetwork, method::JoinGraphStructuring) =
+    joingraph(net, JoinGraphStructuring(getmaxclustersize(method), net))
 function clustergraph(net::HybridNetwork, ::Cliquetree)
     g = moralize(net)
     triangulate_minfill!(g)
@@ -426,38 +452,32 @@ function betheclustergraph(net::HybridNetwork)
     clustergraph = init_clustergraph(T, :Bethe)
 
     node2cluster = Dict{T, Tuple{Symbol, Vector{Symbol}}}() # for joining clusters later
-    preordernames = [n.name for n in net.nodes_changed]
-    # iterate through network nodes in preorder
-    for (code, n) in enumerate(net.nodes_changed)
-        ns = Symbol(n.name)
+    prenodes = net.nodes_changed
+    prenodes_names = [Symbol(n.name) for n in prenodes]
+    # add a factor-cluster for each non-root node
+    for (code, n) in enumerate(prenodes)
         vt = T(code)
-        o = sort!(indexin([p.name for p in getparents(n)], preordernames), rev=true)
-        # vdat and nodeindlist are sorted in postorder
-        vdat = [ns; [Symbol(n.name) for n in net.nodes_changed[o]]] # node symbols
-        nodeindlist = [vt; Vector{T}(o)] # preorder indices
-        if length(nodeindlist) > 1 # non-root node of graph
-            # cluster data: (node labels, node preorder index), sorted in postorder
-            # add factor clusters
-            add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
-            for ni in nodeindlist
-                if haskey(node2cluster, ni)
-                    push!(node2cluster[ni][2], Symbol(vdat...))
-                else node2cluster[ni] = (Symbol(preordernames[ni]), [Symbol(vdat...)])
-                end
+        o = sort!(indexin(getparents(n), prenodes), rev=true) # for postorder
+        nodeind = pushfirst!(T.(o), vt)   # preorder indices of nodes in factor
+        nodesym = prenodes_names[nodeind] # node symbol      of nodes in factor
+        # (nodesym, nodeind) = factor-cluster data, its nodes listed in postorder
+        length(nodeind) > 1 || continue # skip the root
+        factorCname = Symbol(nodesym...) # factor-cluster name: label in metagraph
+        add_vertex!(clustergraph, factorCname, (nodesym, nodeind))
+        for (nns, nni) in zip(nodesym, nodeind)
+            if haskey(node2cluster, nni)
+                push!(node2cluster[nni][2], factorCname)
+            else node2cluster[nni] = (nns, [factorCname])
             end
         end
     end
-
-    for ni in sort!(collect(keys(node2cluster)), rev=true)
-        # sepsets will be sorted by nodes' postorder
+    # add a variable-cluster for each non-leaf node, and its adjacent edges (sepsets)
+    for ni in sort!(collect(keys(node2cluster)), rev=true) # add nodes in postorder
         ns, clusterlist = node2cluster[ni]
-        if length(clusterlist) > 1
-            # add variable cluster only if there are > 1 clusters with this node
-            add_vertex!(clustergraph, ns, ([ns], [ni]))
-            # connect variable cluster to factor clusters that contain this node
-            for lab in clusterlist
-                add_edge!(clustergraph, ns, lab, [ni])
-            end
+        length(clusterlist) > 1 || continue # skip leaves: in only 1 factor-cluster
+        add_vertex!(clustergraph, ns, ([ns], [ni]))
+        for lab in clusterlist # lab: factor-cluster name, for each factor that contains the node
+            add_edge!(clustergraph, ns, lab, [ni]) # sepset: singleton {ni}
         end
     end
     return clustergraph
@@ -470,246 +490,210 @@ See [`LTRIP`](@ref)
 """
 function ltripclustergraph(net::HybridNetwork, method::LTRIP)
     T = vgraph_eltype(net)
-    clustergraph = init_clustergraph(T, :ltrip)
-    
-    # only used for ltrip, so doesn't count as code duplication
-    # auxiliary metagraph 
-    cg = MetaGraph(Graph{T}(0),
+    clustg = init_clustergraph(T, :ltrip) # 'clustergraph' is a function already
+    cg = MetaGraph(Graph{T}(0), # auxiliary graph to hold connection weights
         Symbol, # vertex label
         Tuple{Vector{Symbol}, Vector{T}}, # vertex data: nodes in cluster
         T, # edge data holds edge weight
-        :auxiliary, # tag for the whole graph
+        :connectionweights, # tag for the whole graph
         edge_data -> edge_data,
         zero(T)) # default weight
 
     node2cluster = Dict{T, Vector{T}}() # for joining clusters later
     clusters = getclusters(method)
-    for (code, nodeindlist) in enumerate(clusters)
-        o = sortperm(nodeindlist, rev=true) # order to list nodes in postorder
-        nodeindlist .= nodeindlist[o] # preorder indices
-        vdat = [Symbol(n.name) for n in net.nodes_changed[nodeindlist]]
+    prenodes_names = [Symbol(n.name) for n in net.nodes_changed]
+    # build nodes in clustg and in auxiliary cg
+    for (code, nodeindlist) in enumerate(clusters) # nodeindlist assumed sorted, decreasing
+        cdat = prenodes_names[nodeindlist]
+        cname = Symbol(cdat...)
         # cluster data: (node labels, node preorder index), sorted in postorder
-        add_vertex!(clustergraph, Symbol(vdat...), (vdat, nodeindlist))
-        add_vertex!(cg, Symbol(vdat...), (vdat, nodeindlist))
+        add_vertex!(clustg, cname, (cdat, nodeindlist))
+        add_vertex!(cg,     cname, (cdat, nodeindlist))
         for ni in nodeindlist
             if haskey(node2cluster, ni)
                 push!(node2cluster[ni], T(code))
             else node2cluster[ni] = [T(code)]
             end
         end
+        # add edges in auxiliary cg: to calculate intersection size only once
+        for code2 in 1:(code-1)
+            c2name = label_for(cg, code2)
+            c2nodeindlist = clusters[code2]
+            w = length(intersect(nodeindlist, c2nodeindlist))
+            w > 0 && add_edge!(cg, cname, c2name, w)
+        end
     end
 
-     # compute edge weights using auxiliary metagraph
-     for ni in sort!(collect(keys(node2cluster)), rev=true)
+    clustweight = Dict(lab => 0 for lab in labels(cg)) # clusters score in cg's subgraph sg
+    for ni in sort!(collect(keys(node2cluster)), rev=true)
         # sepsets will be sorted by nodes' postorder
         clusterindlist = node2cluster[ni]
+        # build subgraph sg of auxiliary cg, then adjust its edge weights
         sg, _ = induced_subgraph(cg, clusterindlist)
-        node2edge = Dict{Symbol, Vector{Symbol}}() # for updating edge weights later
-        topscoring = Symbol[] # track strongly-connected clusters in `sg`
-        topscore = 0 # track top score for cluster "connectivity"
-        for (i1, cl1) in enumerate(clusterindlist)
-            lab1 = label_for(clustergraph, cl1)
-            maxw = 0 # track the max no. of elements `cl1` shares with its neighbors
-            for i2 in 1:(i1-1)
-                cl2 = clusterindlist[i2]
-                lab2 = label_for(clustergraph, cl2)
-                w = length(intersect(sg[lab1], sg[lab2]))
-                maxw = (w > maxw) ? w : maxw
-                add_edge!(sg, lab1, lab2, w)
+        ne(sg) > 0 || continue # e.g leaves: only 1 cluster, no edge to add
+        maxw = maximum(sg[e...] for e in edge_labels(sg))
+        for e in edge_labels(sg)
+            if sg[e...] == maxw # if a sepset edge has maximum weigh, then
+                clustweight[e[1]] += 1 # add 1 to each adjacent cluster's score
+                clustweight[e[2]] += 1
             end
-            # mark clusters that are incident to a max-weight edge
-            if maxw > topscore # mark cluster `cl1` and unmark all others
-                topscoring, topscore = [lab1], maxw
-            elseif maxw == topscore # mark cluster `cl1`
-                push!(topscoring, lab1)
-            end
+        end # separate loop below: adjust weights *after* testing for max weight
+        for e in edge_labels(sg)
+            sg[e...] += clustweight[e[1]] + clustweight[e[2]]
         end
-        # update edge weights
-        for cl in topscoring # topscoring nodes have incident max-weight edges
-            neighborlabs = neighbor_labels(sg, cl)
-            # count no. of incident max-weight edges and add this no. to weights
-            # for all incident edges
-            Δw = length([sg[cl, ncl] == topscore for ncl in neighborlabs])
-            for ncl in neighborlabs
-                sg[cl, ncl] += Δw
-            end
-        end
-        mst_edges = kruskal_mst(sg, minimize=false)
-
+        # reset clustweight before next cluster
+        for cl in keys(clustweight) clustweight[cl]=0; end
+        mst_edges = kruskal_mst(sg, minimize=false) # mst: maximum spanning tree
+        # augment sepsets in clustg, based on edges in max spanning tree
         for e in mst_edges
             lab1 = label_for(sg, src(e))
             lab2 = label_for(sg, dst(e))
-            if haskey(clustergraph, lab1, lab2) # if has edge {lab1, lab2}
-                clustergraph[lab1, lab2] = push!(clustergraph[lab1, lab2], ni)
-            else
-                add_edge!(clustergraph, lab1, lab2, [ni])
+            if haskey(clustg, lab1, lab2) # if (lab1, lab2) is an edge
+                clustg[lab1, lab2] = push!(clustg[lab1, lab2], ni) # augment sepset
+            else # create the edge, initialize sepset
+                add_edge!(clustg, lab1, lab2, [ni])
             end
         end
     end
-    return clustergraph
+    return clustg
 end
 
 """
-    joingraph(net, method)
+    joingraph(net, method::JoinGraphStructuring)
 
-See [`JoinGraphStr`](@ref)
-
-1. Sort node families into buckets. These are the initial clusters for each
-bucket.
-2. Loop through buckets
-    i. For each bucket, partition clusters into minibuckets (subject to
-    maxclustersize) and connect minibuckets to one another. The sepset for this
-    connection is the bucket variable. There is some degree of freedom in how
-    clusters are partitioned into minibuckets.
-    ii. For each minibucket in a bucket, create a subminibucket (by
-    marginalizing out the bucket variable) and assign it to the relevant bucket.
-    Connect each minibucket to its corresponding subminibucket. The sepset for
-    this connection is their full intersection (all nodes except for the bucket
-    variable).
+See [`JoinGraphStructuring`](@ref)
 """
-function joingraph(net::HybridNetwork, method::JoinGraphStr)
+function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
     g = moralize(net)
     ordering = triangulate_minfill!(g) # node labels in elimination order
     T = vgraph_eltype(net)
     # preorder indices sorted in elimination order
     eliminationorder2preorder = [g[ns] for ns in ordering]
 
-    # initialize `buckets`
+    #= steps 1-3: initialize `buckets` and their minibuckets
+    i: elimination order for the node labeling the bucket
+    buckets[i][1]: node symbol
+    buckets[i][2]: dictionary minibucket size => minibucket(s)
+    =#
     buckets = Dict{T, Tuple{Symbol, Dict{T, Vector{Vector{T}}}}}(
         i => (ns, Dict()) for (i, ns) in enumerate(ordering)
     )
-    # node families (represented as vectors of preorder indices) correspond to
-    # initial factors
-    node2family = minimalclusters!(net)
+    # node families (represented as vectors of preorder indices) = initial factors
+    node2family = nodefamilies(net)
     maxclustersize = T(getmaxclustersize(method)) # size limit for minibuckets
     cg = init_clustergraph(T, :auxiliary)
-    for ni in keys(node2family)
-        # minibucket: node family specified in elimination order indices and
-        # sorted in elimination order
-        mb = Vector{T}(indexin(node2family[ni], eliminationorder2preorder))
+    for nf in node2family
+        # minibucket: node family, represented then sorted by elimination order
+        mb = Vector{T}(indexin(nf, eliminationorder2preorder))
         sort!(mb)
-        # first element in minibucket always has highest priority wrt elimination
-        # order. assign `mb` to bucket corresponding to that element
-        bi = mb[1]
-        # dictionary mapping minibucket size to minibucket(s) within bucket
-        di = buckets[bi][2]
-        # merge `mb` (if within size limits) with existing minibuckets within
-        # bucket, otherwise just add to bucket
+        # first node has lowest elimination order: highest priority
+        bi = mb[1] # assign `mb` to bucket corresponding to this first node
+        di = buckets[bi][2] # dictionary minibucket size => minibucket(s)
+        # merge `mb` with existing minibucket or add as new minibucket, depending on max size
         assign!(di, mb, maxclustersize)
     end
-
-    for i in 1:length(ordering)
-        bs, bd = buckets[i] # bucket symbol, bucket dictionary
-        bi = eliminationorder2preorder[i] # preorder index for `bs`
-        for minibuckets in values(bd)
-            # connect minibuckets in a "chain", where the sepset is the bucket
-            # variable `bs`, which corresponds to preorder index `bi`
-            for (j, mb) in enumerate(minibuckets)
-                nodeindlist = eliminationorder2preorder[mb]
-                o = sortperm(nodeindlist, rev=true)
-                nodeindlist .= nodeindlist[o]
-                vdat = ordering[mb][o]
-                lab = Symbol(vdat...)
-                # add cluster corresponding to `mb` to `cg`
-                add_vertex!(cg, lab, (vdat, nodeindlist))
-                if j > 1
-                    # connect `mb` to current tail of "chain"
-                    add_edge!(cg, prev, lab, bi)
-                end
-                prev = lab # `mb` becomes new tail of "chain"
-                mb_new = copy(mb) # initialize new minibucket
-                popfirst!(mb_new) # remove ("marginalize") bucket variable
-                if !isempty(mb_new)
-                    #= Assign to bucket corresponding to highest priority element
-                    and check if `mb_new` can be merged with an existing minibucket
-                    (starting with the smallest) in the assigned bucket. If so,
-                    complete the merge and update the size => minibucket
-                    dictionary (no. of minibuckets decreases by 1) =#
-
-                    #= If `mb2` is empty, then `mb1` == `mb_new`. Otherwise, it
-                    # is merged with `mb2` (an existing minibucket) to produce
-                    `mb1`. It may be that `mb2` == `mb1` =#
-                    (mb1, mb2) = assign!(buckets[mb_new[1]][2], mb_new,
-                        maxclustersize)
-                    nodeindlist1 = eliminationorder2preorder[mb1]
-                    o1 = sortperm(nodeindlist1, rev=true)
-                    nodeindlist1 .= nodeindlist1[o1]
-                    vdat1 = ordering[mb1][o1]
-                    lab1 = Symbol(vdat1...)
-                    # add new cluster for `mb1`
-                    add_vertex!(cg, lab1, (vdat1, nodeindlist1))
-                    add_edge!(cg, lab, lab1,
-                        filter(ni -> ni != bi, nodeindlist))
-                    if length(mb1) != length(mb2) # mb1 != mb2
-                        # cluster for `mb2` is replaced by new cluster for `mb1`
-                        o2 = sortperm(eliminationorder2preorder[mb2], rev=true)
-                        vdat2 = ordering[mb2][o2]
-                        lab2 = Symbol(vdat2...)
-                        if haskey(cg, lab2)
-                            # connect edges into `mb2` to `mb1`
-                            for labn in neighbor_labels(cg, lab2)
-                                add_edge!(cg, lab1, labn,
-                                    cg[lab2, labn])
-                            end
-                            delete!(cg, lab2) # delete `mb2`
-                        end
+    # steps 4-6: marginalize the bucket label from each minibucket
+    for i in eachindex(ordering)
+        _, bd = buckets[i] # bucket symbol, bucket dictionary
+        # @info "node $i, bd has $(sum(length(mb) for mb in values(bd))) minibuckets"
+        bi = eliminationorder2preorder[i] # preorder index of bucket labeling node
+        previous_mb_label = nothing
+        for minibuckets in values(bd), mb in minibuckets
+            # create cluster in `cg` corresponding to minibucket `mb`
+            nodeindlist = eliminationorder2preorder[mb]
+            o = sortperm(nodeindlist, rev=true)
+            nodeindlist .= nodeindlist[o]
+            vdat = ordering[mb][o]
+            lab = Symbol(vdat...)
+            add_vertex!(cg, lab, (vdat, nodeindlist)) # nothing happens if cg already has lab
+            # chain minibuckets: sepset = bucket labeling node, whose preorder is bi
+            isnothing(previous_mb_label) || # connect `mb` to chain of current bucket
+                # sepset is [bi] even if minibuckets have a larger intersection
+                add_edge!(cg, previous_mb_label, lab, [bi])
+            previous_mb_label = lab # `mb` becomes new tail of "chain"
+            # new minibucket: marginalize bucket labeling node bi
+            mb_new = copy(mb)
+            popfirst!(mb_new)
+            isempty(mb_new) && continue # below: mb_new is not empty
+            #= Assign to bucket labeled by highest priority element mb_new[1]:
+               merge mb_new with an existing minibucket (mb2) to get mb1.
+               - if possible: great. It may be that mb1=mb2, if mb_new is a subset of mb2.
+               - else: mb1=mb_new and mb2 is empty.
+            =#
+            (mb1, mb2) = assign!(buckets[mb_new[1]][2], mb_new, maxclustersize)
+            # create cluster corresponding to marginalized & merged minibucket
+            nodeindlist1 = eliminationorder2preorder[mb1]
+            o1 = sortperm(nodeindlist1, rev=true)
+            nodeindlist1 .= nodeindlist1[o1]
+            vdat1 = ordering[mb1][o1]
+            lab1 = Symbol(vdat1...)
+            add_vertex!(cg, lab1, (vdat1, nodeindlist1)) # nothing happens if cg already has lab1
+            # connect mb to mb1 in cluster graph cg
+            add_edge!(cg, lab, lab1, filter(ni -> ni != bi, nodeindlist))
+            # if mb2 ⊂ mb1 strictly and if mb2 was already a cluster in cg
+            # then contract mb1-mb2, leaving mb1 only
+            if length(mb1) != length(mb2) # mb1 ≠ mb2 bc mb2 ⊆ mb1
+                o2 = sortperm(eliminationorder2preorder[mb2], rev=true)
+                vdat2 = ordering[mb2][o2]
+                lab2 = Symbol(vdat2...)
+                if haskey(cg, lab2) # then replace mb2 by mb1:
+                    for labn in neighbor_labels(cg, lab2) # connect mb2's neibhbors to mb1
+                        add_edge!(cg, lab1, labn, cg[lab2, labn])
+                    end
+                    delete!(cg, lab2) # delete mb2 from cg
+                    #= MetaGraphsNext bug here: see
+                    issue #69 https://github.com/JuliaGraphs/MetaGraphsNext.jl/issues/69
+                    fixit: delete work-around below after the issue is fixed in MetaGraphsNext
+                    =#
+                    for (l1,l2) in edge_labels(cg)
+                        haskey(cg.edge_data, (l1,l2)) && continue
+                        haskey(cg.edge_data, (l2,l1)) || error("edge_data is lacking an edge")
+                        cg.edge_data[(l1,l2)] = cg.edge_data[(l2,l1)]
+                        delete!(cg.edge_data, (l2,l1))
                     end
                 end
             end
         end
     end
-
-    # copy `cg` onto `clustergraph`. Though `cg` stores the correct cluster and
-    # sepset information, due to alternating edge/vertex additions in its
-    # construction, this messes with edge (and consequently edge metadata) access 
-    # fixit: rewrite in a more efficient and stable way
-    clustergraph = init_clustergraph(T, :jgstr)
-    for lab in values(cg.vertex_labels)
-        add_vertex!(clustergraph, lab, cg[lab])
-    end
-    edges = cg.edge_data
-    for (lab1, lab2) in keys(edges)
-        add_edge!(clustergraph, lab1, lab2, edges[(lab1, lab2)])
-    end
-    return clustergraph
+    return cg
 end
+
 """
     assign!(bucket, new_minibucket, max_minibucket_size)
 
-Attempts to merge `new_minibucket` with one of the minibuckets contained in
-`bucket` (in order of increasing size), subject to the constraint that the
-resulting minibucket does not exceed `max_minibucket_size`. If a successful
-merge is found, then (`resulting_minibucket`, `minibucket_merged_into`) is
-returned. Otherwise, (`new_minibucket`, []) is returned.
+Merge `new_minibucket` with one of the minibuckets contained in `bucket`
+(in order of decreasing size) subject to the constraint that the resulting
+minibucket does not exceed `max_minibucket_size`. If this is not possible,
+then `new_minibucket` is added to `bucket` as a new minibucket.
+The bucket should be represented as a dictionary:
+minibucket_size => vector of minibuckets of that size,
+where each minibucket is itself represented as a vector of indices.
+
+Output:
+- (`resulting_minibucket`, `minibucket_merged_into`) if a successful merge is found
+- (`new_minibucket`, []) otherwise
 """
 function assign!(bucket::Dict{T, Vector{Vector{T}}},
-    new::Vector{T}, maxsize::T) where {T <: Integer}
-    if !isempty(bucket) # there exist potential minibuckets to merge into
-        # loop through different size collections of minibuckets, in order of
-        # decreasing size
-        for sz in sort(collect(keys(bucket)), rev=true)
-            minibuckets = bucket[sz] # minibuckets with size `sz`
-            for (i, mb) in enumerate(minibuckets)
-                merged = sort(union(new, mb))
-                mergedsz = length(merged)
-                if mergedsz ≤ maxsize
-                    popat!(minibuckets, i) # remove minibucket being merged with
-                    if isempty(minibuckets) # remove any empty size categories
-                        pop!(bucket, sz)
-                    end
-                    # insert result of merge into appropriate size category
-                    if haskey(bucket, mergedsz)
-                        push!(bucket[mergedsz], merged)
-                    else
-                        bucket[mergedsz] = [merged]
-                    end
-                    return (merged, mb)
+                 new::Vector{T}, maxsize::T) where {T <: Integer}
+    for sz in sort(collect(keys(bucket)), rev=true) # favor merging with large minibuckets
+        minibuckets = bucket[sz] # minibuckets of size `sz`
+        for (i, mb) in enumerate(minibuckets)
+            merged = sort(union(new, mb))
+            mergedsz = length(merged)
+            if mergedsz ≤ maxsize
+                popat!(minibuckets, i) # remove minibucket being merged with
+                isempty(minibuckets) && pop!(bucket, sz) # remove any empty size categories
+                # insert result of merge into appropriate size category
+                if haskey(bucket, mergedsz)
+                    push!(bucket[mergedsz], merged)
+                else
+                    bucket[mergedsz] = [merged]
                 end
+                return (merged, mb)
             end
         end
     end
-    # `new` cannot be merged with any existing minibucket within `bucket`, then
-    # insert it whole into the appropriate size collection in `bucket`
+    # no merging: insert `new` to `bucket`
     sz = length(new)
     if haskey(bucket, sz)
         push!(bucket[sz], new)
@@ -742,13 +726,7 @@ Uses `maximal_cliques` and `kruskal_mst` (for min/maximum spanning trees) from
 """
 function cliquetree(graph::AbstractGraph{T}) where T
     mc = maximal_cliques(graph)
-    mg = MetaGraph(Graph{T}(0),
-        Symbol, # vertex label
-        Tuple{Vector{Symbol},Vector{T}}, # vertex data: nodes in clique
-        Vector{T}, # edge data: nodes in sepset
-        :cliquetree,
-        edge_data -> T(length(edge_data)),
-        zero(T))
+    mg = init_clustergraph(T, :cliquetree)
     node2clique = Dict{T,Vector{T}}() # to connect cliques faster later
     for (code, cl) in enumerate(mc)
         nodeindlist = [graph[label_for(graph,u)] for u in cl] # preorder index
@@ -810,18 +788,27 @@ function cliquetree(graph::AbstractGraph{T}) where T
 end
 
 """
-    init_clustergraph(vertex_type, clustergraph_method)
+    init_clustergraph(T::Type{<:Integer}, clustergraph_method::Symbol)
 
-Construct empty `MetaGraph` based on an empty `Graph`. Metadata types are
-initialized as follows:
-    - `label_type::Symbol`
-    - `vertex_data_type::Tuple{Vector{Symbol}, Vector{T}}`
-    - `edge_data_type::Vector{T}`
-Metadata for `Graph` as a whole is `method::Symbol`.
+`MetaGraph` with an empty base graph (0 vertices, 0 edges),
+meta-graph data `clustergraph_method`,
+edge-weight function counting the length of the edge-data vector,
+and the following types:
+- vertex indices in the base graph: `T`
+- vertex labels: `Symbol`
+- vertex data: `Tuple{Vector{Symbol}, Vector{T}}`
+  to hold information about the variables (nodes in phylogenetic network)
+  in the cluster (vertex in cluster graph):
+  node names as symbols, and node preorder index
+- edge data: `Vector{T}` to hold information about the sepset:
+  preorder index of nodes in the sepset.
 
-Note: const Graph = Graphs.SimpleGraphs.SimpleGraph
-Note: SimpleGraph{T}(n=0) constructs an empty SimpleGraph{T} with n vertices and
-0 edges. If not specified, the element type `T` is the type of `n`.
+See packages [MetaGraphsNext](https://juliagraphs.org/MetaGraphsNext.jl/dev/)
+and [Graphs](https://juliagraphs.org/Graphs.jl/dev/).
+
+The empty graph above is of type `Graphs.SimpleGraphs.SimpleGraph{T}`:
+undirected, with vertex indices of type `T`. After addition of `n` vertices,
+the vertex indices range from 1 to `n`, technically in `Base.OneTo{T}(n)`.
 """
 function init_clustergraph(T::Type{<:Integer}, method::Symbol)
     clustergraph = MetaGraph(
@@ -840,7 +827,7 @@ end
     spanningtree_clusterlist(clustergraph, nodevector_preordered)
 
 Build the depth-first search spanning tree of the cluster graph, starting from
-the node indexed `root_index` in the underlying simple graph;
+the cluster indexed `root_index` in the underlying simple graph;
 find the associated topological ordering of the clusters (preorder); then
 return a tuple of these four vectors:
 1. `parent_labels`: labels of the parents' child clusters. The first one is the root.
@@ -866,6 +853,154 @@ function spanningtree_clusterlist(cgraph::MetaGraph, rootj::Integer)
     parentclust_j = par[childclust_j] # parent of each cluster in spanning tree
     childclust_lab  = [cgraph.vertex_labels[j] for j in childclust_j]
     parentclust_lab = [cgraph.vertex_labels[j] for j in parentclust_j]
+    return parentclust_lab, childclust_lab, parentclust_j, childclust_j
+end
+
+# fixit: move this elsewhere? This wrapper is not defined in MetaGraphsNext.jl,
+# though it should be.
+function Graphs.induced_subgraph(
+    meta_graph::MetaGraph, edge_codes::AbstractVector{<:AbstractEdge})
+    inducedgraph, code_map = induced_subgraph(meta_graph.graph, edge_codes)
+    new_graph = MetaGraph(
+        inducedgraph,
+        empty(meta_graph.vertex_labels),
+        empty(meta_graph.vertex_properties),
+        empty(meta_graph.edge_data),
+        meta_graph.graph_data,
+        meta_graph.weight_function,
+        meta_graph.default_weight,
+    )
+    MetaGraphsNext._copy_props!(meta_graph, new_graph, code_map)
+    return new_graph, code_map
+end
+
+"""
+    spanningtrees_cover_clusterlist(clustergraph, nodevector_preordered)
+
+A vector of spanning trees of `clustergraph`, where each spanning tree is
+specified as a tuple of four vectors that describes a depth-first search
+traversal of the tree (starting from a cluster that contains the network's root),
+as in [`spanningtree_clusterlist`](@ref).
+
+Together the set of spanning trees covers all edges in `clustergraph`.
+"""
+function spanningtrees_cover_clusterlist(cgraph::MetaGraph,
+    prenodes::Vector{PN.Node})
+    T = eltype(cgraph)
+    cg = MetaGraph(Graph{T}(0),
+        Symbol, # vertex label type
+        Tuple{Vector{Symbol}, Vector{T}}, # vertex data type
+        T, # edge data type
+        :edgeweights, # graph tag: hold edge weights to compute min spanning tree
+        edge_data -> edge_data, # edge data holds edge weight
+        zero(T)) # default weight
+    # copy vertices and edges from `cgraph`
+    for clusterlab in labels(cgraph)
+        add_vertex!(cg, clusterlab, getindex(cgraph, clusterlab))
+    end
+    for (clusterlab, clusterlab2) in edge_labels(cgraph)
+        add_edge!(cg, clusterlab, clusterlab2, 0) # initial edge weights are 0
+    end
+    edgenotused = Set(edge_labels(cg)) # track edges not used in any spanning tree
+    # schedule/vector of spanning trees that covers all edges of `cgraph`
+    schedule = Tuple{Vector{Symbol}, Vector{Symbol}, Vector{T}, Vector{T}}[]
+    while !isempty(edgenotused) # till each edge is used in ≥1 spanning tree
+        # vector of min spanning tree edges (specified by cluster codes)
+        mst_edges = kruskal_mst(cg)
+        sg, vmap = induced_subgraph(cg, mst_edges) # spanning tree as `metagraph`
+        #= spanning tree in terms of preorder traversal of edges (specified by
+        cluster labels and cluster codes) =#
+        spt = spanningtree_clusterlist(sg, prenodes)
+        spt[3] .= vmap[spt[3]] # code i in `sg` maps to code vmap[i] in `cg`
+        spt[4] .= vmap[spt[4]]
+        push!(schedule, spt) # append spanning tree to schedule
+        for e in mst_edges
+            parentlab = label_for(cg, src(e))
+            childlab = label_for(cg, dst(e))
+            #= +1 to spanning tree edge weight, so that next min spanning tree
+            found will prioritize edges not used in any spanning tree =#
+            setindex!(cg, getindex(cg, parentlab, childlab)+1, parentlab, childlab)
+            edgelab = MetaGraphsNext.arrange(cg, parentlab, childlab)
+            if edgelab ∈ edgenotused # edge has been used in ≥1 spanning tree
+                pop!(edgenotused, edgelab)
+            end
+        end
+    end
+    return schedule
+end
+
+"""
+    sub_spanningtree_clusterlist(clustergraph, nodesymbol)
+
+A spanning tree of the subgraph of `clustergraph` induced by the clusters that
+contain the node labelled `nodesymbol`. The spanning tree is specified as a
+tuple of four vectors that describes a depth-first search traversal (starting
+from an arbitrary cluster) of the tree, as in [`spanningtree_clusterlist`](@ref).
+
+Each edge of `clustergraph` is contained in ≥1 subgraph spanning trees, so
+iterating over all nodes produces a sequence of subgraph spanning trees that
+together covers all edges of `clustergraph`.
+"""
+function sub_spanningtree_clusterlist(cgraph::MetaGraph, ns::Symbol)
+    cluster_properties = cgraph.vertex_properties
+    # labels for clusters that contain node `ns`
+    clusters_s = filter(cl -> ns ∈ cgraph[cl][1], collect(labels(cgraph)))
+    # indices for clusters that contain node `ns`
+    clusters_i = [code_for(cgraph, cl) for cl in clusters_s]
+    sg, vmap = induced_subgraph(cgraph, clusters_i)
+    # pick any node to be the root: rootj can be any value between 1 and
+    # length(cg.vertex_labels)
+    rootj = 1 # fixit: fix to 1 for now
+    spt = spanningtree_clusterlist(sg, rootj)
+    # map cluster indices back to those for `cgraph`
+    spt[3] .= vmap[spt[3]]
+    spt[4] .= vmap[spt[4]]
+    return spt
+end
+
+"""
+    minimal_valid_schedule(clustergraph, clusterswithevidence)
+
+Generate a minimal valid schedule of messages to be computed on a initialized
+Bethe cluster graph, so that any schedule of messages following is valid.
+Return the schedule as a tuple of four vectors: (`parent_labels`, `child_labels`,
+`parent_indices`, `child_indices`) as in [`spanningtree_clusterlist`](@ref).
+"""
+function minimal_valid_schedule(cgraph::MetaGraph, wevidence::Vector{Symbol})
+    !isempty(wevidence) || error("`wevidence` cannot be empty")
+    #= `received` tracks clusters that have received evidence (through messages
+    during initialization). Only clusters that have received evidence can
+    transmit this (such clusters get added to `cansend`) to neighbor clusters
+    through a message. =#
+    received = Set{Symbol}(wevidence)
+    cansend = copy(wevidence)
+    T = typeof(cgraph[cansend[1]][2][1])
+    childclust_j = T[] # child cluster indices
+    parentclust_j = T[] # parent cluster indices
+    childclust_lab = Symbol[] # child cluster labels
+    parentclust_lab = Symbol[] # parent cluster labels
+    while !isempty(cansend)
+        #= For each cluster in `cansend`, send a message to any neighbors that
+        have not received evidence (all such neighbors get added to `cansend`),
+        then remove it from `cansend`. Since the cluster graph represented by
+        `cgraph` is connected, all clusters will eventually be added to `cansend`
+        and processed in order. Hence, this generates a minimal sequence of
+        messages that can be computed, so that the updated cluster beliefs will
+        be non-degenerate wrt any messages they are allowed to compute (i.e.
+        any schedule of messages following is valid). =#
+        cl = popfirst!(cansend) # remove node to be processed
+        nb = neighbor_labels(cgraph, cl)
+        for cl2 in nb
+            if cl2 ∉ received
+                push!(childclust_j, code_for(cgraph, cl2))
+                push!(parentclust_j, code_for(cgraph, cl))
+                push!(childclust_lab, cl2)
+                push!(parentclust_lab, cl)
+                push!(received, cl2) # `cl2` can no longer receive messages
+                push!(cansend, cl2) # `cl2` can now send messages
+            end
+        end
+    end
     return parentclust_lab, childclust_lab, parentclust_j, childclust_j
 end
 

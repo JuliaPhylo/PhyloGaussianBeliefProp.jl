@@ -30,7 +30,7 @@ struct ClusterBelief{Vlabel<:AbstractVector,T<:Real,P<:AbstractMatrix{T},V<:Abst
     h::V
     J::P
     g::MVector{1,T} # mutable
-    "belief type: cluster (node in cluster grahp) or sepset (edge in cluster graph)"
+    "belief type: cluster (node in cluster graph) or sepset (edge in cluster graph)"
     type::BeliefType
     "metadata, e.g. index in cluster graph"
     metadata::M
@@ -258,6 +258,15 @@ function init_beliefs_reset!(beliefs)
         be.g[1] = 0.0
     end
 end
+function init_beliefs_reset!(beliefs::Vector{AbstractBelief},
+    factors::Vector{AbstractBelief})
+    # fixit: input checks?
+    for (be, fa) in zip(beliefs, factors)
+        be.h .= fa.h
+        be.J .= fa.J
+        be.g[1] = fa.g[1]
+    end
+end
 
 """
     init_beliefs_assignfactors!(beliefs, evolutionarymodel, columntable, taxa,
@@ -372,6 +381,8 @@ function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
         be.g[1] += g
         # @show be.h,be.J,be.g[1]
     end
+    #= removed because of too many cases when some clusters would be initialized to 0.
+    #  example: variable-clusters in Bethe cluster graph
     for be in beliefs # sanity check: each cluster belief should be non-zero
         # unless one variable was completely removed from the scope (e.g. leaf without any data)
         be.type == bclustertype || break # sepsets untouched and listed last
@@ -380,36 +391,71 @@ function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
             error("belief for nodes $(nodelabels(be)) was not assigned any non-zero factor")
         # do NOT update μ = J^{-1} h because J often singular before propagation
         # be.μ .= PDMat(LA.Symmetric(be.J)) \ be.h
-    end
+    end =#
     return beliefs
 end
 
 
 """
-    propagate_belief!(cluster_from, sepset, cluster_to)
+    propagate_belief!(cluster_to, sepset, cluster_from, withdefault::Bool=true)
+    propagate_belief!(cluster_to, sepset)
 
 Update the canonical parameters of the beliefs in `cluster_to` and in `sepset`,
 by marginalizing the belief in `cluster_from` to the sepset's variable and
 passing that message.
+A tuple, whose first element is `sepset` (after its canonical parameters have
+been updated), and whose second element is a tuple
+(Δh :: AbstractVector{<:Real}, ΔJ :: AbstractMatrix{<:Real}) representing the
+residual between the canonical parameters of the current message from `cluster_to`
+to `cluster_from` and the previous sepset belief (i.e. before updating).
+
+The second form sends a default message to `cluster_to`, through `sepset` (it is
+assumed that these are adjacent). While such messages always preserve the cluster
+graph invariant, they can restrict the set of feasible message schedules if
+applied injudiciously (see [`init_messages!`](@ref)).
+
 Warning: only the `h`, `J` and `g` parameters are updated, not `μ`.
 Does not check that `cluster_from` and `cluster_to` are of cluster type,
 or that `sepset` is of sepset type, but does check that the labels and scope
 of `sepset` are included in each cluster.
 """
 function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
-                           cluster_from::AbstractBelief)
+        cluster_from::AbstractBelief, withdefault::Bool=false)
+    #= fixit: discuss the `withdefault` option. Should there be an option? If
+    so, then methods that eventually call `propagate_belief!` have to be
+    modified to pass this flag (e.g. `calibrate!`,
+    `propagate_1traversal_postorder!`, `propagate_1traversal_preorder!`) =#
     # 1. compute message: marginalize cluster_from to variables in sepset
     #    requires cluster_from.J[keep,keep] to be invertible
+    # `keepind` can be empty (e.g. if `cluster_from` is entirely "clamped")
     keepind = scopeindex(sepset, cluster_from)
-    h,J,g = marginalizebelief(cluster_from, keepind)
-    # 2. extend message to scope of cluster_to and propagate
+    # canonical parameters of message received by `cluster_to`
+    # message sent: (h, J, g), message received: (Δh, ΔJ, Δg)
+    Δh, ΔJ, Δg = try
+        h, J, g = marginalizebelief(cluster_from, keepind)
+        # `cluster_from` is nondegenerate wrt the variables to be integrated out
+        (h .- sepset.h, J .- sepset.J, g - sepset.g[1])
+    catch ex
+        isa(ex, LA.PosDefException) && withdefault || throw(ex)
+        # `cluster_from` is degenerate so `cluster_to` receives a default message
+        defaultmessage(cluster_to, length(keepind))
+    end
     upind = scopeindex(sepset, cluster_to) # indices to be updated
-    view(cluster_to.h, upind)       .+= h .- sepset.h
-    view(cluster_to.J, upind,upind) .+= J .- sepset.J
-    cluster_to.g[1]                  += g  - sepset.g[1]
+    # 2. extend message to scope of cluster_to and propagate
+    view(cluster_to.h, upind)        .+= Δh
+    view(cluster_to.J, upind, upind) .+= ΔJ
+    cluster_to.g[1]                   += Δg
     # 3. update sepset belief
-    sepset.h   .= h
-    sepset.J   .= J
-    sepset.g[1] = g
-    return sepset
+    sepset.h   .+= Δh
+    sepset.J   .+= ΔJ
+    sepset.g[1] += Δg
+    return sepset, (ΔJ, Δh, Δg)
+end
+function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief)
+    upind = scopeindex(sepset, cluster_to)
+    isempty(upind) && return
+    _, ΔJ, _ = defaultmessage(cluster_to, length(upind))
+    view(cluster_to.J, upind, upind) .+= ΔJ # update cluster_to belief
+    sepset.J .+= ΔJ # update sepset belief
+    return
 end
