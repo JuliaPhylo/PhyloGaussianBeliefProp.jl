@@ -123,14 +123,10 @@ function ClusterGraphBelief(beliefs)
         error("sepsets are not consecutive")
     cdict = get_clusterindexdictionary(beliefs, nc)
     sdict = get_sepsetindexdictionary(beliefs, nc)
-<<<<<<< HEAD
-    return ClusterGraphBelief{eltype(beliefs)}(beliefs, nc, cdict, sdict)
-=======
     messageresidual = init_messageresidual(beliefs, cdict, nc)
     factors = deepcopy(beliefs[1:nc])
     return ClusterGraphBelief{eltype(beliefs)}(beliefs,factors,nc,cdict,sdict,
         messageresidual)
->>>>>>> dev0
 end
 function get_clusterindexdictionary(beliefs, nclusters)
     Dict(beliefs[j].metadata => j for j in 1:nclusters)
