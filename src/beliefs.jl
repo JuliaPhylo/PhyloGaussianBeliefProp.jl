@@ -32,7 +32,8 @@ struct Belief{Vlabel<:AbstractVector,T<:Real,P<:AbstractMatrix{T},V<:AbstractVec
     g::MVector{1,T} # mutable
     "belief type: cluster (node in cluster graph) or sepset (edge in cluster graph)"
     type::BeliefType
-    "metadata, e.g. index in cluster graph"
+    "metadata, e.g. index in cluster graph,
+    of type (M) `Symbol` for clusters or Tuple{Symbol,Symbol} for edges."
     metadata::M
 end
 
@@ -54,7 +55,7 @@ Constructor to allocate memory for one cluster, and initialize objects with 0s
 to initilize the belief with the constant function exp(0)=1.
 """
 function Belief(nl::AbstractVector{Tlabel}, numtraits::Integer,
-            inscope::BitArray, belief, metadata,T=Float64::Type) where Tlabel<:Integer
+                inscope::BitArray, belief, metadata,T::Type=Float64) where Tlabel<:Integer
     nnodes = length(nl)
     nodelabels = SVector{nnodes}(nl)
     size(inscope) == (numtraits,nnodes) || error("inscope of the wrong size")
@@ -212,7 +213,7 @@ function init_beliefs_allocate(tbl::Tables.ColumnTable, taxa::AbstractVector,
 end
 
 """
-update_root_inscope!(beliefs, model)
+    update_root_inscope!(beliefs, model)
 
 Check the status of the root, and change the scope of root clusters and sepsets
 accordingly.
@@ -393,4 +394,60 @@ function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
         # be.μ .= PDMat(LA.Symmetric(be.J)) \ be.h
     end =#
     return beliefs
+end
+
+abstract type AbstractResidual end
+
+#= messages in ReactiveMP.jl have an `addons` field that stores computation history:
+https://biaslab.github.io/ReactiveMP.jl/stable/lib/message/#ReactiveMP.Message
+
+Here, similar "in spirit" to track progress towards calibration
+or to facilitate adaptive scheduling (e.g. residual BP), we store a
+message residual: difference (on log-scale) between a message *received*
+by a cluster and the belief that the sepset previously had.
+=#
+"""
+    MessageResidual{T<:Real, P<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractResidual
+
+Structure to store the most recent computation history of a message, in the
+form of the ratio: sent_message / current_sepset_belief, when a message is
+sent from one cluster to another along a given sepset.
+At calibration, this ratio is 1. For Gaussian beliefs, this ratio is an
+exponential quadratic form, stored using its canonical parametrization,
+excluding the constant.
+
+Fields:
+
+- `Δh`: canonical parameter vector of the message residual
+- `ΔJ`: canonical parameter matrix of the message residual
+- `kldiv`: kl divergence between the message that was last sent and the
+   sepset belief before the last update
+- `iscalibrated_resid`: true if the last message and prior sepset belief were
+  approximately equal, false otherwise. see [`iscalibrated_canon!`](@ref)
+- `iscalibrated_kl`: same, but in terms of the KL divergence,
+  see [`iscalibrated_kl!`](@ref).
+"""
+struct MessageResidual{T<:Real, P<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractResidual
+    Δh::V
+    ΔJ::P
+    kldiv::MVector{1,T}
+    iscalibrated_resid::MVector{1,Bool}
+    iscalibrated_kl::MVector{1,Bool}
+end
+
+"""
+    MessageResidual(J::AbstractMatrix{T}, h::AbstractVector{T})
+
+Constructor to allocate memory for a `MessageResidual` with canonical parameters
+`(ΔJ, Δh)` of the same dimension and type as `J` and `h`, initialized to zeros.
+`kldiv` is initalized to `[-1.0]` and the flags `iscalibrated_{resid,kl}`
+are initialized to `false`.
+
+`(ΔJ, Δh)` of zero suggest calibration, but the flags `iscalibrated_{resid,kl}`
+being false indicate otherwise.
+"""
+function MessageResidual(J::AbstractMatrix{T}, h::AbstractVector{T}) where {T <: Real}
+    Δh = fill!(similar(h), zero(T))
+    ΔJ = fill!(similar(J), zero(T))
+    MessageResidual{T,typeof(ΔJ),typeof(Δh)}(Δh, ΔJ, MVector(-1.0), MVector(false), MVector(false))
 end

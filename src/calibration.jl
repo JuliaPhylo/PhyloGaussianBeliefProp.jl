@@ -1,62 +1,6 @@
-abstract type AbstractResidual end
-
-#= The ReactiveMP.jl `Message` structure
-(https://biaslab.github.io/ReactiveMP.jl/stable/lib/message/#ReactiveMP.Message)
-stores a message parameterized as some distribution and contains an `addons`
-field that stores the computation history of the message.
-
-Here, we are introducing a similar ("in spirit") data structure to track the
-message residual (in belief-update BP, this is the message received by a cluster
-rather than the message sent towards a cluster) to facilitate adaptive
-scheduling (e.g. residual BP).
-=#
 """
-    MessageResidual <: AbstractResidual
-
-Structure to store the most recent computation history of a message. Fields:
-- `Δh`: canonical parameter of message residual
-- `ΔJ`: canonical parameter of message residual
-- `kldiv`: kl divergence between message and sepset belief
-- `iscalibrated_resid`: flag if message and sepset belief are equal (within
-some tolerance) in terms of canonical parameters
-- `iscalibrated_kl`: flat if message and sepset belief are equal (within some
-tolerance) in terms of KL divergence
-"""
-struct MessageResidual{T<:Real,P<:AbstractMatrix{T},V<:AbstractVector{T}} <: AbstractResidual
-    Δh::V
-    ΔJ::P
-    kldiv::MVector{1,T}
-    iscalibrated_resid::MVector{1,Bool}
-    iscalibrated_kl::MVector{1,Bool}
-end
-
-"""
-    MessageResidual(ΔJ, Δh, Δg)
-
-Constructor to allocate memory for a `MessageResidual` object given the
-canonical parameters `(ΔJ, Δh, Δg)` of a message residual. `kldiv` is initalized
-to `[-1.0]`, and `iscalibrated_resid` and `iscalibrated_kl` are initialized to
-`false`. 
-"""
-function MessageResidual(ΔJ::AbstractMatrix{T},
-        Δh::AbstractVector{T}, _) where {T <: Real}
-    MessageResidual{T,typeof(ΔJ),typeof(Δh)}(Δh, ΔJ, MVector(-1.0), MVector(false), MVector(false))
-end
-
-"""
-MessageResidual(cldim,T=Float64)
-
-Constructor to allocate memory for one residual, and initialize objects with 0s.
-"""
-function MessageResidual(cldim::Integer,T=Float64::Type)
-    Δh = MVector{cldim,T}(zero(T) for _ in 1:cldim)
-    ΔJ = MMatrix{cldim,cldim,T}(zero(T) for _ in 1:(cldim*cldim))
-    #TODO: Is all zeros a good initialisation ?
-    MessageResidual{T,typeof(ΔJ),typeof(Δh)}(Δh, ΔJ, MVector(-1.0), MVector(false), MVector(false))
-end
-
-"""
-    ClusterGraphBelief(belief_vector)
+    ClusterGraphBelief{B<:Belief}
+    ClusterGraphBelief(belief_vector::Vector{B})
 
 Structure to hold a vector of beliefs, with cluster beliefs coming first and
 sepset beliefs coming last. Fields:
@@ -66,20 +10,25 @@ sepset beliefs coming last. Fields:
 - `cdict`: dictionary to get the index of a cluster belief from its node labels
 - `sdict`: dictionary to get the index of a sepset belief from the labels of
    its two incident clusters.
-- `messageresidual`: dictionary to log residual information from messages. For
-example, this information can be used to track if a sending cluster and a
-receiving sepset had calibrated beliefs (within some tolerance) at the last
-instance of that message.
+- `messageresidual`: dictionary to log information about sepset messages,
+  which can be used to track calibration or help adaptive scheduling with
+  residual BP. See [`MessageResidual`](@ref).
+  The keys of `messageresidual` are tuples of cluster labels, similarly to a
+  sepset's metadata. Each edge in the cluster graph has 2 messages corresponding
+  to the 2 directions in which a message can be passed, with keys:
+  `(label1, label2)` and `(label2, label1)`.
+  The cluster receiving the message is the first label in the tuple,
+  and the sending cluster is the second.
 
 Assumptions:
 - For a cluster belief, the cluster's nodes are stored in the belief's `metadata`.
 - For a sepset belief, its incident clusters' nodes are in the belief's metadata.
 """
-struct ClusterGraphBelief{T<:AbstractBelief}
+struct ClusterGraphBelief{B<:Belief, M<:MessageResidual}
     "vector of beliefs, cluster beliefs first and sepset beliefs last"
-    belief::Vector{T}
+    belief::Vector{B}
     "vector of factors from the graphical model, used to initialize cluster beliefs"
-    factors::Vector{T} # fixit: review
+    factors::Vector{B} # fixit: review
     "number of clusters"
     nclusters::Int
     "dictionary: cluster label => cluster index"
@@ -87,7 +36,7 @@ struct ClusterGraphBelief{T<:AbstractBelief}
     "dictionary: cluster neighbor labels => sepset index"
     sdict::Dict{Set{Symbol},Int}
     "dictionary: message labels (cluster_to, cluster_from) => residual information"
-    messageresidual::Dict{Tuple{Symbol,Symbol},Union{Missing,AbstractResidual}}
+    messageresidual::Dict{Tuple{Symbol,Symbol}, M}
 end
 nbeliefs(obj::ClusterGraphBelief) = length(obj.belief)
 nclusters(obj::ClusterGraphBelief) = obj.nclusters
@@ -114,7 +63,7 @@ function sepsetindex(clustlabel1, clustlabel2, sepsetdict)
 end
 
 # fixit: review. Assumes that `beliefs` modified by `init_beliefs_assignfactors!`
-function ClusterGraphBelief(beliefs)
+function ClusterGraphBelief(beliefs::Vector{B}) where B<:Belief
     i = findfirst(b -> b.type == bsepsettype, beliefs)
     nc = (isnothing(i) ? length(beliefs) : i - 1)
     all(beliefs[i].type == bclustertype for i in 1:nc) ||
@@ -123,10 +72,9 @@ function ClusterGraphBelief(beliefs)
         error("sepsets are not consecutive")
     cdict = get_clusterindexdictionary(beliefs, nc)
     sdict = get_sepsetindexdictionary(beliefs, nc)
-    messageresidual = init_messageresidual(beliefs, cdict, nc)
-    factors = deepcopy(beliefs[1:nc])
-    return ClusterGraphBelief{eltype(beliefs)}(beliefs,factors,nc,cdict,sdict,
-        messageresidual)
+    mr = init_messageresidual(beliefs, nc)
+    factors = [deepcopy(beliefs[i]) for i in 1:nc] # beliefs[1:nc] makes a copy, but not deep
+    return ClusterGraphBelief{B,eltype(mr)}(beliefs,factors,nc,cdict,sdict,mr)
 end
 function get_clusterindexdictionary(beliefs, nclusters)
     Dict(beliefs[j].metadata => j for j in 1:nclusters)
@@ -134,22 +82,15 @@ end
 function get_sepsetindexdictionary(beliefs, nclusters)
     Dict(Set(beliefs[j].metadata) => j for j in (nclusters+1):length(beliefs))
 end
-function init_messageresidual(beliefs, cdict, nclusters)
-    messageresidual = Dict{Tuple{Symbol,Symbol},Union{Missing,AbstractResidual}}()
+function init_messageresidual(
+        beliefs::Vector{B},
+        nclusters) where B<:Belief{V,T} where {V<:AbstractVector, T<:Real}
+    messageresidual = Dict{Tuple{Symbol,Symbol}, Vector{MessageResidual{T}}}()
     for j in (nclusters+1):length(beliefs)
-        (clustlab1, clustlab2) = beliefs[j].metadata
-        cluster_1 = beliefs[clusterindex(clustlab1, cdict)]
-        cluster_2 = beliefs[clusterindex(clustlab2, cdict)]
-        keepind_1to2 = scopeindex(beliefs[j], cluster_2)
-        keepind_2to1 = scopeindex(beliefs[j], cluster_1)
-        messageresidual[(clustlab1, clustlab2)] = MessageResidual(length(keepind_1to2), eltype(beliefs[j].h)) # defaultmessage(cluster_1, length(keepind_1to2))
-        messageresidual[(clustlab2, clustlab1)] = MessageResidual(length(keepind_2to1), eltype(beliefs[j].h)) # defaultmessage(cluster_2, length(keepind_2to1))
-        #=
-        TODO: For ForwardDiff to work well with GeneralLazyBufferCache,
-        we need to allocate all the objects *before hand*
-        (and not on the fly as was done before, with "missing" by default.)
-        Is that the correct way to do it ?
-        =#
+        ssbe = beliefs[j] # sepset belief
+        (clustlab1, clustlab2) = ssbe.metadata
+        messageresidual[(clustlab1, clustlab2)] = MessageResidual(ssbe.J, ssbe.h)
+        messageresidual[(clustlab2, clustlab1)] = MessageResidual(ssbe.J, ssbe.h)
     end
     return messageresidual
 end
@@ -538,42 +479,32 @@ This condition holds if beliefs are produced on a given cluster graph and if the
 tree is produced by [`spanningtree_clusterlist`](@ref) on the same graph.
 """
 function propagate_1traversal_postorder!(beliefs::ClusterGraphBelief,
-    pa_lab, ch_lab, pa_j, ch_j)
+                                         pa_lab, ch_lab, pa_j, ch_j)
     b = beliefs.belief
     mr = beliefs.messageresidual
     # (parent <- sepset <- child) in postorder
     for i in reverse(1:length(pa_lab))
         ss_j = sepsetindex(pa_lab[i], ch_lab[i], beliefs)
         sepset, residual = propagate_belief!(b[pa_j[i]], b[ss_j], b[ch_j[i]])
-        if !ismissing(mr[(pa_lab[i], ch_lab[i])])
-            mr[(pa_lab[i], ch_lab[i])].ΔJ .= residual[1]
-            mr[(pa_lab[i], ch_lab[i])].Δh .= residual[2]
-            iscalibrated_canon!(mr[(pa_lab[i], ch_lab[i])])
-        else
-            # TODO: Should never be missing now (cf initialisation), remove ?
-            mr[(pa_lab[i], ch_lab[i])] = MessageResidual(residual...)
-        end
+        mr[(pa_lab[i], ch_lab[i])].ΔJ .= residual[1]
+        mr[(pa_lab[i], ch_lab[i])].Δh .= residual[2]
+        iscalibrated_canon!(mr[(pa_lab[i], ch_lab[i])])
         # compute KL div. between message and sepset
         approximate_kl!(mr[(pa_lab[i], ch_lab[i])], sepset, residual)
     end
 end
 
 function propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,
-    pa_lab, ch_lab, pa_j, ch_j)
+                                        pa_lab, ch_lab, pa_j, ch_j)
     b = beliefs.belief
     mr = beliefs.messageresidual
     # (child <- sepset <- parent) in preorder
-    for i in 1:length(pa_lab)
+    for i in eachindex(pa_lab)
         ss_j = sepsetindex(pa_lab[i], ch_lab[i], beliefs)
         sepset, residual = propagate_belief!(b[ch_j[i]], b[ss_j], b[pa_j[i]])
-        if !ismissing(mr[(ch_lab[i], pa_lab[i])])
-            mr[(ch_lab[i], pa_lab[i])].ΔJ .= residual[1]
-            mr[(ch_lab[i], pa_lab[i])].Δh .= residual[2]
-            iscalibrated_canon!(mr[(ch_lab[i], pa_lab[i])])
-        else
-            # TODO: Should never be missing now (cf initialisation), remove ?
-            mr[(ch_lab[i], pa_lab[i])] = MessageResidual(residual...)
-        end
+        mr[(ch_lab[i], pa_lab[i])].ΔJ .= residual[1]
+        mr[(ch_lab[i], pa_lab[i])].Δh .= residual[2]
+        iscalibrated_canon!(mr[(ch_lab[i], pa_lab[i])])
         approximate_kl!(mr[(ch_lab[i], pa_lab[i])], sepset, residual)
     end
 end
@@ -599,10 +530,10 @@ an extra preorder calibration would be required.
 Warning: there is *no* check that the cluster graph is in fact a clique tree.
 """
 function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
-    cgraph, prenodes::Vector{PN.Node},
-    tbl::Tables.ColumnTable, taxa::AbstractVector,
-    evomodelfun, # constructor function
-    evomodelparams)
+        cgraph, prenodes::Vector{PN.Node},
+        tbl::Tables.ColumnTable, taxa::AbstractVector,
+        evomodelfun, # constructor function
+        evomodelparams)
     spt = spanningtree_clusterlist(cgraph, prenodes)
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     mod = evomodelfun(evomodelparams...) # model with starting values
@@ -631,10 +562,10 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
 end
 
 function calibrate_optimize_cliquetree_autodiff!(bufferbeliefs::GeneralLazyBufferCache,
-    cgraph, prenodes::Vector{PN.Node},
-    tbl::Tables.ColumnTable, taxa::AbstractVector,
-    evomodelfun, # constructor function
-    evomodelparams)
+        cgraph, prenodes::Vector{PN.Node},
+        tbl::Tables.ColumnTable, taxa::AbstractVector,
+        evomodelfun, # constructor function
+        evomodelparams)
     spt = spanningtree_clusterlist(cgraph, prenodes)
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     mod = evomodelfun(evomodelparams...) # model with starting values
@@ -694,10 +625,10 @@ calibration is detected or till `max_iterations` have passed, whichever occurs
 first.
 """
 function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
-    cgraph, prenodes::Vector{PN.Node},
-    tbl::Tables.ColumnTable, taxa::AbstractVector,
-    evomodelfun, # constructor function
-    evomodelparams, maxiter::Integer=100)
+        cgraph, prenodes::Vector{PN.Node},
+        tbl::Tables.ColumnTable, taxa::AbstractVector,
+        evomodelfun, # constructor function
+        evomodelparams, maxiter::Integer=100)
     sch = spanningtrees_cover_clusterlist(cgraph, prenodes)
     mod = evomodelfun(evomodelparams...) # model with starting values
     function score(θ)
