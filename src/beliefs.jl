@@ -9,7 +9,7 @@ nodedimensions(b::AbstractBelief) = map(sum, eachslice(inscope(b), dims=2))
 dimension(b::AbstractBelief)  = sum(inscope(b))
 mvnormcanon(b::AbstractBelief) = MvNormalCanon(b.μ, b.h, PDMat(LA.Symmetric(b.J)))
 
-struct ClusterBelief{Vlabel<:AbstractVector,T<:Real,P<:AbstractMatrix{T},V<:AbstractVector{T},M} <: AbstractBelief
+struct Belief{Vlabel<:AbstractVector,T<:Real,P<:AbstractMatrix{T},V<:AbstractVector{T},M} <: AbstractBelief
     "Integer label for nodes in the cluster"
     nodelabel::Vlabel # StaticVector{N,Tlabel}
     "Total number of traits at each node"
@@ -36,7 +36,7 @@ struct ClusterBelief{Vlabel<:AbstractVector,T<:Real,P<:AbstractMatrix{T},V<:Abst
     metadata::M
 end
 
-function Base.show(io::IO, b::ClusterBelief)
+function Base.show(io::IO, b::Belief)
     disp = "belief for " * (b.type == bclustertype ? "Cluster" : "SepSet") * " $(b.metadata),"
     disp *= " $(ntraits(b)) traits × $(length(nodelabels(b))) nodes, dimension $(dimension(b)).\n"
     disp *= "Node labels: "
@@ -48,12 +48,12 @@ function Base.show(io::IO, b::ClusterBelief)
 end
 
 """
-    ClusterBelief(nodelabels, numtraits, inscope, belieftype, metadata,T=Float64)
+    Belief(nodelabels, numtraits, inscope, belieftype, metadata,T=Float64)
 
 Constructor to allocate memory for one cluster, and initialize objects with 0s
 to initilize the belief with the constant function exp(0)=1.
 """
-function ClusterBelief(nl::AbstractVector{Tlabel}, numtraits::Integer,
+function Belief(nl::AbstractVector{Tlabel}, numtraits::Integer,
             inscope::BitArray, belief, metadata,T=Float64::Type) where Tlabel<:Integer
     nnodes = length(nl)
     nodelabels = SVector{nnodes}(nl)
@@ -63,7 +63,7 @@ function ClusterBelief(nl::AbstractVector{Tlabel}, numtraits::Integer,
     h = MVector{cldim,T}(zero(T) for _ in 1:cldim)
     J = MMatrix{cldim,cldim,T}(zero(T) for _ in 1:(cldim*cldim))
     g = MVector{1,T}(0)
-    ClusterBelief{typeof(nodelabels),T,typeof(J),typeof(h),typeof(metadata)}(
+    Belief{typeof(nodelabels),T,typeof(J),typeof(h),typeof(metadata)}(
         nodelabels,numtraits,inscope,μ,h,J,g,belief,metadata)
 end
 
@@ -197,16 +197,16 @@ function init_beliefs_allocate(tbl::Tables.ColumnTable, taxa::AbstractVector,
         end
         return inscope
     end
-    beliefs = ClusterBelief[]
+    beliefs = Belief[]
     for cllab in labels(clustergraph)
         nodeindices = clustergraph[cllab][2]
         inscope = build_inscope(nodeindices)
-        push!(beliefs, ClusterBelief(nodeindices, numtraits, inscope, bclustertype, cllab,T))
+        push!(beliefs, Belief(nodeindices, numtraits, inscope, bclustertype, cllab,T))
     end
     for sslab in edge_labels(clustergraph)
         nodeindices = clustergraph[sslab...]
         inscope = build_inscope(nodeindices)
-        push!(beliefs, ClusterBelief(nodeindices, numtraits, inscope, bsepsettype, sslab,T))
+        push!(beliefs, Belief(nodeindices, numtraits, inscope, bsepsettype, sslab,T))
     end
     return beliefs
 end
@@ -239,7 +239,7 @@ function update_root_inscope!(beliefs, model::EvolutionaryModel{T}) where T
             root_int = findfirst(nl -> 1 == nl, nodelabels(b))
             inscope = beliefs[i_b].inscope
             update_inscope!(inscope, root_int)
-            beliefs[i_b] = ClusterBelief(beliefs[i_b].nodelabel, numtraits, inscope, beliefs[i_b].type, beliefs[i_b].metadata, T)
+            beliefs[i_b] = Belief(beliefs[i_b].nodelabel, numtraits, inscope, beliefs[i_b].type, beliefs[i_b].metadata, T)
         end
     end
 end
@@ -393,69 +393,4 @@ function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
         # be.μ .= PDMat(LA.Symmetric(be.J)) \ be.h
     end =#
     return beliefs
-end
-
-
-"""
-    propagate_belief!(cluster_to, sepset, cluster_from, withdefault::Bool=true)
-    propagate_belief!(cluster_to, sepset)
-
-Update the canonical parameters of the beliefs in `cluster_to` and in `sepset`,
-by marginalizing the belief in `cluster_from` to the sepset's variable and
-passing that message.
-A tuple, whose first element is `sepset` (after its canonical parameters have
-been updated), and whose second element is a tuple
-(Δh :: AbstractVector{<:Real}, ΔJ :: AbstractMatrix{<:Real}) representing the
-residual between the canonical parameters of the current message from `cluster_to`
-to `cluster_from` and the previous sepset belief (i.e. before updating).
-
-The second form sends a default message to `cluster_to`, through `sepset` (it is
-assumed that these are adjacent). While such messages always preserve the cluster
-graph invariant, they can restrict the set of feasible message schedules if
-applied injudiciously (see [`init_messages!`](@ref)).
-
-Warning: only the `h`, `J` and `g` parameters are updated, not `μ`.
-Does not check that `cluster_from` and `cluster_to` are of cluster type,
-or that `sepset` is of sepset type, but does check that the labels and scope
-of `sepset` are included in each cluster.
-"""
-function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
-        cluster_from::AbstractBelief, withdefault::Bool=false)
-    #= fixit: discuss the `withdefault` option. Should there be an option? If
-    so, then methods that eventually call `propagate_belief!` have to be
-    modified to pass this flag (e.g. `calibrate!`,
-    `propagate_1traversal_postorder!`, `propagate_1traversal_preorder!`) =#
-    # 1. compute message: marginalize cluster_from to variables in sepset
-    #    requires cluster_from.J[keep,keep] to be invertible
-    # `keepind` can be empty (e.g. if `cluster_from` is entirely "clamped")
-    keepind = scopeindex(sepset, cluster_from)
-    # canonical parameters of message received by `cluster_to`
-    # message sent: (h, J, g), message received: (Δh, ΔJ, Δg)
-    Δh, ΔJ, Δg = try
-        h, J, g = marginalizebelief(cluster_from, keepind)
-        # `cluster_from` is nondegenerate wrt the variables to be integrated out
-        (h .- sepset.h, J .- sepset.J, g - sepset.g[1])
-    catch ex
-        isa(ex, LA.PosDefException) && withdefault || throw(ex)
-        # `cluster_from` is degenerate so `cluster_to` receives a default message
-        defaultmessage(cluster_to, length(keepind))
-    end
-    upind = scopeindex(sepset, cluster_to) # indices to be updated
-    # 2. extend message to scope of cluster_to and propagate
-    view(cluster_to.h, upind)        .+= Δh
-    view(cluster_to.J, upind, upind) .+= ΔJ
-    cluster_to.g[1]                   += Δg
-    # 3. update sepset belief
-    sepset.h   .+= Δh
-    sepset.J   .+= ΔJ
-    sepset.g[1] += Δg
-    return sepset, (ΔJ, Δh, Δg)
-end
-function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief)
-    upind = scopeindex(sepset, cluster_to)
-    isempty(upind) && return
-    _, ΔJ, _ = defaultmessage(cluster_to, length(upind))
-    view(cluster_to.J, upind, upind) .+= ΔJ # update cluster_to belief
-    sepset.J .+= ΔJ # update sepset belief
-    return
 end

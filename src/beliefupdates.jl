@@ -151,3 +151,67 @@ function absorbleaf!(h,J,g, rowindex, tbl)
     # fixit: check that we correctly remove the missing data from scope
     return h,J,g
 end
+
+"""
+    propagate_belief!(cluster_to, sepset, cluster_from, withdefault::Bool=true)
+    propagate_belief!(cluster_to, sepset)
+
+Update the canonical parameters of the beliefs in `cluster_to` and in `sepset`,
+by marginalizing the belief in `cluster_from` to the sepset's variable and
+passing that message.
+A tuple, whose first element is `sepset` (after its canonical parameters have
+been updated), and whose second element is a tuple
+(Δh :: AbstractVector{<:Real}, ΔJ :: AbstractMatrix{<:Real}) representing the
+residual between the canonical parameters of the current message from `cluster_to`
+to `cluster_from` and the previous sepset belief (i.e. before updating).
+
+The second form sends a default message to `cluster_to`, through `sepset` (it is
+assumed that these are adjacent). While such messages always preserve the cluster
+graph invariant, they can restrict the set of feasible message schedules if
+applied injudiciously (see [`init_messages!`](@ref)).
+
+Warning: only the `h`, `J` and `g` parameters are updated, not `μ`.
+Does not check that `cluster_from` and `cluster_to` are of cluster type,
+or that `sepset` is of sepset type, but does check that the labels and scope
+of `sepset` are included in each cluster.
+"""
+function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
+        cluster_from::AbstractBelief, withdefault::Bool=false)
+    #= fixit: discuss the `withdefault` option. Should there be an option? If
+    so, then methods that eventually call `propagate_belief!` have to be
+    modified to pass this flag (e.g. `calibrate!`,
+    `propagate_1traversal_postorder!`, `propagate_1traversal_preorder!`) =#
+    # 1. compute message: marginalize cluster_from to variables in sepset
+    #    requires cluster_from.J[keep,keep] to be invertible
+    # `keepind` can be empty (e.g. if `cluster_from` is entirely "clamped")
+    keepind = scopeindex(sepset, cluster_from)
+    # canonical parameters of message received by `cluster_to`
+    # message sent: (h, J, g), message received: (Δh, ΔJ, Δg)
+    Δh, ΔJ, Δg = try
+        h, J, g = marginalizebelief(cluster_from, keepind)
+        # `cluster_from` is nondegenerate wrt the variables to be integrated out
+        (h .- sepset.h, J .- sepset.J, g - sepset.g[1])
+    catch ex
+        isa(ex, LA.PosDefException) && withdefault || throw(ex)
+        # `cluster_from` is degenerate so `cluster_to` receives a default message
+        defaultmessage(cluster_to, length(keepind))
+    end
+    upind = scopeindex(sepset, cluster_to) # indices to be updated
+    # 2. extend message to scope of cluster_to and propagate
+    view(cluster_to.h, upind)        .+= Δh
+    view(cluster_to.J, upind, upind) .+= ΔJ
+    cluster_to.g[1]                   += Δg
+    # 3. update sepset belief
+    sepset.h   .+= Δh
+    sepset.J   .+= ΔJ
+    sepset.g[1] += Δg
+    return sepset, (ΔJ, Δh, Δg)
+end
+function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief)
+    upind = scopeindex(sepset, cluster_to)
+    isempty(upind) && return
+    _, ΔJ, _ = defaultmessage(cluster_to, length(upind))
+    view(cluster_to.J, upind, upind) .+= ΔJ # update cluster_to belief
+    sepset.J .+= ΔJ # update sepset belief
+    return
+end
