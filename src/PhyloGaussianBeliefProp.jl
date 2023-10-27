@@ -19,7 +19,7 @@ using PhyloNetworks: HybridNetwork, getparents, getparent, getparentedge,
 include("utils.jl")
 include("clustergraph.jl")
 include("evomodels.jl")
-include("canonicalnormal.jl")
+include("beliefs.jl")
 include("beliefupdates.jl")
 include("calibration.jl")
 include("score.jl")
