@@ -21,6 +21,7 @@ include("clustergraph.jl")
 include("evomodels.jl")
 include("beliefs.jl")
 include("beliefupdates.jl")
+include("clustergraphbeliefs.jl")
 include("calibration.jl")
 include("score.jl")
 

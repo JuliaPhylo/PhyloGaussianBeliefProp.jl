@@ -9,7 +9,7 @@ nodedimensions(b::AbstractBelief) = map(sum, eachslice(inscope(b), dims=2))
 dimension(b::AbstractBelief)  = sum(inscope(b))
 mvnormcanon(b::AbstractBelief) = MvNormalCanon(b.μ, b.h, PDMat(LA.Symmetric(b.J)))
 
-struct Belief{Vlabel<:AbstractVector,T<:Real,P<:AbstractMatrix{T},V<:AbstractVector{T},M} <: AbstractBelief
+struct Belief{T<:Real,Vlabel<:AbstractVector,P<:AbstractMatrix{T},V<:AbstractVector{T},M} <: AbstractBelief
     "Integer label for nodes in the cluster"
     nodelabel::Vlabel # StaticVector{N,Tlabel}
     "Total number of traits at each node"
@@ -49,13 +49,13 @@ function Base.show(io::IO, b::Belief)
 end
 
 """
-    Belief(nodelabels, numtraits, inscope, belieftype, metadata,T=Float64)
+    Belief(nodelabels, numtraits, inscope, belieftype, metadata, T=Float64)
 
 Constructor to allocate memory for one cluster, and initialize objects with 0s
 to initilize the belief with the constant function exp(0)=1.
 """
 function Belief(nl::AbstractVector{Tlabel}, numtraits::Integer,
-                inscope::BitArray, belief, metadata,T::Type=Float64) where Tlabel<:Integer
+                inscope::BitArray, belief, metadata, T::Type=Float64) where Tlabel<:Integer
     nnodes = length(nl)
     nodelabels = SVector{nnodes}(nl)
     size(inscope) == (numtraits,nnodes) || error("inscope of the wrong size")
@@ -64,7 +64,7 @@ function Belief(nl::AbstractVector{Tlabel}, numtraits::Integer,
     h = MVector{cldim,T}(zero(T) for _ in 1:cldim)
     J = MMatrix{cldim,cldim,T}(zero(T) for _ in 1:(cldim*cldim))
     g = MVector{1,T}(0)
-    Belief{typeof(nodelabels),T,typeof(J),typeof(h),typeof(metadata)}(
+    Belief{T,typeof(nodelabels),typeof(J),typeof(h),typeof(metadata)}(
         nodelabels,numtraits,inscope,μ,h,J,g,belief,metadata)
 end
 
@@ -198,7 +198,7 @@ function init_beliefs_allocate(tbl::Tables.ColumnTable, taxa::AbstractVector,
         end
         return inscope
     end
-    beliefs = Belief[]
+    beliefs = Belief{T}[]
     for cllab in labels(clustergraph)
         nodeindices = clustergraph[cllab][2]
         inscope = build_inscope(nodeindices)
@@ -396,8 +396,6 @@ function init_beliefs_assignfactors!(beliefs, model::EvolutionaryModel,
     return beliefs
 end
 
-abstract type AbstractResidual end
-
 #= messages in ReactiveMP.jl have an `addons` field that stores computation history:
 https://biaslab.github.io/ReactiveMP.jl/stable/lib/message/#ReactiveMP.Message
 
@@ -406,6 +404,9 @@ or to facilitate adaptive scheduling (e.g. residual BP), we store a
 message residual: difference (on log-scale) between a message *received*
 by a cluster and the belief that the sepset previously had.
 =#
+
+abstract type AbstractResidual end
+
 """
     MessageResidual{T<:Real, P<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractResidual
 
@@ -423,7 +424,7 @@ Fields:
 - `kldiv`: kl divergence between the message that was last sent and the
    sepset belief before the last update
 - `iscalibrated_resid`: true if the last message and prior sepset belief were
-  approximately equal, false otherwise. see [`iscalibrated_canon!`](@ref)
+  approximately equal, false otherwise. see [`iscalibrated_residnorm!`](@ref)
 - `iscalibrated_kl`: same, but in terms of the KL divergence,
   see [`iscalibrated_kl!`](@ref).
 """
@@ -450,4 +451,77 @@ function MessageResidual(J::AbstractMatrix{T}, h::AbstractVector{T}) where {T <:
     Δh = fill!(similar(h), zero(T))
     ΔJ = fill!(similar(J), zero(T))
     MessageResidual{T,typeof(ΔJ),typeof(Δh)}(Δh, ΔJ, MVector(-1.0), MVector(false), MVector(false))
+end
+
+iscalibrated_residnorm(res::AbstractResidual) = res.iscalibrated_resid[1]
+iscalibrated_kl(res::AbstractResidual) = res.iscalibrated_kl[1]
+
+"""
+    iscalibrated_residnorm!(res::AbstractResidual, atol=1e-5, p::Real=Inf)
+
+True if the canonical parameters `res.Δh` and `res.ΔJ` of the message residual
+have `p`-norm within `atol` of 0; false otherwise.
+`res.iscalibrated_resid` is updated accordingly.
+
+With `p` infinite, the max norm is used by default, meaning that
+`res.Δh` and `res.ΔJ` should be close to 0 element-wise.
+"""
+function iscalibrated_residnorm!(res::AbstractResidual, atol=1e-5, p::Real=Inf)
+    res.iscalibrated_resid[1] =
+        isapprox(LA.norm(res.Δh, p), 0.0, atol=atol) &&
+        isapprox(LA.norm(res.ΔJ, p), 0.0, atol=atol)
+end
+
+"""
+    iscalibrated_kl!(res::AbstractResidual, atol=1e-5)
+
+True if the KL divergence between the message (whose most recent residual
+information is stored in `res`) received by a sepset and its belief prior to
+receiving that message is within `atol` of 0; false otherwise.
+`res.iscalibrated_kl` is updated accordingly.
+"""
+function iscalibrated_kl!(res::AbstractResidual, atol=1e-5)
+    res.iscalibrated_kl[1] = isapprox(res.kldiv[1], 0.0, atol=atol)
+end
+
+
+"""
+    approximate_kl!(residual::AbstractResidual, sepset::AbstractBelief,
+        canonicalparams::Tuple)
+
+Update `residual.kldiv` with an approximation to the KL divergence between
+a message sent through a sepset, and the sepset belief before the belief-update,
+given its belief after (`sepset`).
+This approximation computes the negative average energy of the residual canonical
+parameters, with the `g` parameter set to 0, with respect to the message
+canonical parameters.
+
+## Calculation:
+
+message sent: f(x) = C(Jₘ, hₘ, _) ≡ x ~ 𝒩(μ=Jₘ⁻¹hₘ, Σ=Jₘ⁻¹)  
+sepset (before belief-update): C(Jₛ, hₛ, gₛ)  
+sepset (after belief-update): C(Jₘ, hₘ, gₘ)  
+residual: C(ΔJ = Jₘ - Jₛ, Δh = hₘ - hₛ, Δg = gₘ - gₛ)
+
+    KL(C(Jₘ, hₘ, gₘ) || C(Jₛ, hₛ, gₛ))
+    = E[log C(Jₘ, hₘ, gₘ)/C(Jₛ, hₛ, gₛ)] where x ∼ C(Jₘ, hₘ, gₘ)
+    = E[-(1/2)x'*ΔJ*x + Δh'x + Δg)]
+    ≈ E[-(1/2)x'*ΔJ*x + Δh'x], Δg dropped
+    = -average_energy(C(Jₘ, hₘ, _), C(ΔJ, Δh, 0))
+
+See also: [`average_energy`](@ref)
+"""
+function approximate_kl!(res::AbstractResidual, sepset::AbstractBelief,
+    residcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}, T}) where {T <: Real}
+    # TODO: For ForwardDiff to work well with GeneralLazyBufferCache, type T must be specified.
+    #=
+    isposdef(C::Union{Cholesky,CholeskyPivoted}) = C.info == 0
+    There is a bug in StaticArrays.jl
+    =#
+    # note: `isposdef` returns true for size (0,0) MMatrices and the [0.0] MMatrix
+    if LA.isposdef(sepset.J) && size(sepset.J)[1] > 0 &&
+        (size(sepset.J)[1] > 1 || sepset.J[1] > 0)
+        res.kldiv[1] = -average_energy(sepset, residcanon, true)
+        iscalibrated_kl!(res)
+    end
 end
