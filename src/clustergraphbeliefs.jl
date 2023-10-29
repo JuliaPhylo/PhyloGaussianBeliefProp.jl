@@ -1,5 +1,5 @@
 """
-    ClusterGraphBelief{B<:Belief}
+    ClusterGraphBelief{B<:Belief, M<:MessageResidual}
     ClusterGraphBelief(belief_vector::Vector{B})
 
 Structure to hold a vector of beliefs, with cluster beliefs coming first and

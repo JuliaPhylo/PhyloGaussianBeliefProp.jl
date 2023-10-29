@@ -448,8 +448,8 @@ are initialized to `false`.
 being false indicate otherwise.
 """
 function MessageResidual(J::AbstractMatrix{T}, h::AbstractVector{T}) where {T <: Real}
-    Δh = fill!(similar(h), zero(T))
-    ΔJ = fill!(similar(J), zero(T))
+    Δh = zero(h)
+    ΔJ = zero(J)
     MessageResidual{T,typeof(ΔJ),typeof(Δh)}(Δh, ΔJ, MVector(-1.0), MVector(false), MVector(false))
 end
 

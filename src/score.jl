@@ -2,19 +2,24 @@
     entropy(J::AbstractMatrix)
     entropy(belief::AbstractBelief)
 
-Entropy value for a multivariate Gaussian with positive-definite precision `J`.
+Entropy of a multivariate Gaussian distribution with precision matrix `J`,
+assumed to be square and symmetric (not checked).
+It is 0 if `J` is empty (of size 0×0). It may be `Inf` if `J` is semi-definite.
+The second version applies the first to the belief precision `belief.J`.
 
-The second version applies the first version to the precision of `belief` (i.e.
-`belief.J`, which must be positive definite). 
-
-See implementation in [Distributions.jl](https://github.com/JuliaStats/Distributions.jl/blob/e407fa5fd098e50df51801c6d062946eac7a7d0f/src/multivariate/mvnormal.jl#L95).
+`entropy` is defined for discrete distributions in
+[StatsBase.jl](https://juliastats.org/StatsBase.jl/stable/scalarstats/#StatsBase.entropy)
+and extended to Gaussian distributions in Distributions.jl around
+[here](https://github.com/JuliaStats/Distributions.jl/blob/master/src/multivariate/mvnormal.jl#L95)
 """
-function entropy(J::AbstractMatrix)
-    0.5*(size(J,2) * (log2π + 1) - LA.logdet(LA.cholesky(J)))
+function entropy(J::AbstractMatrix{T}) where T<:Real
+    n = size(J,2)
+    if n == 0
+        return zero(T)
+    end
+    (n * (T(log2π) + 1) - LA.logdet(LA.Symmetric(J))) / 2
 end
-function entropy(cluster::AbstractBelief)
-    entropy(cluster.J)
-end
+entropy(cluster::AbstractBelief) = entropy(cluster.J)
 
 """
     average_energy(ref::Tuple, target::Tuple, dropg::Bool=false)
@@ -45,28 +50,20 @@ be non-degenerate (i.e. `Jᵣ` is positive-definite).
 The third version is similar to the second one, except that `target` is specified
 by its canonical parameters.
 """
-function average_energy(refcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}},
-    targetcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}, T}, 
-    dropg::Bool=false) where T <: Real
-    #TODO: Used Real instead of AbstractFloat for compatibility with the rest of the code (otherwise ForwardDiff fails).
+function average_energy(refcanon::Tuple, targetcanon::Tuple, dropg::Bool=false)
     # fixit: review. If reference is constant, then return `g` param of target.
     isempty(refcanon[1]) && return -targetcanon[3]
     Jᵣ = LA.cholesky(refcanon[1])
     μᵣ = Jᵣ \ refcanon[2]
     (Jₜ, hₜ, gₜ) = targetcanon
     # fixit: check for more efficient order of operations
-    if dropg gₜ = 0.0 end
+    if dropg gₜ = zero(gₜ) end
     0.5*LA.tr(Jₜ*(μᵣ*μᵣ' + LA.inv(Jᵣ))) - hₜ'*μᵣ - gₜ
 end
-average_energy(reference::AbstractBelief, target::AbstractBelief,
-    drop::Bool=false) = average_energy((reference.J, reference.h),
-        (target.J, target.h, target.g[1]), drop)
-average_energy(reference::AbstractBelief,
-    targetcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}, T},
-    drop::Bool=false) where {T <: Real} = average_energy((reference.J, reference.h),
-        targetcanon, drop)
-    #TODO: Specified type here for compatibility with ForwardDiff
-
+average_energy(reference::AbstractBelief, target::AbstractBelief, drop::Bool=false) =
+    average_energy((reference.J, reference.h), (target.J, target.h, target.g[1]), drop)
+average_energy(reference::AbstractBelief, targetcanon::Tuple, drop::Bool=false) =
+    average_energy((reference.J, reference.h), targetcanon, drop)
 
 """
     free_energy(beliefs::ClusterGraphBelief)
@@ -87,13 +84,13 @@ D. M. Blei, A. Kucukelbir, and J. D. McAuliffe. Variational inference: A Review
 for Statisticians, Journal of the American statistical Association, 112:518,
 859-877, 2017, doi: [10.1080/01621459.2017.1285773](https://doi/org/10.1080/01621459.2017.1285773).
 """
-function free_energy(beliefs::ClusterGraphBelief)
+function free_energy(beliefs::ClusterGraphBelief{B}) where B<:Belief{T} where T<:Real
     b = beliefs.belief
     init_b = beliefs.factors
     nbeliefs = length(b)
     nclusters = beliefs.nclusters
-    ave_energy = 0.0
-    approx_entropy = 0.0
+    ave_energy = zero(T)
+    approx_entropy = zero(T)
     for i in 1:nclusters
         ave_energy += average_energy(b[i], init_b[i])
         approx_entropy += entropy(b[i])
