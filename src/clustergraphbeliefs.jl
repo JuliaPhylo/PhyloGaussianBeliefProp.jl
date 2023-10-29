@@ -1,6 +1,5 @@
 """
     ClusterGraphBelief{B<:Belief, F<:FamilyFactor, M<:MessageResidual}
-    ClusterGraphBelief(belief_vector::Vector{B})
 
 Structure to hold a vector of beliefs, with cluster beliefs coming first and
 sepset beliefs coming last. Fields:
@@ -68,7 +67,17 @@ function sepsetindex(clustlabel1, clustlabel2, sepsetdict)
     sepsetdict[Set((clustlabel1, clustlabel2))]
 end
 
-# fixit: review. Assumes that `beliefs` modified by `init_beliefs_assignfactors!`
+"""
+    ClusterGraphBelief(belief_vector::Vector{B})
+
+Constructor of a `ClusterGraphBelief` with belief `belief_vector` and all other
+fields constructed accordingly. New memory is allocated for these other fields,
+e.g. for factors (with data copied from cluster beliefs) and message residuals
+(with data initialized to 0 but of size matching that from sepset beliefs)
+
+To construct the input vector of beliefs, see [`init_beliefs_allocate`](@ref)
+and [`init_beliefs_assignfactors!`](@ref)
+"""
 function ClusterGraphBelief(beliefs::Vector{B}) where B<:Belief
     i = findfirst(b -> b.type == bsepsettype, beliefs)
     nc = (isnothing(i) ? length(beliefs) : i - 1)
@@ -78,31 +87,28 @@ function ClusterGraphBelief(beliefs::Vector{B}) where B<:Belief
         error("sepsets are not consecutive")
     cdict = get_clusterindexdictionary(beliefs, nc)
     sdict = get_sepsetindexdictionary(beliefs, nc)
-    mr = init_messageresidual(beliefs, nc)
+    mr = init_messageresidual_allocate(beliefs, nc)
     factors = init_factors_allocate(beliefs, nc)
     return ClusterGraphBelief{B,eltype(factors),valtype(mr)}(beliefs,factors,nc,cdict,sdict,mr)
 end
+
 function get_clusterindexdictionary(beliefs, nclusters)
     Dict(beliefs[j].metadata => j for j in 1:nclusters)
 end
 function get_sepsetindexdictionary(beliefs, nclusters)
     Dict(Set(beliefs[j].metadata) => j for j in (nclusters+1):length(beliefs))
 end
-function init_messageresidual(beliefs::Vector{B}, nclusters) where B<:Belief{T} where T<:Real
-    messageresidual = Dict{Tuple{Symbol,Symbol}, MessageResidual{T}}()
-    for j in (nclusters+1):length(beliefs)
-        ssbe = beliefs[j] # sepset belief
-        (clustlab1, clustlab2) = ssbe.metadata
-        messageresidual[(clustlab1, clustlab2)] = MessageResidual(ssbe.J, ssbe.h)
-        messageresidual[(clustlab2, clustlab1)] = MessageResidual(ssbe.J, ssbe.h)
-    end
-    return messageresidual
-end
 
 """
     init_beliefs_reset!(beliefs::ClusterGraphBelief)
 
-Reset cluster beliefs to factors and sepset beliefs to h=0, J=0, g=0.
+Reset
+- cluster beliefs to existing factors
+- sepset beliefs to h=0, J=0, g=0
+
+fixit: is this ever used?
+fixit: also reset message residuals to 0 and their flags to false?
+fixit: rename? init_clustergraphbeliefs_reset! or init_beliefs_fromfactors! ?
 """
 function init_beliefs_reset!(beliefs::ClusterGraphBelief)
     # fixit: change name of method?
@@ -142,15 +148,17 @@ iscalibrated_kl(cb::ClusterGraphBelief) =
     all(x -> iscalibrated_kl(x), values(cb.messageresidual))
 
 """
-    integratebelief!(obj, beliefindex)
-    integratebelief!(obj)
+    integratebelief!(obj::ClusterGraphBelief, beliefindex)
+    integratebelief!(obj::ClusterGraphBelief)
     integratebelief!(obj::ClusterGraphBelief, clustergraph, nodevector_preordered)
 
-(μ,g) from fully integrating the object belief indexed `beliefindex`.
-The second form uses the first sepset containing a single node. This is valid
+`(μ,g)` from fully integrating the object belief indexed `beliefindex`. This
+belief is modified, with its `belief.μ`'s values updated to those in `μ`.
+
+The second method uses the first sepset containing a single node. This is valid
 if the beliefs are fully calibrated (including a pre-order traversal), but
 invalid otherwise.
-The third form uses the default cluster containing the root,
+The third method uses the default cluster containing the root,
 see [`default_rootcluster`](@ref). This is valid if the same cluster was used
 as the root of the cluster graph, if this graph is a clique tree, and after
 a post-order traversal to start the calibration.

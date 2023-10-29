@@ -523,6 +523,30 @@ function MessageResidual(J::AbstractMatrix{T}, h::AbstractVector{T}) where {T <:
     MessageResidual{T,typeof(ΔJ),typeof(Δh)}(Δh, ΔJ, MVector(-1.0), MVector(false), MVector(false))
 end
 
+"""
+    init_messageresidual_allocate(beliefs::Vector{B}, nclusters)
+
+Dictionary of `2k` residuals of type [`MessageResidual`](@ref), whose canonical
+parameters (Δh,ΔJ) are initialized using [`MessageResidual`](@ref), to be of
+the same size as sepsets in `beliefs`, where `k` is `length(beliefs) - nclusters`.
+Assumption: the first `nclusters` beliefs are cluster beliefs, and the next
+`k` beliefs are sepset beliefs. This is not checked.
+
+The sepset for edge `(label1,label2)` is associated with 2 messages, for the
+2 directions in which beliefs can be propagated along the edge. The keys for
+these messages are `(label1,label2)` and `(label2,label1)`.
+"""
+function init_messageresidual_allocate(beliefs::Vector{B}, nclusters) where B<:Belief{T} where T<:Real
+    messageresidual = Dict{Tuple{Symbol,Symbol}, MessageResidual{T}}()
+    for j in (nclusters+1):length(beliefs)
+        ssbe = beliefs[j] # sepset belief
+        (clustlab1, clustlab2) = ssbe.metadata
+        messageresidual[(clustlab1, clustlab2)] = MessageResidual(ssbe.J, ssbe.h)
+        messageresidual[(clustlab2, clustlab1)] = MessageResidual(ssbe.J, ssbe.h)
+    end
+    return messageresidual
+end
+
 iscalibrated_residnorm(res::AbstractResidual) = res.iscalibrated_resid[1]
 iscalibrated_kl(res::AbstractResidual) = res.iscalibrated_kl[1]
 
