@@ -1,5 +1,5 @@
 """
-    ClusterGraphBelief{B<:Belief, M<:MessageResidual}
+    ClusterGraphBelief{B<:Belief, F<:FamilyFactor, M<:MessageResidual}
     ClusterGraphBelief(belief_vector::Vector{B})
 
 Structure to hold a vector of beliefs, with cluster beliefs coming first and
@@ -24,11 +24,17 @@ Assumptions:
 - For a cluster belief, the cluster's nodes are stored in the belief's `metadata`.
 - For a sepset belief, its incident clusters' nodes are in the belief's metadata.
 """
-struct ClusterGraphBelief{B<:Belief, M<:MessageResidual}
+struct ClusterGraphBelief{B<:Belief, F<:FamilyFactor, M<:MessageResidual}
     "vector of beliefs, cluster beliefs first and sepset beliefs last"
     belief::Vector{B}
-    "vector of factors from the graphical model, used to initialize cluster beliefs"
-    factors::Vector{B} # fixit: review
+    """vector of initial factors from the graphical model, one per cluster.
+    Each node family defines the conditional probability of the node
+    conditional to its parent, and the root has its prior probability.
+    Each such density is assigned to 1 cluster.
+    A cluster belief can be assigned 0, 1 or more such density.
+    Cluster beliefs are modified during belief propagation, but factors are not.
+    They are useful to aproximate the likelihood by the free energy."""
+    factor::Vector{F}
     "number of clusters"
     nclusters::Int
     "dictionary: cluster label => cluster index"
@@ -73,8 +79,8 @@ function ClusterGraphBelief(beliefs::Vector{B}) where B<:Belief
     cdict = get_clusterindexdictionary(beliefs, nc)
     sdict = get_sepsetindexdictionary(beliefs, nc)
     mr = init_messageresidual(beliefs, nc)
-    factors = [deepcopy(beliefs[i]) for i in 1:nc] # beliefs[1:nc] makes a copy, but not deep
-    return ClusterGraphBelief{B,valtype(mr)}(beliefs,factors,nc,cdict,sdict,mr)
+    factors = init_factors_allocate(beliefs, nc)
+    return ClusterGraphBelief{B,eltype(factors),valtype(mr)}(beliefs,factors,nc,cdict,sdict,mr)
 end
 function get_clusterindexdictionary(beliefs, nclusters)
     Dict(beliefs[j].metadata => j for j in 1:nclusters)
@@ -101,7 +107,7 @@ Reset cluster beliefs to factors and sepset beliefs to h=0, J=0, g=0.
 function init_beliefs_reset!(beliefs::ClusterGraphBelief)
     # fixit: change name of method?
     nc, nb = nclusters(beliefs), length(beliefs.belief)
-    b, f = beliefs.belief, beliefs.factors
+    b, f = beliefs.belief, beliefs.factor
     for i in 1:nc
         b[i].h   .= f[i].h
         b[i].J   .= f[i].J
@@ -111,22 +117,6 @@ function init_beliefs_reset!(beliefs::ClusterGraphBelief)
         b[i].h   .= 0.0
         b[i].J   .= 0.0
         b[i].g[1] = 0.0
-    end
-end
-
-"""
-    factors_reset!(beliefs::ClusterGraphBelief)
-
-Reset factors to initial cluster beliefs for a different instantiation of model
-parameters (i.e. after [`init_beliefs_reset!`](@ref) and
-[`init_beliefs_assignfactors!`](@ref) are run for different parameter values).
-"""
-function factors_reset!(beliefs::ClusterGraphBelief)
-    b, f = beliefs.belief, beliefs.factors
-    for i in 1:nclusters(beliefs)
-        f[i].h   .= b[i].h
-        f[i].J   .= b[i].J
-        f[i].g[1] = b[i].g[1]
     end
 end
 

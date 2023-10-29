@@ -179,9 +179,9 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     mod = evomodelfun(evomodelparams...) # model with starting values
     function score(θ) # θ: unconstrained parameters, e.g. log(σ2)
         model = evomodelfun(params_original(mod, θ)...)
-        init_beliefs_reset!(beliefs.belief)
+        # below: includes a reset
         init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
-        factors_reset!(beliefs) # reset factors each time θ changes
+        init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
         propagate_1traversal_postorder!(beliefs, spt...)
         _, res = integratebelief!(beliefs, rootj) # drop conditional mean
         return -res # score to be minimized (not maximized)
@@ -228,9 +228,9 @@ function calibrate_optimize_cliquetree_autodiff!(bufferbeliefs::GeneralLazyBuffe
         paramOriginal = params_original(mod, θ)
         model = evomodelfun(paramOriginal...)
         dualBeliefs = bufferbeliefs[paramOriginal]
-        init_beliefs_reset!(dualBeliefs.belief)
+        # below: includes a reset
         init_beliefs_assignfactors!(dualBeliefs.belief, model, tbl, taxa, prenodes)
-        factors_reset!(dualBeliefs) # reset factors each time θ changes
+        init_factors_frombeliefs!(dualBeliefs.factor, dualBeliefs.belief)
         propagate_1traversal_postorder!(dualBeliefs, spt...)
         _, res = integratebelief!(dualBeliefs, rootj) # drop conditional mean
         return -res # score to be minimized (not maximized)
@@ -273,9 +273,8 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
     mod = evomodelfun(evomodelparams...) # model with starting values
     function score(θ)
         model = evomodelfun(params_original(mod, θ)...)
-        init_beliefs_reset!(beliefs.belief)
         init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
-        factors_reset!(beliefs)
+        init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
         # fixit: raise warning if calibration is not attained within `maxiter`?
         init_messages!(beliefs, cgraph)
         calibrate!(beliefs, sch, maxiter, auto=true)
@@ -318,7 +317,8 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
     evomodelfun, # constructor function
     evomodelparams
 )
-    evomodelfun == UnivariateBrownianMotion || evomodelfun == MvFullBrownianMotion || error("Exact optimization is only implemented for the univariate or full Brownian Motion.")
+    evomodelfun ∈ (UnivariateBrownianMotion, MvFullBrownianMotion) ||
+        error("Exact optimization is only implemented for the univariate or full Brownian Motion.")
     model = evomodelfun(evomodelparams...)
     isrootfixed(model) || error("Exact optimization is only implemented for the BM with fixed root.")
     ## TODO: check that the tree was calibrated with the right model MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf)) ?
@@ -362,7 +362,7 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
         exp_be, _ = integratebelief!(b)
         vv = inv(b.J)
         # tip node
-        if (nodechild.leaf) # tip node
+        if nodechild.leaf # tip node
             # TODO: deal with missing data
             # TODO: is there a more simple way to do that ? Record of data in belief object ?
             size(vv, 1) == p || error("A leaf node should have only on non-degenerate factor.")
@@ -405,15 +405,15 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
     ## TODO: This is the REML estimate. Should we get ML instead ?
 
     ## Get optimal paramters
-    bestθ = (sigma2_hat, mu_hat, zeros(p, p))
+    bestθ = (sigma2_hat, mu_hat, zeros(p, p)) # zero variance at the root: fixed
     bestmodel = evomodelfun(bestθ...)
     ## Get associated likelihood
     ## TODO: likelihood for the full BM (not implemented)
     loglikscore = NaN
-    if (evomodelfun == UnivariateBrownianMotion)
-        init_beliefs_reset!(beliefs.belief)
-        update_root_inscope!(beliefs.belief, model)
+    if evomodelfun == UnivariateBrownianMotion
+        init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, model) # fixit: should this be bestmodel? why do this anyway?
         init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
+        init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
         propagate_1traversal_postorder!(beliefs, spt...)
         _, loglikscore = integratebelief!(beliefs, rootj)
     end

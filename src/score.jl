@@ -86,7 +86,7 @@ for Statisticians, Journal of the American statistical Association, 112:518,
 """
 function free_energy(beliefs::ClusterGraphBelief{B}) where B<:Belief{T} where T<:Real
     b = beliefs.belief
-    init_b = beliefs.factors
+    init_b = beliefs.factor
     nbeliefs = length(b)
     nclusters = beliefs.nclusters
     ave_energy = zero(T)

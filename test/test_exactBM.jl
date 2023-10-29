@@ -98,15 +98,17 @@ end # of PhyloEM
     # y: 1 trait, no missing values
     m1 = PGBP.UnivariateBrownianMotion(1, 0, 0.9)
     b1 = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m1);
+    f1 = PGBP.init_factors_allocate(b1, nv(ct))
     PGBP.init_beliefs_assignfactors!(b1, m1, tbl_y, df.taxon, net.nodes_changed);
 
     m2 = PGBP.UnivariateBrownianMotion(1, 0, 0) # fixed root
     b2 = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m2);
+    f2 = PGBP.init_factors_allocate(b2, nv(ct))
     PGBP.init_beliefs_assignfactors!(b2, m2, tbl_y, df.taxon, net.nodes_changed);
 
-    PGBP.update_root_inscope!(b1, m2)
-    PGBP.init_beliefs_reset!(b1)
+    PGBP.init_beliefs_allocate_atroot!(b1, f1, m2)
     PGBP.init_beliefs_assignfactors!(b1, m2, tbl_y, df.taxon, net.nodes_changed);
+    # PGBP.init_factors_frombeliefs!(f1, b1)
     
     for ind in eachindex(b1)
         @test b1[ind].nodelabel == b2[ind].nodelabel
@@ -119,12 +121,12 @@ end # of PhyloEM
         @test b1[ind].metadata == b2[ind].metadata
     end
     
-    PGBP.update_root_inscope!(b1, m1)
-    PGBP.init_beliefs_reset!(b1)
+    PGBP.init_beliefs_allocate_atroot!(b1, f1, m1)
     PGBP.init_beliefs_assignfactors!(b1, m1, tbl_y, df.taxon, net.nodes_changed);
-    PGBP.update_root_inscope!(b2, m1)
-    PGBP.init_beliefs_reset!(b2)
+    #PGBP.init_factors_frombeliefs!(f1, b1)
+    PGBP.init_beliefs_allocate_atroot!(b2, f2, m1)
     PGBP.init_beliefs_assignfactors!(b2, m1, tbl_y, df.taxon, net.nodes_changed);
+    # PGBP.init_factors_frombeliefs!(f2, b2)
 
     for ind in eachindex(b1)
         @test b1[ind].nodelabel == b2[ind].nodelabel
@@ -140,14 +142,14 @@ end # of PhyloEM
     # x,y: 2 traits, no missing values
     m1 = PGBP.MvDiagBrownianMotion((1,1), (0,0), (1.2,3))
     b1 = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m1);
+    f1 = PGBP.init_factors_allocate(b1, nv(ct))
     PGBP.init_beliefs_assignfactors!(b1, m1, tbl, df.taxon, net.nodes_changed);
 
     m2 = PGBP.MvDiagBrownianMotion((1,1), (0,0), (0,0))
     b2 = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m2);
     PGBP.init_beliefs_assignfactors!(b2, m2, tbl, df.taxon, net.nodes_changed);
 
-    PGBP.update_root_inscope!(b1, m2)
-    PGBP.init_beliefs_reset!(b1)
+    PGBP.init_beliefs_allocate_atroot!(b1, f1, m2)
     PGBP.init_beliefs_assignfactors!(b1, m2, tbl, df.taxon, net.nodes_changed);
     
     for ind in eachindex(b1)
