@@ -29,6 +29,32 @@ function FamilyFactor(belief::AbstractBelief{T}) where T
     FamilyFactor{T,typeof(J),typeof(h)}(h,J,g,belief.metadata)
 end
 
+"""
+    Belief{T<:Real,Vlabel<:AbstractVector,P<:AbstractMatrix{T},V<:AbstractVector{T},M} <: AbstractBelief{T}
+
+A "belief" is an exponential quadratic form, using the canonical parametrization:
+
+    C(x | J,h,g) = exp( -(1/2)x'Jx + h'x + g )
+
+It is a *normalized* distribution density if g = - (1/2) ( log(2πΣ) + (x-μ)'J(x-μ) ).
+
+- μ is the mean vector (stored but typically not updated) of type V,
+- h = inv(Σ)μ is the potential, also of type V,
+- Σ is the variance matrix (not stored)
+- J = inv(Σ) is the precision matrix, of type P
+- g is a scalar to get the unnormalized belief: of type `MVector{1,T}` to be mutable.
+
+See `MvNormalCanon{T,P,V}` in
+[Distributions.jl](https://juliastats.org/Distributions.jl/stable/multivariate/#Distributions.MvNormalCanon)
+
+Other fields are used to track which cluster or edge the belief corresponds to,
+and which traits of which variables are in scope:
+- `nodelabel` of type `Vlabel`
+- `ntraits`
+- `inscope`
+- `type`: cluster or sepset
+- `metadata` of type `M`: `Symbol` for clusters, `Tuple{Symbol,Symbol}` for sepsets.
+"""
 struct Belief{T<:Real,Vlabel<:AbstractVector,P<:AbstractMatrix{T},V<:AbstractVector{T},M} <: AbstractBelief{T}
     "Integer label for nodes in the cluster"
     nodelabel::Vlabel # StaticVector{N,Tlabel}
@@ -40,16 +66,10 @@ struct Belief{T<:Real,Vlabel<:AbstractVector,P<:AbstractMatrix{T},V<:AbstractVec
     this variable is only good for prediction, not for learning parameters).
     """
     inscope::BitArray
-    """belief = exponential quadratic form, using the canonical parametrization:
-       mean μ and potential h = inv(Σ)μ, both of type V,
-       precision J = inv(Σ) of type P --so the normalized belief is `MvNormalCanon{T,P,V}`
-       constant g to get the unnormalized belief"""
-    # belief::MvNormalCanon{T,P,V},
-    # downside: PDMat J not easily mutable, stores cholesky computed upon construction only
     μ::V
     h::V
-    J::P
-    g::MVector{1,T} # mutable
+    J::P # PDMat(J) not easily mutable, stores cholesky computed upon construction only
+    g::MVector{1,T}
     "belief type: cluster (node in cluster graph) or sepset (edge in cluster graph)"
     type::BeliefType
     "metadata, e.g. index in cluster graph,

@@ -28,19 +28,20 @@ entropy(cluster::AbstractBelief) = entropy(cluster.J)
 
 Average energy (i.e. negative expected log) of a `target` canonical form with
 parameters `(Jₜ, hₜ, gₜ)` with respect to a normalized non-degenerate reference
-(`ref`) canonical form with parameters `(Jᵣ, hᵣ)` (specifying `gᵣ` is
-unnecessary to compute this quantity). When the target canonical form is also
-normalized and non-degenerate, this is equal to their cross-entropy. If
-`dropg=true`, then average energy is computed assuming that `gₜ=0`.
+(`ref`) canonical form with parameters `(Jᵣ, hᵣ)`. The reference distribution
+is normalized, so specifying `gᵣ` is unnecessary.
+When the target canonical form is also normalized and non-degenerate,
+this is equal to their cross-entropy: H(fᵣ, fₜ) = - Eᵣ(log fₜ) = - ∫ fᵣ log fₜ .
+If `dropg=true`, then average energy is computed assuming that `gₜ=0`.
 
 ## Calculation:
-    `ref`: f(x) = C(Jᵣ, hᵣ, _) ≡ x ~ 𝒩(μ=Jᵣ⁻¹hᵣ, Σ=Jᵣ⁻¹)
-    `target`: C(Jₜ, hₜ, gₜ)
 
-        E[-log C(Jₜ, hₜ, gₜ)]
-    = E[(1/2)x'*Jₜ*x - hₜ'x - gₜ)] where x ∼ C(Jᵣ, hᵣ, _)
-    = (1/2)*(μᵣ'*Jₜ*μᵣ + tr(Jₜ*Jᵣ⁻¹)) - hₜ'*μᵣ - gₜ
-    = (1/2)*(tr(Jₜ*μᵣ*μᵣ') + tr(Jₜ*Jᵣ⁻¹)) - hₜ'*μᵣ - gₜ
+ref: f(x) = C(x | Jᵣ, hᵣ, _) is the density of 𝒩(μ=Jᵣ⁻¹hᵣ, Σ=Jᵣ⁻¹)  
+target: C(x | Jₜ, hₜ, gₜ) = exp( - (1/2)x'Jₜx - hₜ'x - gₜ )
+
+    E[-log C(X | Jₜ, hₜ, gₜ)] where X ∼ C(Jᵣ, hᵣ, _)
+     = (1/2)*(μᵣ'*Jₜ*μᵣ + tr(Jₜ*Jᵣ⁻¹)) - hₜ'*μᵣ - gₜ
+     = (1/2)*(tr(Jₜ*μᵣ*μᵣ') + tr(Jₜ*Jᵣ⁻¹)) - hₜ'*μᵣ - gₜ
 
 The second version takes two possible beliefs (`ref`, `target`) for a given
 cluster/sepset and computes the average energy of `target` with respect to `ref`
