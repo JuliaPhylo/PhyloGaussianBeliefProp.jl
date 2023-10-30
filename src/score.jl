@@ -60,6 +60,9 @@ function average_energy(refcanon::Tuple, targetcanon::Tuple, dropg::Bool=false)
     isempty(refcanon[1]) && return -targetcanon[3]
     Jᵣ = LA.cholesky(refcanon[1])
     μᵣ = Jᵣ \ refcanon[2]
+    # fixit: if reference belief, update its .μ to store what was just calculated?
+    # or write separate function to calculate PDMat of reference, update μ and output PDMat?
+    # μ is used for other purposes, e.g. ancestral state reconstruction, so downstream advantages
     (Jₜ, hₜ, gₜ) = targetcanon
     # fixit: check for more efficient order of operations
     if dropg gₜ = zero(gₜ) end
@@ -93,14 +96,16 @@ function free_energy(beliefs::ClusterGraphBelief{B}) where B<:Belief{T} where T<
     b = beliefs.belief
     init_b = beliefs.factor
     nbeliefs = length(b)
-    nclusters = beliefs.nclusters
+    nclu = nclusters(beliefs)
     ave_energy = zero(T)
     approx_entropy = zero(T)
-    for i in 1:nclusters
+    for i in 1:nclu
+        # inefficient: 2 cholesky decompositions of b[i].
+        # fixit: do 1 PDMat only, then modify average_energy and entropy to use it
         ave_energy += average_energy(b[i], init_b[i])
         approx_entropy += entropy(b[i])
     end
-    for i in (nclusters+1):nbeliefs
+    for i in (nclu+1):nbeliefs
         approx_entropy -= entropy(b[i])
     end
     return (ave_energy, approx_entropy, ave_energy - approx_entropy)
