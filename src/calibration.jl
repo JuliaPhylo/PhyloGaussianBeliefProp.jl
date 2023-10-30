@@ -149,7 +149,6 @@ function propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,
     end
 end
 
-#------ parameter optimization. fixit: place in some other file? ------#
 """
     calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief, clustergraph,
         nodevector_preordered, tbl::Tables.ColumnTable, taxa::AbstractVector,

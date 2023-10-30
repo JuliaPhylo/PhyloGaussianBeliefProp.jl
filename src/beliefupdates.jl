@@ -148,7 +148,6 @@ function absorbleaf!(h,J,g, rowindex, tbl)
     if !isempty(missingindices)
         h,J,g = marginalizebelief(h,J,g, setdiff(1:length(h), missingindices), missingindices)
     end
-    # fixit: check that we correctly remove the missing data from scope
     return h,J,g
 end
 

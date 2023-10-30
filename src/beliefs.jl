@@ -151,7 +151,7 @@ function scopeindex(subset_labels::AbstractVector, subset_inscope::BitArray,
     return findall(subset_inclusterscope[belief_inscope])
 end
 
-# fixit: add option to turn off checks, and
+# todo perhaps: add option to turn off checks, and
 # add function to run these checks once between all incident sepset-cluster
 
 """
@@ -356,7 +356,7 @@ Assumptions:
   and sepset beliefs (of type `bclustertype`) come last,
   as when created by [`init_beliefs_allocate`](@ref)
 
-fixit: there is not need to output beliefs, as it's modified in place. instead,
+fixit: there is no need to output beliefs, as it's modified in place. instead,
 the output could give an array i_node -> index of belief the node familty was assigned to.
 
 Output: `beliefs` vector. Each belief & factor is modified in place.

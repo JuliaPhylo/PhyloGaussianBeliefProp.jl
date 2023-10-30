@@ -76,7 +76,7 @@ function moralize(net::HybridNetwork)
     return mg
 end
 
-#= todo fixit: add function to add more moralizing edges,
+#= todo perhaps: add function to add more moralizing edges,
 for a degenerate hybrid node with a single tree child to be remove from scope:
 connect the tree child to all its grandparents
 e.g. connect_degeneratehybridparents_treechild
@@ -643,7 +643,7 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
                     delete!(cg, lab2) # delete mb2 from cg
                     #= MetaGraphsNext bug here: see
                     issue #69 https://github.com/JuliaGraphs/MetaGraphsNext.jl/issues/69
-                    fixit: delete work-around below after the issue is fixed in MetaGraphsNext
+                    fixit: delete work-around below after MetaGraphsNext has new version with the fix
                     =#
                     for (l1,l2) in edge_labels(cg)
                         haskey(cg.edge_data, (l1,l2)) && continue

@@ -111,7 +111,6 @@ fixit: also reset message residuals to 0 and their flags to false?
 fixit: rename? init_clustergraphbeliefs_reset! or init_beliefs_fromfactors! ?
 """
 function init_beliefs_reset!(beliefs::ClusterGraphBelief)
-    # fixit: change name of method?
     nc, nb = nclusters(beliefs), length(beliefs.belief)
     b, f = beliefs.belief, beliefs.factor
     for i in 1:nc
