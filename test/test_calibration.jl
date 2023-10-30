@@ -276,9 +276,9 @@ end
         @test PGBP.varianceparam(mod) ≈ 0.35360518758586457
 
         lbc = GeneralLazyBufferCache(function (paramOriginal)
-            m = PGBP.UnivariateBrownianMotion(paramOriginal...)
-            belief = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m)
-            return PGBP.ClusterGraphBelief(belief)
+            mo = PGBP.UnivariateBrownianMotion(paramOriginal...)
+            bel = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, mo)
+            return PGBP.ClusterGraphBelief(bel)
         end)
         mod2, llscore2, opt2 = PGBP.calibrate_optimize_cliquetree_autodiff!(lbc, ct, net.nodes_changed,
             tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (1, -2))
@@ -313,6 +313,7 @@ end
         =#
 
         # x: 1 trait, some missing values
+        m = PGBP.UnivariateBrownianMotion(2, 3, 0)
         b = (@test_logs (:error,"tip B2 in network without any data") PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, ct, m))
         PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed);
         ctb = PGBP.ClusterGraphBelief(b)
@@ -331,9 +332,9 @@ end
         @test PGBP.varianceparam(mod) ≈ 11.257682945973125
 
         lbc = GeneralLazyBufferCache(function (paramOriginal)
-            m = PGBP.UnivariateBrownianMotion(paramOriginal...)
-            belief = PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, ct, m)
-            return PGBP.ClusterGraphBelief(belief)
+            mo = PGBP.UnivariateBrownianMotion(paramOriginal...)
+            bel = PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, ct, mo)
+            return PGBP.ClusterGraphBelief(bel)
         end)
         mod2, llscore2, opt2 = (@test_logs (:error, "tip B2 in network without any data") PGBP.calibrate_optimize_cliquetree_autodiff!(lbc, ct, net.nodes_changed,
             tbl_x, df.taxon, PGBP.UnivariateBrownianMotion, (1, -2)))
@@ -361,9 +362,9 @@ end
         @test PGBP.varianceparam(mod) ≈ [11.257682945973125, 0.35360518758586457]
 
         lbc = GeneralLazyBufferCache(function (paramOriginal)
-            m = PGBP.MvDiagBrownianMotion(paramOriginal...)
-            belief = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m)
-            return PGBP.ClusterGraphBelief(belief)
+            mo = PGBP.MvDiagBrownianMotion(paramOriginal...)
+            bel = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, mo)
+            return PGBP.ClusterGraphBelief(bel)
         end)
         mod2, llscore2, opt2 = PGBP.calibrate_optimize_cliquetree_autodiff!(lbc, ct, net.nodes_changed,
             tbl, df.taxon, PGBP.MvDiagBrownianMotion, ((2, 1), (1, -1)))
