@@ -36,9 +36,12 @@ A "belief" is an exponential quadratic form, using the canonical parametrization
 
     C(x | J,h,g) = exp( -(1/2)x'Jx + h'x + g )
 
-It is a *normalized* distribution density if g = - (1/2) ( log(2πΣ) + (x-μ)'J(x-μ) ).
+It is a *normalized* distribution density if
 
-- μ is the mean vector (stored but typically not updated) of type V,
+    g = - (1/2) (log(2πΣ) + μ'Jμ)
+      = - entropy of normalized distribution + (1/2) dim(μ) - (1/2) μ'Jμ.
+
+- μ is the mean, of type V (stored but typically not updated)
 - h = inv(Σ)μ is the potential, also of type V,
 - Σ is the variance matrix (not stored)
 - J = inv(Σ) is the precision matrix, of type P

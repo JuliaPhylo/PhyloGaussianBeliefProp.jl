@@ -31,8 +31,19 @@ parameters `(Jₜ, hₜ, gₜ)` with respect to a normalized non-degenerate refe
 (`ref`) canonical form with parameters `(Jᵣ, hᵣ)`. The reference distribution
 is normalized, so specifying `gᵣ` is unnecessary.
 When the target canonical form is also normalized and non-degenerate,
-this is equal to their cross-entropy: H(fᵣ, fₜ) = - Eᵣ(log fₜ) = - ∫ fᵣ log fₜ .
+this is equal to their cross-entropy:
+
+    H(fᵣ, fₜ) = - Eᵣ(log fₜ) = - ∫ fᵣ log fₜ .
+
 If `dropg=true`, then average energy is computed assuming that `gₜ=0`.
+`ref` is assumed to be non-degenerate, that is, `Jᵣ` should be positive definite.
+
+The second method takes `AbstractBelief`s, which contain `h` and `J` fields,
+and computes the average energy of `target` with respect to `ref` by applying
+the first method to their canonical parameters.
+
+The third method is similar to the second one, except that `target` is specified
+by its canonical parameters.
 
 ## Calculation:
 
@@ -43,13 +54,6 @@ target: C(x | Jₜ, hₜ, gₜ) = exp( - (1/2)x'Jₜx - hₜ'x - gₜ )
      = (1/2)*(μᵣ'*Jₜ*μᵣ + tr(Jₜ*Jᵣ⁻¹)) - hₜ'*μᵣ - gₜ
      = (1/2)*(tr(Jₜ*μᵣ*μᵣ') + tr(Jₜ*Jᵣ⁻¹)) - hₜ'*μᵣ - gₜ
 
-The second version takes two possible beliefs (`ref`, `target`) for a given
-cluster/sepset and computes the average energy of `target` with respect to `ref`
-by applying the first version to their canonical parameters. `ref` is assumed to
-be non-degenerate (i.e. `Jᵣ` is positive-definite).
-
-The third version is similar to the second one, except that `target` is specified
-by its canonical parameters.
 """
 function average_energy(refcanon::Tuple, targetcanon::Tuple, dropg::Bool=false)
     # fixit: review. If reference is constant, then return `g` param of target.
