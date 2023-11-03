@@ -273,3 +273,53 @@ function init_messages!(beliefs::ClusterGraphBelief, cgraph::MetaGraph)
         end
     end
 end
+
+"""
+    regularizebeliefs!(beliefs::ClusterGraphBelief, clustergraph)
+
+Modify naively assigned beliefs (see [`init_beliefs_assignfactors!`](@ref)) of a
+cluster graph (while preserving the cluster graph invariant) so that all cluster
+beliefs are non-degenerate, and for any subsequent schedule of messages:
+
+        (1) cluster/sepset beliefs stay non-degenerate (i.e. positive definite)
+        (2) all messages sent are well-defined (i.e. can be computed) and are
+        positive semidefinite
+
+This modification is described as "regularization" in the sense that the initial
+cluster/sepset precisions are perturbed from their actual value.
+
+## Algorithm
+1. For each cluster, loop through its incident edges. For each sepset, add ϵ > 0
+to the diagonal entries of its precision (i.e. the `J` parameter).
+2. To preserve the cluster graph invariant, each time the precision of a sepset
+belief is modified, make an equivalent change to the precision of the cluster
+belief.
+For example, if the diagonal entry for variable `x` is incremented in the sepset
+precision, then increment the diagonal entry for variable `x` in the cluster
+precision by the same amount.
+"""
+function regularizebeliefs!(beliefs::ClusterGraphBelief, cgraph::MetaGraph)
+    #= Notes:
+    Guarantees (1) and (2) stated above are different from those described in
+    Lemma 2 of Du et al. (2017): "Convergence Analysis of Distributed Inference
+    with Vector-Valued Gaussian Belief Propagation". They have that all
+    Sum-Product messages after a specific initialization are positive definite.
+    In contrast, translating our setting to the Sum-Product framework, we may
+    have Sum-Product messages that are positive semidefinite but not definite,
+    though we show that the cluster beliefs will still remain positive definite
+    so that messages sent are always well-defined.
+    * Todo (Ben): I'm formalizing the explanation of this. I also think that a
+    sufficient condition for this may be the absence of deterministic factors. =#
+    b = beliefs.belief
+    for clusterlab in labels(cgraph)
+        cluster_to = b[clusterindex(clusterlab, beliefs)] # receiving-cluster
+        ϵ = maximum(abs, cluster_to.J) # regularization constant
+        for nblab in neighbor_labels(cgraph, clusterlab)
+            sepset = b[sepsetindex(clusterlab, nblab, beliefs)]
+            upind = scopeindex(sepset, cluster_to) # indices to be updated
+            d = length(upind)
+            view(cluster_to.J, upind, upind) .+= ϵ*LA.I(d) # regularize cluster precision
+            sepset.J .+= ϵ*LA.I(d) # preserve cluster graph invariant
+        end
+    end
+end
