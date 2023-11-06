@@ -313,7 +313,7 @@ function regularizebeliefs!(beliefs::ClusterGraphBelief, cgraph::MetaGraph)
     b = beliefs.belief
     for clusterlab in labels(cgraph)
         cluster_to = b[clusterindex(clusterlab, beliefs)] # receiving-cluster
-        ϵ = maximum(abs, cluster_to.J) # regularization constant
+        ϵ = max(eps(), maximum(abs, cluster_to.J)) # regularization constant
         for nblab in neighbor_labels(cgraph, clusterlab)
             sepset = b[sepsetindex(clusterlab, nblab, beliefs)]
             upind = scopeindex(sepset, cluster_to) # indices to be updated

@@ -631,13 +631,20 @@ See also: [`average_energy`](@ref)
 function approximate_kl!(res::AbstractResidual, sepset::AbstractBelief,
     residcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}, T}) where {T <: Real}
     # TODO: For ForwardDiff to work well with GeneralLazyBufferCache, type T must be specified.
-    #=
-    isposdef(C::Union{Cholesky,CholeskyPivoted}) = C.info == 0
-    There is a bug in StaticArrays.jl
-    =#
-    # note: `isposdef` returns true for size (0,0) MMatrices and the [0.0] MMatrix
-    if LA.isposdef(sepset.J) && size(sepset.J)[1] > 0 &&
-        (size(sepset.J)[1] > 1 || sepset.J[1] > 0)
+    #= edge cases: `isposdef` returns true for
+    - size (0,0) MMatrices
+    - [0.0] MMatrix (StaticArrays.jl bug:
+    isposdef(C::Union{Cholesky,CholeskyPivoted}) = C.info == 0)
+    - [D;;], where D is a dual number with D.value = 0.0 (in contrast, isposdef(D)
+    returns false) =#
+    #= fixit: replace `convert(Matrix, sepset.J)` with sepset.J when
+    StaticArrays.jl is more robust for the expected output of isposdef =#
+    if !isempty(sepset.J) && LA.isposdef(convert(Matrix, sepset.J)) &&
+            sepset.J[1] > 0
+        #= `sepset.J[1] > 0` is needed (otherwise, the calibrate...autodiff!
+        methods can try to compute the following line and error even when
+        sepset.J is positive semidefinite) since `isposdef([D;;])` returns true
+        for dual number D with D.value = 0.0 =#
         res.kldiv[1] = -average_energy(sepset, residcanon, true)
         iscalibrated_kl!(res)
     end

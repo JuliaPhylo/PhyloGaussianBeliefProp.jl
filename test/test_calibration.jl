@@ -230,6 +230,30 @@ name by cluster graph method used =#
     end
 end
 @testset "with optimization" begin
+    @testset "Mateescu" begin
+        netstr = "((((g:1)#H4:1)#H2:2.04,(d:1,(#H2:0.01::0.5,#H4:1::0.5)#H3:1)D:1,(#H3:1::0.5)#H1:0.01)B:1,#H1:1.01::0.5)A;"
+        net = readTopology(netstr)
+        df = DataFrame(taxon=["d","g"], y=[1.0,-1.0])
+        tbl_y = columntable(select(df, :y))
+        
+        @testset "Join-graph" begin
+            cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3))
+            m = PGBP.UnivariateBrownianMotion(5, 10, 0)
+            b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
+            cgb = PGBP.ClusterGraphBelief(b)
+            mod, fenergy, opt = PGBP.calibrate_optimize_clustergraph!(cgb, cg,
+                net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
+                (5,10))
+            # σ2: 0.5932929751843058, μ: -0.0753438601958511, fenergy: 3.2476515320155652
+            ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
+            b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
+            ctb = PGBP.ClusterGraphBelief(b)
+            mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(ctb, ct,
+                net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
+                (5,10))
+            # σ2: 0.5932930079316453, μ: -0.07534357688052816, llscore: -3.276318068707007
+        end
+    end
     @testset "4-taxon, level-1: #1" begin
         netstr = "(A:2.5,((B:1,#H1:0.5::0.1):1,(C:1,(D:0.5)#H1:0.5::0.9):1):0.5);"
         net = readTopology(netstr)
