@@ -4,9 +4,9 @@ Test `calibrate_optimize...` methods over larger networks. For now:
 graphs
 (2) compare parameter estimates among cluster graphs and clique tree
 =#
-@testset "calibration w/ optimization" begin
+@testset "calibration with optimization" begin
     @testset "mateescu 2010" begin
-        net = readTopology("test/example_networks/mateescu_2010.txt")
+        net = readTopology("test/example_networks/mateescu_2010.phy")
         df = DataFrame(taxon=["d","g"], y=[1.0,-1.0])
         tbl_y = columntable(select(df, :y))
         cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3))
@@ -36,7 +36,7 @@ graphs
         # σ2: 0.5932930079316453, μ: -0.07534357688052816, llscore: -3.276318068707007
     end
     @testset "lazaridis 2014" begin # 21 nodes: 7 tips, 4 hybrids
-        net = readTopology("test/example_networks/lazaridis_2014.txt")
+        net = readTopology("test/example_networks/lazaridis_2014.phy")
         tipnames = tipLabels(net) # A, B, C, D, E, F, G
         # Random.seed!(100); y = rand(length(tipnames))
         df = DataFrame(taxon=tipnames, y=[0.12364754150469992,
@@ -70,7 +70,7 @@ graphs
         # σ2: 0.0575570466385407, μ: 0.2667930359317636, llscore: -2.7983124321615196
     end
     @testset "nielsen 2023" begin # 25 nodes: 11 tips, 4 hybrids
-        net = readTopology("test/example_networks/nielsen_2023.txt")
+        net = readTopology("test/example_networks/nielsen_2023.phy")
         tipnames = tipLabels(net) # Malta, Anzick, Aymara, USR1, Athabascan, H1,
             # Koryak, Saqqaq, H4, Ket, UstIshim
         # Random.seed!(302); y = rand(length(tipnames))
@@ -106,7 +106,7 @@ graphs
         # σ2: 0.05141066842693317, μ: 0.42304252136242837, llscore: -3.5019465814003974
     end
     @testset "maier 2023" begin
-        net = readTopology("test/example_networks/maier_2023.txt")
+        net = readTopology("test/example_networks/maier_2023.phy")
         tipnames = tipLabels(net) # D, E, A, B, H, F, G, C, OUT
         # Random.seed!(2439); y = rand(length(tipnames))
         df = DataFrame(taxon=tipnames, y=[0.9284240880503369, 0.6994810279219996,
@@ -141,7 +141,7 @@ graphs
         # σ2: 0.05963752442674132, μ: 0.2068263407492875, llscore: -4.058399611427243
     end
     @testset "bergstrom 2020" begin # 19 nodes: 7 tips, 3 hybrids
-        net = readTopology("test/example_networks/bergstrom_2020.txt")
+        net = readTopology("test/example_networks/bergstrom_2020.phy")
         tipnames = tipLabels(net) # America_pool, New_Guinea, Baikal_pool,
             # Karelia_Mesolithic, Germany_EarlyNeolithic, Israel_7000BP, Andean_fox
         # Random.seed!(103); y = rand(length(tipnames))
@@ -176,7 +176,7 @@ graphs
         # σ2: 0.13135581833904802, μ: 0.4861293844675344, llscore: -3.4623261393445737
     end
     @testset "sun 2023" begin # 42 nodes: 10 tips, 6 hybrids
-        net = readTopology("test/example_networks/sun_2023.txt")
+        net = readTopology("test/example_networks/sun_2023.phy")
         tipnames = tipLabels(net) # PUN, PLE, TIG, SUM, JAX, COR, VIR, ALT, RUSA21, AMO
         # Random.seed!(3030); y = rand(length(tipnames))
         df = DataFrame(taxon=tipnames, y=[0.26435817547115015, 0.3118520778265339,
