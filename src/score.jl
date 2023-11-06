@@ -1,4 +1,25 @@
 """
+getcholesky: warning as it returns PDMat object, not a subtype of Cholesky.
+getcholesky_μ
+getcholesky_μ!
+fixit: write docstring, or delete these functions if not used
+"""
+function getcholesky(J::AbstractMatrix)
+    return PDMat(J) # LA.cholesky(b.J)
+end
+function getcholesky_μ(J::AbstractMatrix,h)
+    Jchol = getcholesky(J)
+    μ = Jchol \ h
+    return (Jchol, μ)
+end
+function getcholesky_μ!(b::Belief)
+    (Jchol, μ) = getcholesky_μ(b.J, b.h)
+    b.μ .= μ
+    return (Jchol, μ)
+end
+
+"""
+    entropy(J::Cholesky)
     entropy(J::AbstractMatrix)
     entropy(belief::AbstractBelief)
 
@@ -12,11 +33,14 @@ The second version applies the first to the belief precision `belief.J`.
 and extended to Gaussian distributions in Distributions.jl around
 [here](https://github.com/JuliaStats/Distributions.jl/blob/master/src/multivariate/mvnormal.jl#L95)
 """
+function entropy(J::Union{LA.Cholesky{T},PDMat{T}}) where T<:Real
+    n = size(J,2)
+    n == 0 && return zero(T)
+    (n * (T(log2π) + 1) - LA.logdet(J)) / 2
+end
 function entropy(J::AbstractMatrix{T}) where T<:Real
     n = size(J,2)
-    if n == 0
-        return zero(T)
-    end
+    n == 0 && return zero(T)
     (n * (T(log2π) + 1) - LA.logdet(LA.Symmetric(J))) / 2
 end
 entropy(cluster::AbstractBelief) = entropy(cluster.J)
@@ -55,23 +79,19 @@ target: C(x | Jₜ, hₜ, gₜ) = exp( - (1/2)x'Jₜx - hₜ'x - gₜ )
      = (1/2)*(tr(Jₜ*μᵣ*μᵣ') + tr(Jₜ*Jᵣ⁻¹)) - hₜ'*μᵣ - gₜ
 
 """
-function average_energy(refcanon::Tuple, targetcanon::Tuple, dropg::Bool=false)
-    # fixit: review. If reference is constant, then return `g` param of target.
-    isempty(refcanon[1]) && return -targetcanon[3]
-    Jᵣ = LA.cholesky(refcanon[1])
-    μᵣ = Jᵣ \ refcanon[2]
-    # fixit: if reference belief, update its .μ to store what was just calculated?
-    # or write separate function to calculate PDMat of reference, update μ and output PDMat?
-    # μ is used for other purposes, e.g. ancestral state reconstruction, so downstream advantages
-    (Jₜ, hₜ, gₜ) = targetcanon
-    # fixit: check for more efficient order of operations
-    if dropg gₜ = zero(gₜ) end
-    0.5*LA.tr(Jₜ*(μᵣ*μᵣ' + LA.inv(Jᵣ))) - hₜ'*μᵣ - gₜ
+function average_energy(ref::Belief, target::AbstractBelief, dropg::Bool=false)
+    gₜ = (dropg ? zero(target.g[1]) : target.g[1])
+    average_energy(ref, target.J, target.h, gₜ)
 end
-average_energy(reference::AbstractBelief, target::AbstractBelief, drop::Bool=false) =
-    average_energy((reference.J, reference.h), (target.J, target.h, target.g[1]), drop)
-average_energy(reference::AbstractBelief, targetcanon::Tuple, drop::Bool=false) =
-    average_energy((reference.J, reference.h), targetcanon, drop)
+function average_energy(ref::Belief, Jₜ, hₜ, gₜ)
+    (Jᵣ, μᵣ) = getcholesky_μ!(ref)
+    average_energy(Jᵣ, μᵣ, Jₜ, hₜ, gₜ)
+end
+function average_energy(Jᵣ::Union{LA.Cholesky,PDMat}, μᵣ, Jₜ, hₜ, gₜ)
+    # fixit: more efficient calculation?
+    LA.tr(Jₜ*(μᵣ*μᵣ' + LA.inv(Jᵣ))) / 2 - hₜ'*μᵣ - gₜ
+end
+
 
 """
     free_energy(beliefs::ClusterGraphBelief)

@@ -93,11 +93,14 @@ function integratebelief!(b::AbstractBelief)
     b.μ .= μ
     return (μ,g)
 end
-function integratebelief(h,J,g::Real)
-    ni = length(h)
+function integratebelief(h,J,g)
     Ji = PDMat(J) # fails if cholesky fails, e.g. if J=0
-    μi = Ji \ h
-    messageg = g + (ni*log2π - LA.logdet(Ji) + sum(h .* μi))/2
+    integratebelief(h,Ji,g)
+end
+function integratebelief(h,J::Union{LA.Cholesky{T},PDMat{T}},g::T) where T<:Real
+    n = length(h)
+    μ = J \ h
+    messageg = g + (n*T(log2π) - LA.logdet(J) + sum(h .* μ))/2
     return (μi, messageg)
 end
 

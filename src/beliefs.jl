@@ -648,7 +648,7 @@ function approximate_kl!(res::AbstractResidual, sepset::AbstractBelief,
         methods can try to compute the following line and error even when
         sepset.J is positive semidefinite) since `isposdef([D;;])` returns true
         for dual number D with D.value = 0.0 =#
-        res.kldiv[1] = -average_energy(sepset, residcanon, true)
+        res.kldiv[1] = -average_energy(sepset, residcanon[1], residcanon[2], zero(T))
         iscalibrated_kl!(res)
     end
 end
