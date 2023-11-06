@@ -379,8 +379,9 @@ Assumptions:
   and sepset beliefs (of type `bclustertype`) come last,
   as when created by [`init_beliefs_allocate`](@ref)
 
-fixit: there is no need to output beliefs, as it's modified in place. instead,
-the output could give an array i_node -> index of belief the node familty was assigned to.
+Output: vector `node2belief` such that, if `i` is the preorder index of a node
+in the network, `node2belief[i]` is the index of the belief that the node family
+was assigned to.
 
 Output: `beliefs` vector. Each belief & factor is modified in place.
 """
@@ -391,6 +392,7 @@ function init_beliefs_assignfactors!(
     init_beliefs_reset!(beliefs)
     numtraits = dimension(model)
     visited = falses(length(prenodes))
+    node2belief = Vector{Int}(undef, length(prenodes)) # node preorder index → belief index
     for (i_node,node) in enumerate(prenodes)
         visited[i_node] && continue # skip child of unscoped degenerate hybrid
         nodelab = node.name
@@ -449,6 +451,7 @@ function init_beliefs_assignfactors!(
                 i_inscope = (i_node,i_parent)
             end
         end
+        node2belief[i_node] = i_b
         be = beliefs[i_b]
         be.type == bclustertype || error("belief $(be.metadata) is of type $(be.type)")
         if isrootfixed(model) && 1 ∈ i_inscope # the node's parents include the root
@@ -486,7 +489,7 @@ function init_beliefs_assignfactors!(
         # do NOT update μ = J^{-1} h because J often singular before propagation
         # be.μ .= PDMat(LA.Symmetric(be.J)) \ be.h
     end =#
-    return beliefs
+    return node2belief
 end
 
 #= messages in ReactiveMP.jl have an `addons` field that stores computation history:

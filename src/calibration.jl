@@ -289,7 +289,8 @@ end
 
 """
     calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief, clustergraph,
-        nodevector_preordered, tbl::Tables.ColumnTable, taxa::AbstractVector,
+        nodevector_preordered, node2belief,
+        tbl::Tables.ColumnTable, taxa::AbstractVector,
         evolutionarymodel_name)
 
 For a Brownian Motion with a fixed root, compute the exact maximum likelihood
@@ -313,6 +314,7 @@ Warning: there is *no* check that the cluster graph is in fact a clique tree.
 # TODO network case
 function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
     cgraph, prenodes::Vector{PN.Node},
+    node2belief::AbstractVector{<:Integer},
     tbl::Tables.ColumnTable, taxa::AbstractVector,
     evomodelfun, # constructor function
     evomodelparams
@@ -342,12 +344,13 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
         i == 1 && continue
         # find associated cluster
         nodechild = prenodes[i]
-        clusterindex = findClusterIndex(nodechild, beliefs.belief)
+        clusterindex = node2belief[i]
         b = beliefs.belief[clusterindex]
         dimclus = length(b.nodelabel)
         # child ind in the cluster
         childind = findfirst(b.nodelabel .== i)
-        # find parents: assumes that a cluster has all the parents of a node, which should be the case thanks to findClusterIndex
+        # find parents: should be in the cluster, if node2belief is valid
+        # fixit: why not use PN.getparents and PN.getparentedges below?
         parind = findall([PN.isconnected(prenodes[nl], nodechild) && nl != i for nl in b.nodelabel])
         all_parent_edges = [PN.getConnectingEdge(prenodes[b.nodelabel[d]], nodechild) for d in parind]
         all_gammas = zeros(dimclus)
@@ -427,6 +430,8 @@ end
 In the belief in the vector that contains both the node and all its parents.
 Throws an error if this cluster does not ex
 
+fixit: delete, function not used, and prone to error because it uses
+the belief's metadata instead of the belief's node labels.
 """
 function findClusterIndex(node::PN.Node, belief_vector)
     nodelab = node.name

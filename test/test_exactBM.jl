@@ -171,10 +171,11 @@ end # of root update
     # exact REML
     m = PGBP.UnivariateBrownianMotion(1, 0, Inf) # infinite root variance
     b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-    PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+    node2belief = PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
     cgb = PGBP.ClusterGraphBelief(b)
     PGBP.calibrate!(cgb, [spt])
-    mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct, net.nodes_changed,
+    mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct,
+        net.nodes_changed, node2belief,
         tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (1,0,0))
 
     @test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
@@ -199,11 +200,12 @@ end # of root update
     # x,y: 2 traits, no missing values
     m = PGBP.MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf))
     b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-    PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
+    node2belief = PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
     cgb = PGBP.ClusterGraphBelief(b)
     PGBP.calibrate!(cgb, [spt])
-    mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct, net.nodes_changed,
-       tbl, df.taxon, PGBP.MvFullBrownianMotion, ([1 0; 0 1], [0,0]))
+    mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct,
+        net.nodes_changed, node2belief,
+        tbl, df.taxon, PGBP.MvFullBrownianMotion, ([1 0; 0 1], [0,0]))
 
     #@test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
     #@test llscore ≈  -6.851098376474686
@@ -260,10 +262,11 @@ end
         # exact REML
         m = PGBP.UnivariateBrownianMotion(1, 0, Inf) # infinite root variance
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+        node2belief = PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
         cgb = PGBP.ClusterGraphBelief(b)
         PGBP.calibrate!(cgb, [spt])
-        mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct, net.nodes_changed,
+        mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct,
+            net.nodes_changed, node2belief,
             tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (1,0,0))
 
         @test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
@@ -288,10 +291,11 @@ end
         # x,y: 2 traits, no missing values
         m = PGBP.MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf))
         b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
+        node2belief = PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
         cgb = PGBP.ClusterGraphBelief(b)
         PGBP.calibrate!(cgb, [spt])
-        mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct, net.nodes_changed,
+        mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct,
+           net.nodes_changed, node2belief,
            tbl, df.taxon, PGBP.MvFullBrownianMotion, ([1 0; 0 1], [0,0]))
 
         #@test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
