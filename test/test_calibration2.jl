@@ -87,16 +87,17 @@ graphs
         mod, fenergy, opt = PGBP.calibrate_optimize_clustergraph!(cgb, cg,
                 net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
                 (1,0.5))
-        # σ2: 0.05141066851135868, μ: 0.4230425215093448, fenergy: 3.4952232954589
+        # σ2: 0.05501652161167238, μ: 0.3528578584970481, fenergy: 4.010646506286683
 
         ## fixit: debug this case
         cg = PGBP.clustergraph!(net, PGBP.Bethe())
         m = PGBP.UnivariateBrownianMotion(1, 0.5, 0)
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m)
         cgb = PGBP.ClusterGraphBelief(b)
-        @test_broken mod, fenergy, opt =
-            PGBP.calibrate_optimize_clustergraph!(cgb, cg, net.nodes_changed,
-            tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (1,0.5))
+        mod, fenergy, opt = PGBP.calibrate_optimize_clustergraph!(cgb, cg,
+            net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
+            (1,0.5))
+        # σ2: 0.05501652208707327, μ: 0.35285785701579464, fenergy: 3.994971574668945
 
         ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
@@ -104,7 +105,7 @@ graphs
         mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(ctb, ct,
             net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
             (1,0.5))
-        # σ2: 0.05141066842693317, μ: 0.42304252136242837, llscore: -3.5019465814003974
+        # σ2: 0.05501652212220876, μ: 0.35285785704564365, llscore: -4.033027387049081
     end
     @testset "maier 2023" begin
         net = readTopology(joinpath(examplenetdir, "maier_2023.phy"))
