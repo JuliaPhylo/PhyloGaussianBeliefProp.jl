@@ -88,8 +88,8 @@ function average_energy(ref::Belief, Jₜ, hₜ, gₜ)
     average_energy(Jᵣ, μᵣ, Jₜ, hₜ, gₜ)
 end
 function average_energy(Jᵣ::Union{LA.Cholesky,PDMat}, μᵣ, Jₜ, hₜ, gₜ)
-    # fixit: more efficient calculation?
-    LA.tr(Jₜ*(μᵣ*μᵣ' + LA.inv(Jᵣ))) / 2 - hₜ'*μᵣ - gₜ
+    # fixit: invquad is still causing PosDefException issues
+    (LA.tr(Jᵣ \ Jₜ) + quad(Jₜ, μᵣ)) / 2 - LA.dot(hₜ, μᵣ) - gₜ
 end
 
 
@@ -120,10 +120,10 @@ function free_energy(beliefs::ClusterGraphBelief{B}) where B<:Belief{T} where T<
     ave_energy = zero(T)
     approx_entropy = zero(T)
     for i in 1:nclu
-        # inefficient: 2 cholesky decompositions of b[i].
-        # fixit: do 1 PDMat only, then modify average_energy and entropy to use it
-        ave_energy += average_energy(b[i], init_b[i])
-        approx_entropy += entropy(b[i])
+        (Jclu, μclu) = getcholesky_μ!(b[i]) # do 1 cholesky of b[i], use it twice
+        ss = init_b[i]
+        ave_energy += average_energy(Jclu, μclu, ss.J, ss.h, ss.g[1])
+        approx_entropy += entropy(Jclu)
     end
     for i in (nclu+1):nbeliefs
         approx_entropy -= entropy(b[i])

@@ -29,15 +29,15 @@ end
 function marginalizebelief(h,J,g::Real, keep_index, integrate_index)
     isempty(integrate_index) && return (h,J,g)
     ni = length(integrate_index)
-    Ji = PDMat(view(J, integrate_index, integrate_index)) # fails if cholesky fails, e.g. if J=0
+    Ji = PDMat(view(J, integrate_index, integrate_index)) # fails if non positive definite, e.g. J=0
     Jk  = view(J, keep_index, keep_index)
     Jki = view(J, keep_index, integrate_index)
     hi = view(h, integrate_index)
     hk = view(h, keep_index)
-    messageJ = Jk - X_invA_Xt(Ji, Jki) # Jk - Jki Ji^{-1} Jki'
+    messageJ = Jk - X_invA_Xt(Ji, Jki) # Jk - Jki Ji^{-1} Jki' without inv(Ji)
     μi = Ji \ hi
     messageh = hk - Jki * μi
-    messageg = g + (ni*log2π - LA.logdet(Ji) + sum(hi .* μi))/2
+    messageg = g + (ni*log2π - LA.logdet(Ji) + LA.dot(hi, μi))/2
     return (messageh, messageJ, messageg)
 end
 
@@ -101,7 +101,7 @@ function integratebelief(h,J::Union{LA.Cholesky{T},PDMat{T}},g::T) where T<:Real
     n = length(h)
     μ = J \ h
     messageg = g + (n*T(log2π) - LA.logdet(J) + sum(h .* μ))/2
-    return (μi, messageg)
+    return (μ, messageg)
 end
 
 """

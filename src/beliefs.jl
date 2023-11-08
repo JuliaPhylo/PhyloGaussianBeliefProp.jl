@@ -85,7 +85,8 @@ ntraits(b::Belief) = b.ntraits
 inscope(b::Belief) = b.inscope
 nodedimensions(b::Belief) = map(sum, eachslice(inscope(b), dims=2))
 dimension(b::Belief)  = sum(inscope(b))
-mvnormcanon(b::Belief) = MvNormalCanon(b.μ, b.h, PDMat(LA.Symmetric(b.J)))
+# commented out because not used:
+# mvnormcanon(b::Belief) = MvNormalCanon(b.μ, b.h, PDMat(LA.Symmetric(b.J)))
 
 function Base.show(io::IO, b::Belief)
     disp = "belief for " * (b.type == bclustertype ? "Cluster" : "SepSet") * " $(b.metadata),"
@@ -476,19 +477,7 @@ function init_beliefs_assignfactors!(
         view(be.h, factorind) .+= h
         view(be.J, factorind, factorind) .+= J
         be.g[1] += g
-        # @show be.h,be.J,be.g[1]
     end
-    #= removed because of too many cases when some clusters would be initialized to 0.
-    #  example: variable-clusters in Bethe cluster graph
-    for be in beliefs # sanity check: each cluster belief should be non-zero
-        # unless one variable was completely removed from the scope (e.g. leaf without any data)
-        be.type == bclustertype || break # sepsets untouched and listed last
-        @debug "cluster $(be.metadata), node labels $(nodelabels(be)), inscope: $(inscope(be)),\nμ: $(be.μ)\nh: $(be.h)\nJ: $(be.J)\ng: $(be.g[1])"
-        any(be.J .!= 0.0) || any(sum(inscope(be), dims = 1) .== 0) ||
-            error("belief for nodes $(nodelabels(be)) was not assigned any non-zero factor")
-        # do NOT update μ = J^{-1} h because J often singular before propagation
-        # be.μ .= PDMat(LA.Symmetric(be.J)) \ be.h
-    end =#
     return node2belief
 end
 
