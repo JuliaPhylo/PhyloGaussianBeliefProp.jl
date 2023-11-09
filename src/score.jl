@@ -1,17 +1,29 @@
 """
-getcholesky: warning as it returns PDMat object, not a subtype of Cholesky.
-getcholesky_μ
-getcholesky_μ!
-fixit: write docstring, or delete these functions if not used
+    getcholesky(J::AbstractMatrix)
+
+Cholesky decomposition of J, assumed to be symmetric *positive* definite,
+stored as a `PDMat` object.
+Warning: PDMat is not a subtype of Cholesky.
+[PDMats.jl](https://github.com/JuliaStats/PDMats.jl) is efficient for
+structured matrices (e.g diagonal or sparse) and has efficient methods for
+linear algebra, e.g. `\`, `invquad`, `X_invA_Xt` etc.
 """
 function getcholesky(J::AbstractMatrix)
     return PDMat(J) # LA.cholesky(b.J)
 end
-function getcholesky_μ(J::AbstractMatrix,h)
+"""
+    getcholesky_μ(J::AbstractMatrix, h)
+    getcholesky_μ!(belief::Belief)
+
+Tuple `(Jchol, μ)` where `Jchol` is a cholesky representation of `J` or `belief.J`
+and `μ` is J⁻¹h, used to update `belief.μ` (by the second method).
+"""
+function getcholesky_μ(J::AbstractMatrix, h)
     Jchol = getcholesky(J)
     μ = Jchol \ h
     return (Jchol, μ)
 end
+@doc (@doc getcholesky_μ) getcholesky_μ!
 function getcholesky_μ!(b::Belief)
     (Jchol, μ) = getcholesky_μ(b.J, b.h)
     b.μ .= μ
@@ -46,13 +58,13 @@ end
 entropy(cluster::AbstractBelief) = entropy(cluster.J)
 
 """
-    average_energy(ref::Tuple, target::Tuple, dropg::Bool=false)
-    average_energy(ref::AbstractBelief, target::AbstractBelief, dropg::Bool=false)
-    average_energy(ref::AbstractBelief, target::Tuple, dropg::Bool=false)
+    average_energy!(ref::Belief, target::AbstractBelief, dropg::Bool=false)
+    average_energy!(ref::Belief, Jₜ, hₜ, gₜ)
+    average_energy(Jᵣ::Union{LA.Cholesky,PDMat}, μᵣ, Jₜ, hₜ, gₜ)
 
 Average energy (i.e. negative expected log) of a `target` canonical form with
 parameters `(Jₜ, hₜ, gₜ)` with respect to a normalized non-degenerate reference
-(`ref`) canonical form with parameters `(Jᵣ, hᵣ)`. The reference distribution
+canonical form `ref` with parameters `(Jᵣ, hᵣ)`. The reference distribution
 is normalized, so specifying `gᵣ` is unnecessary.
 When the target canonical form is also normalized and non-degenerate,
 this is equal to their cross-entropy:
@@ -62,12 +74,9 @@ this is equal to their cross-entropy:
 If `dropg=true`, then average energy is computed assuming that `gₜ=0`.
 `ref` is assumed to be non-degenerate, that is, `Jᵣ` should be positive definite.
 
-The second method takes `AbstractBelief`s, which contain `h` and `J` fields,
-and computes the average energy of `target` with respect to `ref` by applying
-the first method to their canonical parameters.
-
-The third method is similar to the second one, except that `target` is specified
-by its canonical parameters.
+`average_energy!` modifies the reference belief by updating `ref.μ` to J⁻¹h.
+It calls `average_energy` after a cholesky decomposition of `ref.J`,
+stored in `Jᵣ`: see [`getcholesky_μ!`](@ref).
 
 ## Calculation:
 
@@ -75,21 +84,23 @@ ref: f(x) = C(x | Jᵣ, hᵣ, _) is the density of 𝒩(μ=Jᵣ⁻¹hᵣ, Σ=J�
 target: C(x | Jₜ, hₜ, gₜ) = exp( - (1/2)x'Jₜx - hₜ'x - gₜ )
 
     E[-log C(X | Jₜ, hₜ, gₜ)] where X ∼ C(Jᵣ, hᵣ, _)
-     = (1/2)*(μᵣ'*Jₜ*μᵣ + tr(Jₜ*Jᵣ⁻¹)) - hₜ'*μᵣ - gₜ
-     = (1/2)*(tr(Jₜ*μᵣ*μᵣ') + tr(Jₜ*Jᵣ⁻¹)) - hₜ'*μᵣ - gₜ
+    = 0.5 (μᵣ'Jₜ μᵣ + tr(Jᵣ⁻¹Jₜ)) - hₜ'μᵣ - gₜ
 
+With empty vectors and matrices (J's of dimension 0×0 and h's of length 0),
+the result is simply: - gₜ.
 """
-function average_energy(ref::Belief, target::AbstractBelief, dropg::Bool=false)
+function average_energy!(ref::Belief, target::AbstractBelief, dropg::Bool=false)
     gₜ = (dropg ? zero(target.g[1]) : target.g[1])
-    average_energy(ref, target.J, target.h, gₜ)
+    average_energy!(ref, target.J, target.h, gₜ)
 end
-function average_energy(ref::Belief, Jₜ, hₜ, gₜ)
+function average_energy!(ref::Belief, Jₜ, hₜ, gₜ)
     (Jᵣ, μᵣ) = getcholesky_μ!(ref)
     average_energy(Jᵣ, μᵣ, Jₜ, hₜ, gₜ)
 end
+@doc (@doc average_energy) average_energy!
 function average_energy(Jᵣ::Union{LA.Cholesky,PDMat}, μᵣ, Jₜ, hₜ, gₜ)
-    # fixit: invquad is still causing PosDefException issues
-    (LA.tr(Jᵣ \ Jₜ) + quad(Jₜ, μᵣ)) / 2 - LA.dot(hₜ, μᵣ) - gₜ
+    isempty(Jₜ) && return -gₜ # dot(x,A,x) fails on empty x & A
+    (LA.tr(Jᵣ \ Jₜ) + LA.dot(μᵣ, Jₜ, μᵣ)) / 2 - LA.dot(hₜ, μᵣ) - gₜ
 end
 
 
@@ -115,17 +126,20 @@ for Statisticians, Journal of the American statistical Association, 112:518,
 function free_energy(beliefs::ClusterGraphBelief{B}) where B<:Belief{T} where T<:Real
     b = beliefs.belief
     init_b = beliefs.factor
-    nbeliefs = length(b)
     nclu = nclusters(beliefs)
     ave_energy = zero(T)
     approx_entropy = zero(T)
     for i in 1:nclu
-        (Jclu, μclu) = getcholesky_μ!(b[i]) # do 1 cholesky of b[i], use it twice
-        ss = init_b[i]
-        ave_energy += average_energy(Jclu, μclu, ss.J, ss.h, ss.g[1])
-        approx_entropy += entropy(Jclu)
+        fac = init_b[i]
+        if isempty(fac.J) # then b[i].J should be empty too
+            ave_energy -= fac.g[1]
+        else # do 1 cholesky of b[i], use it twice
+            (Jclu, μclu) = getcholesky_μ!(b[i])
+            ave_energy += average_energy(Jclu, μclu, fac.J, fac.h, fac.g[1])
+            approx_entropy += entropy(Jclu)
+        end
     end
-    for i in (nclu+1):nbeliefs
+    for i in (nclu+1):length(b)
         approx_entropy -= entropy(b[i])
     end
     return (ave_energy, approx_entropy, ave_energy - approx_entropy)

@@ -27,7 +27,7 @@ PhyloNetworks = "0.16"
 StaticArrays = "1"
 StatsFuns = "1"
 Tables = "1"
-julia = "1.1"
+julia = "1.4" # for 3-argument dot
 
 [extras]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
