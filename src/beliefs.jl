@@ -604,6 +604,7 @@ given its belief after (`sepset`).
 This approximation computes the negative average energy of the residual canonical
 parameters, with the `g` parameter set to 0, with respect to the message
 canonical parameters.
+As a side product, `sepset.μ` is updated.
 
 ## Calculation:
 
@@ -618,7 +619,7 @@ residual: C(ΔJ = Jₘ - Jₛ, Δh = hₘ - hₛ, Δg = gₘ - gₛ)
     ≈ E[-(1/2)x'*ΔJ*x + Δh'x], Δg dropped
     = -average_energy(C(Jₘ, hₘ, _), C(ΔJ, Δh, 0))
 
-See also: [`average_energy`](@ref)
+See also: [`average_energy!`](@ref)
 """
 function approximate_kl!(res::AbstractResidual, sepset::AbstractBelief,
     residcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}, T}) where {T <: Real}
@@ -637,7 +638,7 @@ function approximate_kl!(res::AbstractResidual, sepset::AbstractBelief,
         methods can try to compute the following line and error even when
         sepset.J is positive semidefinite) since `isposdef([D;;])` returns true
         for dual number D with D.value = 0.0 =#
-        res.kldiv[1] = -average_energy(sepset, residcanon[1], residcanon[2], zero(T))
+        res.kldiv[1] = -average_energy!(sepset, residcanon[1], residcanon[2], zero(T))
         iscalibrated_kl!(res)
     end
 end
