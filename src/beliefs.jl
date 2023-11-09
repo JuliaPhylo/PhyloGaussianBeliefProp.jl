@@ -623,20 +623,21 @@ See also: [`average_energy`](@ref)
 function approximate_kl!(res::AbstractResidual, sepset::AbstractBelief,
     residcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}, T}) where {T <: Real}
     # TODO: For ForwardDiff to work well with GeneralLazyBufferCache, type T must be specified.
-    #= edge cases: `isposdef` returns true for
-    - size (0,0) MMatrices
-    - [0.0] MMatrix (StaticArrays.jl bug:
-    isposdef(C::Union{Cholesky,CholeskyPivoted}) = C.info == 0)
-    - [D;;], where D is a dual number with D.value = 0.0 (in contrast, isposdef(D)
-    returns false) =#
-    #= fixit: replace `convert(Matrix, sepset.J)` with sepset.J when
-    StaticArrays.jl is more robust for the expected output of isposdef =#
-    if !isempty(sepset.J) && LA.isposdef(convert(Matrix, sepset.J)) &&
-            sepset.J[1] > 0
-        #= `sepset.J[1] > 0` is needed (otherwise, the calibrate...autodiff!
-        methods can try to compute the following line and error even when
-        sepset.J is positive semidefinite) since `isposdef([D;;])` returns true
-        for dual number D with D.value = 0.0 =#
+    #= Check if empty because `isposdef` returns true for empty matrices, e.g.
+    both `Real[;;] |> isposdef` and `MMatrix{0,0}(Real[;;]) |> isposdef` return
+    `true`. =#
+    isempty(sepset.J) && return
+    sepsetJchol = LA.cholesky(sepset.J; check=false)
+    if LA.issuccess(sepsetJchol) && # factorization succeeded
+        #= Check that diagonal entries of lower factor are positive, to make sure
+        that J is psd. This is needed because the more generic cholesky method,
+        which is applied for example to matrices of Dual numbers, or Float64
+        matrices that are wrapped within another type (e.g. MMatrix) currently
+        does not throw an error for psd matrices.
+        This bug has been fixed here: https://github.com/JuliaLang/julia/pull/49417/commits,
+        though it has not been incorporated into the lastest stable release (1.9.3).
+        =#
+            all(sepsetJchol.L[i,i] > 0.0 for i in 1:dimension(sepset))#
         res.kldiv[1] = -average_energy(sepset, residcanon[1], residcanon[2], zero(T))
         iscalibrated_kl!(res)
     end

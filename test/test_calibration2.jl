@@ -35,6 +35,17 @@ graphs
             net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
             (5,10))
         # σ2: 0.5932930079316453, μ: -0.07534357688052816, llscore: -3.276318068707007
+
+        lbc = GeneralLazyBufferCache(function (paramOriginal)
+            mo = PGBP.UnivariateBrownianMotion(paramOriginal...)
+            bel = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, mo)
+            return PGBP.ClusterGraphBelief(bel)
+        end)
+        mod, llscore, opt = PGBP.calibrate_optimize_cliquetree_autodiff!(lbc, ct,
+            net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
+            (5,10))
+        # σ2: 0.593293007949088, μ: -0.07534357690948765, llscore: -3.2763180687070075
+
     end
     @testset "lazaridis 2014" begin # 21 nodes: 7 tips, 4 hybrids
         net = readTopology(joinpath(examplenetdir, "lazaridis_2014.phy"))
@@ -69,6 +80,16 @@ graphs
             net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
             (1,0.5))
         # σ2: 0.0575570466385407, μ: 0.2667930359317636, llscore: -2.7983124321615196
+
+        lbc = GeneralLazyBufferCache(function (paramOriginal)
+            mo = PGBP.UnivariateBrownianMotion(paramOriginal...)
+            bel = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, mo)
+            return PGBP.ClusterGraphBelief(bel)
+        end)
+        mod, llscore, opt = PGBP.calibrate_optimize_cliquetree_autodiff!(lbc, ct,
+            net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
+            (1,0.5))
+        # σ2: 0.057557046662558384, μ: 0.2667930355970642, llscore: -2.798312432161156
     end
     @testset "nielsen 2023" begin # 25 nodes: 11 tips, 4 hybrids
         net = readTopology(joinpath(examplenetdir, "nielsen_2023.phy"))
@@ -106,6 +127,16 @@ graphs
             net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
             (1,0.5))
         # σ2: 0.05501652212220876, μ: 0.35285785704564365, llscore: -4.033027387049081
+
+        lbc = GeneralLazyBufferCache(function (paramOriginal)
+            mo = PGBP.UnivariateBrownianMotion(paramOriginal...)
+            bel = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, mo)
+            return PGBP.ClusterGraphBelief(bel)
+        end)
+        mod, llscore, opt = PGBP.calibrate_optimize_cliquetree_autodiff!(lbc, ct,
+            net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
+            (1,0.5))
+        # σ2: 0.05501652207907982, μ: 0.3528578566682893, llscore: -4.033027387049088
     end
     @testset "maier 2023" begin
         net = readTopology(joinpath(examplenetdir, "maier_2023.phy"))
@@ -141,6 +172,16 @@ graphs
             net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
             (1,0.5))
         # σ2: 0.05963752442674132, μ: 0.2068263407492875, llscore: -4.058399611427243
+
+        lbc = GeneralLazyBufferCache(function (paramOriginal)
+            mo = PGBP.UnivariateBrownianMotion(paramOriginal...)
+            bel = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, mo)
+            return PGBP.ClusterGraphBelief(bel)
+        end)
+        mod, llscore, opt = PGBP.calibrate_optimize_cliquetree_autodiff!(lbc, ct,
+            net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
+            (1,0.5))
+        # σ2: 0.059637524464406795, μ: 0.20682634062182106, llscore: -4.058399611426987
     end
     @testset "bergstrom 2020" begin # 19 nodes: 7 tips, 3 hybrids
         net = readTopology(joinpath(examplenetdir, "bergstrom_2020.phy"))
@@ -176,6 +217,16 @@ graphs
             net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
             (1,0.5))
         # σ2: 0.13135581833904802, μ: 0.4861293844675344, llscore: -3.4623261393445737
+
+        lbc = GeneralLazyBufferCache(function (paramOriginal)
+            mo = PGBP.UnivariateBrownianMotion(paramOriginal...)
+            bel = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, mo)
+            return PGBP.ClusterGraphBelief(bel)
+        end)
+        mod, llscore, opt = PGBP.calibrate_optimize_cliquetree_autodiff!(lbc, ct,
+            net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
+            (1,0.5))
+        # σ2: 0.13135581841229213, μ: 0.48612938464471706, llscore: -3.4623261393445843
     end
     @testset "sun 2023" begin # 42 nodes: 10 tips, 6 hybrids
         net = readTopology(joinpath(examplenetdir, "sun_2023.phy"))
@@ -211,5 +262,15 @@ graphs
             net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
             (1,0.5))
         # σ2: 0.15055281928486133, μ: 0.3148268180453915, llscore: -4.8328379081101875
+
+        lbc = GeneralLazyBufferCache(function (paramOriginal)
+            mo = PGBP.UnivariateBrownianMotion(paramOriginal...)
+            bel = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, mo)
+            return PGBP.ClusterGraphBelief(bel)
+        end)
+        mod, llscore, opt = PGBP.calibrate_optimize_cliquetree_autodiff!(lbc, ct,
+            net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
+            (1,0.5))
+        # σ2: 0.15055281925344077, μ: 0.31482681855408046, llscore: -4.8328379081102835
     end
 end
