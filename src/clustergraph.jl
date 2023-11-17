@@ -241,7 +241,10 @@ Subtype of [`AbstractClusterGraphMethod`](@ref).
 A Bethe cluster graph (also known as factor graph) has:
 - a factor-cluster `{v, parents(v}}` for each node-family in the network, that is,
   for each non-root node `v` (a family is a child node and all of its parents)
-- a variable-cluster `{v}` for each node `v` in the network.
+  * with one exception: if `v`'s family is included in another family,
+    then no factor-cluster is created for `v`.
+- a variable-cluster `{v}` for each non-leaf node `v` in the network,
+  or more specifically, for each node `v` that belongs in more than 1 factor.
 
 Each variable-cluster `{v}` is joined to the factor-clusters that contain `v`,
 by an edge labelled with sepset `{v}`.
@@ -452,17 +455,33 @@ function betheclustergraph(net::HybridNetwork)
     clustergraph = init_clustergraph(T, :Bethe)
 
     node2cluster = Dict{T, Tuple{Symbol, Vector{Symbol}}}() # for joining clusters later
+    node2code = Dict{T,T}() # node preorder index -> code of family(node) in cluster graph
+    code = zero(T)
     prenodes = net.nodes_changed
     prenodes_names = [Symbol(n.name) for n in prenodes]
     # add a factor-cluster for each non-root node
-    for (code, n) in enumerate(prenodes)
-        vt = T(code)
+    for noi in reverse(eachindex(prenodes)) # postorder: see fam(h) before fam(p) in case fam(p) ⊆ fam(h)
+        n = prenodes[noi]
+        vt = T(noi)
         o = sort!(indexin(getparents(n), prenodes), rev=true) # for postorder
         nodeind = pushfirst!(T.(o), vt)   # preorder indices of nodes in factor
         nodesym = prenodes_names[nodeind] # node symbol      of nodes in factor
         # (nodesym, nodeind) = factor-cluster data, its nodes listed in postorder
         length(nodeind) > 1 || continue # skip the root
+        # if n's family ⊆ another family: would have in one of its children's
+        isfamilysubset = false
+        for ch in getchildren(n)
+            ch_code = node2code[findfirst(x -> x===ch, prenodes)]
+            if nodeind ⊆ clustergraph[label_for(clustergraph, ch_code)][2]
+                isfamilysubset = true
+                node2code[noi] = ch_code # family(n) assigned to its child's cluster
+                break # do not check other children's families
+            end
+        end
+        isfamilysubset && continue # to next node: do *not* create a new cluster in graph
         factorCname = Symbol(nodesym...) # factor-cluster name: label in metagraph
+        code += one(T)
+        node2code[noi] = code
         add_vertex!(clustergraph, factorCname, (nodesym, nodeind))
         for (nns, nni) in zip(nodesym, nodeind)
             if haskey(node2cluster, nni)

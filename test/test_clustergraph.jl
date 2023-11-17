@@ -25,8 +25,8 @@ metaplot(ct)
     net = readTopology(netstr)
     cg = PGBP.clustergraph!(net, PGBP.Bethe())
     #= number of clusters:
-    1. factor clusters:   1 per node families = 1 per non-root node
-    2. variable clusters: 1 per internal node (including the root, excluding leaves)
+    1. factor clusters:   1 / node family = 1 per non-root node, except when a family is a subset of another
+    2. variable clusters: 1 / internal node (including the root, excluding leaves)
     =#
     numfactorclusters = net.numNodes-1
     numvarclusters = net.numNodes-net.numTaxa
@@ -40,16 +40,22 @@ metaplot(ct)
     =#
     ninternal_tree = sum(!e.hybrid for e in net.edge) - net.numTaxa
     @test ne(cg) == (net.numTaxa + 2*ninternal_tree + 3*net.numHybrids)
-
     @test length(connected_components(cg)) == 1 # check for 1 connected component
     @test all(t[2] for t in PGBP.check_runningintersection(cg, net))
-
-    # Check that the set of clusters is family-preserving wrt the network
     cluster_properties = cg.vertex_properties
     clusters = [v[2][2] for v in values(cluster_properties)]
     # variable clusters: [1], [3], [4], [6], [8], [9]
     # factor clusters: [2, 1], [3, 1], [4, 3], [5, 4], [6, 4], [7, 6], [8, 3],
     #   [9, 8, 6], [10, 9], [11, 8]
+    @test PGBP.isfamilypreserving(clusters, net)[1]
+
+    # case with 3-cycle: one node family is a subset of another
+    deleteleaf!(net, "C"); deleteleaf!(net, "C2"); removedegree2nodes!(net)
+    preorder!(net)
+    cg = PGBP.clustergraph!(net, PGBP.Bethe())
+    @test nv(cg) == 4+3 # not (5-1) node families + 3 internal nodes
+    @test ne(cg) == 6   # each internal node is 2 clusters
+    clusters = [v[2][2] for v in values(cg.vertex_properties)]
     @test PGBP.isfamilypreserving(clusters, net)[1]
 end
 
