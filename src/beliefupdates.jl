@@ -170,7 +170,7 @@ to `cluster_from` and the previous sepset belief (i.e. before updating).
 The second form sends a default message to `cluster_to`, through `sepset` (it is
 assumed that these are adjacent). While such messages always preserve the cluster
 graph invariant, they can restrict the set of feasible message schedules if
-applied injudiciously (see [`init_messages!`](@ref)).
+applied injudiciously. [`regularizebeliefs!`](@ref) should avoid the need for this.
 
 Warning: only the `h`, `J` and `g` parameters are updated, not `μ`.
 Does not check that `cluster_from` and `cluster_to` are of cluster type,

@@ -275,7 +275,6 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
         init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
         init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
         # fixit: raise warning if calibration is not attained within `maxiter`?
-        # init_messages!(beliefs, cgraph)
         regularizebeliefs!(beliefs, cgraph)
         calibrate!(beliefs, sch, maxiter, auto=true)
         return free_energy(beliefs)[3] # minimize Bethe free energy

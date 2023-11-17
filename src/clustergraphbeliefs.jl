@@ -176,140 +176,57 @@ function default_sepset1(beliefs::AbstractVector, n::Integer)
     return j
 end
 
-
-#=
-"""
-    mod_beliefs_bethe!(beliefs::ClusterGraphBelief, traitdimension,
-        net, ridgeconstant::Float=1.0)
-
-Modify naively initialized beliefs (see [`init_beliefs_assignfactors!`](@ref))
-of a Bethe cluster graph so that:
-1. messages sent/received between neighbor clusters are well-defined, and
-2. messages sent from a hybrid cluster are non-degenerate.
-
-For each hybrid cluster belief, add `ridgeconstant` to the diagonal elements of
-its precision matrix that correspond to the parent nodes in the cluster, so that
-the affected principal submatrix is stably invertible (the first `traitdimension`
-rows/columns of the precision matrix correspond to the hybrid node).
-For the edge beliefs associated with the parent nodes in a hybrid cluster, add
-`ridgeconstant` to the diagonal elements of its precision matrix so as to
-preserve the probability model of the full data (the product of cluster beliefs
-divided by the product of edge beliefs, which is invariant throughout belief propagation).
-
-Send a message along each affected edge from hybrid cluster to variable cluster,
-so that all subsequent messages received by these hybrid clusters are Gaussians
-with positive semi-definite variance/precision.
-"""
-function mod_beliefs_bethe!(beliefs::ClusterGraphBelief, numt::Integer, net::HybridNetwork, ϵ::Float64=1.0)
-    # fixit: set ϵ adaptively
-    prenodes = net.nodes_changed
-    b = beliefs.belief
-    for n in net.hybrid
-        o = sort!(indexin(getparents(n), prenodes), rev=true)
-        parentnames = [pn.name for pn in prenodes[o]]
-        clustlabel = Symbol(n.name, parentnames...)
-        cbi = clusterindex(clustlabel, beliefs) # cluster belief index
-        sb_idx = [sepsetindex(clustlabel, clustlabel2, beliefs) for clustlabel2
-            in Symbol.(parentnames)] # sepset belief indices for parent nodes
-        # Add ϵ to diagonal entries of principal submatrix (for parent nodes) of
-        # cluster belief precision. The first `numt` coordinates are for the hybrid node
-        b[cbi].J[(numt+1):end, (numt+1):end] .+= ϵ * LA.I(length(sb_idx)*numt)
-        for (i, sbi) in enumerate(sb_idx)
-            # add ϵ to diagonal of sepset's J to preserve cluster graph invariant
-            b[sbi].J .+= ϵ*LA.I(numt)
-            # send non-degenerate message: hybrid cluster → variable cluster
-            propagate_belief!(b[clusterindex(Symbol(parentnames[i]), beliefs)], b[sbi], b[cbi])
-        end
-    end
-end
-=#
-
-"""
-    init_messages!(beliefs::ClusterGraphBelief, clustergraph)
-
-Modify naively assigned beliefs (see [`init_beliefs_assignfactors!`](@ref)) of a
-cluster graph (while preserving the cluster graph invariant) so that all cluster
-beliefs are non-degenerate, and for any subsequent schedule of messages:
-
-        (1) cluster/sepset beliefs stay non-degenerate (i.e. positive definite)
-        (2) all received messages are well-defined (i.e. positive semi-definite)
-
-## Algorithm
-1. All clusters are considered unprocessed and no messages have been sent.
-2. Pick an arbitary unprocessed cluster and let it receive default messages from
-all neighbor clusters that have not sent it a message.
-3. Compute and send a message from this cluster to any neighbor cluster that has
-not received a message from it. The selected cluster is now marked as processed.
-4. Repeat steps 2-3 until all clustes have been processed.
-
-Step 2 (the receipt of non-degenerate messages from all neighbors) guarantees
-that all cluster beliefs will be non-degenerate, while step 3 (the use, where
-possible, of messages that can be computed instead of default messages)
-guarantees that all subsequent received messages are well-defined.
-"""
-function init_messages!(beliefs::ClusterGraphBelief, cgraph::MetaGraph)
-    # (clust1, clust2) ∈ messagesent => clust1 has sent a message to clust2
-    messagesent = Set{NTuple{2,Symbol}}()
-    b = beliefs.belief
-    for clusterlab in labels(cgraph)
-        tosend = NTuple{3,Int}[] # track messages to send after updating belief
-        from = clusterindex(clusterlab, beliefs) # sending-cluster index
-        for nblab in neighbor_labels(cgraph, clusterlab)
-            to = clusterindex(nblab, beliefs) # receiving-cluster index
-            by = sepsetindex(clusterlab, nblab, beliefs) # sepset index
-            if (nblab, clusterlab) ∉ messagesent
-                propagate_belief!(b[from], b[by]) # receive default message
-                push!(messagesent, (nblab, clusterlab))
-            end
-            if (clusterlab, nblab) ∉ messagesent
-                push!(tosend, (to, by, from))
-                push!(messagesent, (clusterlab, nblab))
-            end
-        end
-        for (to, by, from) in tosend
-            #= `false`: raise error if message is ill-defined instead of
-            handling it by sending a default message =#
-            propagate_belief!(b[to], b[by], b[from], false)
-        end
-    end
-end
-
 """
     regularizebeliefs!(beliefs::ClusterGraphBelief, clustergraph)
 
-Modify naively assigned beliefs (see [`init_beliefs_assignfactors!`](@ref)) of a
-cluster graph (while preserving the cluster graph invariant) so that all cluster
-beliefs are non-degenerate, and for any subsequent schedule of messages:
+Modify beliefs of cluster graph, after initialization with [`init_beliefs_assignfactors!`](@ref))
+for example, while preserving the full graphical model (product of cluster
+beliefs over product of sepset beliefs, invariant during belief propagation)
+so that all beliefs are non-degenerate.
 
-        (1) cluster/sepset beliefs stay non-degenerate (i.e. positive definite)
-        (2) all messages sent are well-defined (i.e. can be computed) and are
-        positive semidefinite
+The goal is that at each later step of belief propagation, the sending cluster
+has a non-degenerate (positive definite) precision matrix for the variables
+to be integrated, so that the message to be sent is well defined and
+positive semidefinite.
 
-This modification is described as "regularization" in the sense that the initial
-cluster/sepset precisions are perturbed from their actual value.
+This modification is a regularization in the sense that a non-negative diagonal
+matrix is added to the precision matrix of each belief.
 
 ## Algorithm
-1. For each cluster, loop through its incident edges. For each sepset, add ϵ > 0
-to the diagonal entries of its precision (i.e. the `J` parameter).
-2. To preserve the cluster graph invariant, each time the precision of a sepset
-belief is modified, make an equivalent change to the precision of the cluster
-belief.
-For example, if the diagonal entry for variable `x` is incremented in the sepset
-precision, then increment the diagonal entry for variable `x` in the cluster
-precision by the same amount.
+
+For each cluster Ci:
+1. Find a regularization parameter adaptively for that cluster:
+   ϵ = maximum absolute value of all entries in Ci's precision matrix J, and
+   of the machine epsilon.  
+   Then loop through its incident edges:
+2. For each neighbor cluster Cj and associated sepset Sij,
+   add ϵ > 0 to the diagonal entries of Ci's precision matrix `J`
+   corresponding to the traits in Sij.
+   fixit: why not this instead: ...
+   corresponding to the traits to be integrated out to pass a message to Cj,
+   that is, the diagonal entries for: scope(Ci) ∖ scope(Sij).
+3. To preserve the graphical model's joint distribution for the full set of
+   variables (invariant during BP), the same ϵ is added to each diagonal entry
+   of Sij's precision matrix.
+
+## notes to be removed
+
+We would like:
+1. cluster/sepset beliefs stay non-degenerate (i.e. positive definite)
+2. all messages sent are well-defined (i.e. can be computed) and are positive semidefinite
+
+These guarantees are different from those described in
+Du et al. (2018) "Convergence analysis of distributed inference with
+vector-valued Gaussian belief propagation", Lemma 2. They show that
+all messages after a specific initialization are positive definite.
+In contrast, we want that cluster beliefs remain positive definite
+so that messages to be sent are well-defined.
+
+Todo (Ben): formalize the explanation of this. I think that a
+sufficient condition for this may be the absence of deterministic factors.
 """
 function regularizebeliefs!(beliefs::ClusterGraphBelief, cgraph::MetaGraph)
-    #= Notes:
-    Guarantees (1) and (2) stated above are different from those described in
-    Lemma 2 of Du et al. (2017): "Convergence Analysis of Distributed Inference
-    with Vector-Valued Gaussian Belief Propagation". They have that all
-    Sum-Product messages after a specific initialization are positive definite.
-    In contrast, translating our setting to the Sum-Product framework, we may
-    have Sum-Product messages that are positive semidefinite but not definite,
-    though we show that the cluster beliefs will still remain positive definite
-    so that messages sent are always well-defined.
-    * Todo (Ben): I'm formalizing the explanation of this. I also think that a
-    sufficient condition for this may be the absence of deterministic factors. =#
+    # fixit: find type T, then use eps(T) instead of eps()
     b = beliefs.belief
     for clusterlab in labels(cgraph)
         cluster_to = b[clusterindex(clusterlab, beliefs)] # receiving-cluster
