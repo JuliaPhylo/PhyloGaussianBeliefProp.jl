@@ -225,12 +225,11 @@ so that messages to be sent are well-defined.
 Todo (Ben): formalize the explanation of this. I think that a
 sufficient condition for this may be the absence of deterministic factors.
 """
-function regularizebeliefs!(beliefs::ClusterGraphBelief, cgraph::MetaGraph)
-    # fixit: find type T, then use eps(T) instead of eps()
+function regularizebeliefs!(beliefs::ClusterGraphBelief{B}, cgraph::MetaGraph) where B<:Belief{T} where T
     b = beliefs.belief
     for clusterlab in labels(cgraph)
         cluster_to = b[clusterindex(clusterlab, beliefs)] # receiving-cluster
-        ϵ = max(eps(), maximum(abs, cluster_to.J)) # regularization constant
+        ϵ = max(eps(T), maximum(abs, cluster_to.J)) # regularization constant
         for nblab in neighbor_labels(cgraph, clusterlab)
             sepset = b[sepsetindex(clusterlab, nblab, beliefs)]
             upind = scopeindex(sepset, cluster_to) # indices to be updated
