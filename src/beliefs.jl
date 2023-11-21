@@ -633,26 +633,28 @@ message, which is *not* gₘ-gₛ because the stored beliefs are not normalized.
 
 See also: [`average_energy!`](@ref)
 """
-function approximate_kl!(res::AbstractResidual{T}, sepset::AbstractBelief{T},
-        residcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}, T}) where {T <: Real}
+function approximate_kl!(res::AbstractResidual{T}, sepset::AbstractBelief{T}) where {T <: Real}
     #= Check if empty because `isposdef` returns true for empty matrices, e.g.
     both `Real[;;] |> isposdef` and `MMatrix{0,0}(Real[;;]) |> isposdef` return
     `true`. =#
-    isempty(sepset.J) && return
-    sepsetJchol = LA.cholesky(sepset.J; check=false)
-        #= Check that diagonal entries of lower factor are positive, to make sure
+    isempty(sepset.J) && return true
+    # fixit: should an "empty" sepset have it iscalibrated_* fields initialized to true?
+    (Jchol, μ) = try getcholesky_μ!(sepset)
+    catch
+        @warn "cannot approximate KL divergence between messages: degenerate sepset belief"
+        return false
+    end
+    #=  Check that diagonal entries of lower factor are positive, to make sure
         that J is psd. This is needed because the more generic cholesky method,
         which is applied for example to matrices of Dual numbers, or Float64
         matrices that are wrapped within another type (e.g. MMatrix) currently
         does not throw an error for psd matrices.
         This bug has been fixed here: https://github.com/JuliaLang/julia/pull/49417/commits,
         though it has not been incorporated into the lastest stable release (1.9.3).
-        =#
-    if !LA.issuccess(sepsetJchol) || any(sepsetJchol.L[i,i] <= 0 for i in 1:dimension(sepset))
-        @warn """cannot approximate KL divergence between messages: degenerate sepset belief"""
-        return false
-    end
-    all(sepsetJchol.L[i,i] > 0.0 for i in 1:dimension(sepset))
-    res.kldiv[1] = -average_energy!(sepset, residcanon[1], residcanon[2], zero(T))
+        But: this bug does not seem to affect PDMat as used by getcholesky_μ!
+    =#
+    # if !LA.issuccess(Jchol) || any(Jchol.L[i,i] <= 0 for i in 1:dimension(sepset))
+    # then: warn and return false?
+    res.kldiv[1] = - average_energy(Jchol, μ, res.ΔJ, res.Δh, zero(T))
     iscalibrated_kl!(res)
 end

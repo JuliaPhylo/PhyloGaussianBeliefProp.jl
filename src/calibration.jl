@@ -126,11 +126,11 @@ function propagate_1traversal_postorder!(beliefs::ClusterGraphBelief,
     for i in reverse(1:length(pa_lab))
         ss_j = sepsetindex(pa_lab[i], ch_lab[i], beliefs)
         sepset, residual = propagate_belief!(b[pa_j[i]], b[ss_j], b[ch_j[i]])
-        mr[(pa_lab[i], ch_lab[i])].ΔJ .= residual[1]
-        mr[(pa_lab[i], ch_lab[i])].Δh .= residual[2]
-        iscalibrated_residnorm!(mr[(pa_lab[i], ch_lab[i])])
-        # compute KL div. between message and sepset
-        approximate_kl!(mr[(pa_lab[i], ch_lab[i])], sepset, residual)
+        mrss = mr[(pa_lab[i], ch_lab[i])]
+        mrss.ΔJ .= residual[1]
+        mrss.Δh .= residual[2]
+        iscalibrated_residnorm!(mrss)
+        approximate_kl!(mrss, sepset) # KL div between new and old sepset belief
     end
 end
 
@@ -142,10 +142,11 @@ function propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,
     for i in eachindex(pa_lab)
         ss_j = sepsetindex(pa_lab[i], ch_lab[i], beliefs)
         sepset, residual = propagate_belief!(b[ch_j[i]], b[ss_j], b[pa_j[i]])
-        mr[(ch_lab[i], pa_lab[i])].ΔJ .= residual[1]
-        mr[(ch_lab[i], pa_lab[i])].Δh .= residual[2]
-        iscalibrated_residnorm!(mr[(ch_lab[i], pa_lab[i])])
-        approximate_kl!(mr[(ch_lab[i], pa_lab[i])], sepset, residual)
+        mrss = mr[(ch_lab[i], pa_lab[i])]
+        mrss.ΔJ .= residual[1]
+        mrss.Δh .= residual[2]
+        iscalibrated_residnorm!(mrss)
+        approximate_kl!(mrss, sepset)
     end
 end
 
