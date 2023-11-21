@@ -107,21 +107,30 @@ end
 """
     free_energy(beliefs::ClusterGraphBelief)
 
-Bethe free energy from `beliefs`. This is computed by adding up cluster average
-energies and entropies, and subtracting sepset entropies. It is assumed but not
-checked that `beliefs` are calibrated.
+Approximation of the Gibbs free energy from `beliefs`, called Bethe free energy
+in the context of factor graphs, or (negative) factored energy functional
+for general cluster graphs (Koller & Friedman 2009).
+It is the sum of the cluster average energies and entropies,
+minus the sepset entropies.
+It is assumed but not checked that `beliefs` are calibrated
+(neighbor clusters and sepset beliefs are consistent, used as local marginals).
 
-For a calibrated clique tree, -(Bethe free energy) is equal to the
-log-likelihood. For a calibrated cluster graph, -(Bethe free energy) approximates
-the evidence lower bound (ELBO) for the log-likelihood. Thus, minimizing the
-Bethe free energy maximizes an approximation to the ELBO for the log-likelihood.
+For a calibrated clique tree, the Bethe free energy is equal to the negative
+log-likelihood. For a calibrated cluster graph, minimizing the Bethe free energy
+maximizes an approximation of the evidence lower bound (ELBO), a lower bound for
+the log-likelihood.
 
-See also: [`entropy`](@ref), [`average_energy`](@ref), [`iscalibrated`](@ref)
+See also: [`entropy`](@ref), [`average_energy!`](@ref), [`iscalibrated`](@ref)
 
 ## References
+
+D. Koller and N. Friedman.
+*Probabilistic graphical models: principles and techniques*.
+MIT Press, 2009. ISBN 9780262013192.
+
 D. M. Blei, A. Kucukelbir, and J. D. McAuliffe. Variational inference: A Review
 for Statisticians, Journal of the American statistical Association, 112:518,
-859-877, 2017, doi: [10.1080/01621459.2017.1285773](https://doi/org/10.1080/01621459.2017.1285773).
+859-877, 2017, doi: [10.1080/01621459.2017.1285773](https://doi.org/10.1080/01621459.2017.1285773).
 """
 function free_energy(beliefs::ClusterGraphBelief{B}) where B<:Belief{T} where T<:Real
     b = beliefs.belief

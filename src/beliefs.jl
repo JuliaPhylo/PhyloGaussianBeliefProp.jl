@@ -490,10 +490,10 @@ message residual: difference (on log-scale) between a message *received*
 by a cluster and the belief that the sepset previously had.
 =#
 
-abstract type AbstractResidual end
+abstract type AbstractResidual{T} end
 
 """
-    MessageResidual{T<:Real, P<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractResidual
+    MessageResidual{T<:Real, P<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractResidual{T}
 
 Structure to store the most recent computation history of a message, in the
 form of the ratio: sent_message / current_sepset_belief, when a message is
@@ -513,7 +513,7 @@ Fields:
 - `iscalibrated_kl`: same, but in terms of the KL divergence,
   see [`iscalibrated_kl!`](@ref).
 """
-struct MessageResidual{T<:Real, P<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractResidual
+struct MessageResidual{T<:Real, P<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractResidual{T}
     Δh::V
     ΔJ::P
     kldiv::MVector{1,T}
@@ -575,61 +575,71 @@ have `p`-norm within `atol` of 0; false otherwise.
 With `p` infinite, the max norm is used by default, meaning that
 `res.Δh` and `res.ΔJ` should be close to 0 element-wise.
 """
-function iscalibrated_residnorm!(res::AbstractResidual, atol=1e-5, p::Real=Inf)
+function iscalibrated_residnorm!(res::AbstractResidual{T}, atol=T(1e-5), p::Real=Inf) where T
     res.iscalibrated_resid[1] =
-        isapprox(LA.norm(res.Δh, p), 0.0, atol=atol) &&
-        isapprox(LA.norm(res.ΔJ, p), 0.0, atol=atol)
+        isapprox(LA.norm(res.Δh, p), zero(T), atol=atol) &&
+        isapprox(LA.norm(res.ΔJ, p), zero(T), atol=atol)
 end
 
 """
     iscalibrated_kl!(res::AbstractResidual, atol=1e-5)
 
-True if the KL divergence between the message (whose most recent residual
-information is stored in `res`) received by a sepset and its belief prior to
-receiving that message is within `atol` of 0; false otherwise.
-`res.iscalibrated_kl` is updated accordingly.
+True if the KL divergence stored in `res.kldiv` is within `atol` of 0;
+false otherwise. `res.iscalibrated_kl` is modified accordingly.
+This KL divergence should have been previously calculated: between a sepset
+belief, equal to the message that was passed most recently, and its belief just
+prior to passing that message.
 """
-function iscalibrated_kl!(res::AbstractResidual, atol=1e-5)
-    res.iscalibrated_kl[1] = isapprox(res.kldiv[1], 0.0, atol=atol)
+function iscalibrated_kl!(res::AbstractResidual{T}, atol=T(1e-5)) where T
+    res.iscalibrated_kl[1] = isapprox(res.kldiv[1], zero(T), atol=atol)
 end
-
 
 """
     approximate_kl!(residual::AbstractResidual, sepset::AbstractBelief,
         canonicalparams::Tuple)
 
 Update `residual.kldiv` with an approximation to the KL divergence between
-a message sent through a sepset, and the sepset belief before the belief-update,
-given its belief after (`sepset`).
-This approximation computes the negative average energy of the residual canonical
-parameters, with the `g` parameter set to 0, with respect to the message
-canonical parameters.
+a message sent through a sepset (normalized to a probability distribution),
+and the sepset belief before the belief propagation (also normalized).
+`sepset` should contain the updated belief, and `residual` the difference
+in the `J` and `h` parameters due to the belief update (after - before).
 As a side product, `sepset.μ` is updated.
+
+Output: true if the approximated KL divergence is close to 0, false otherwise.
+
+If the `sepset` belief is degenerate, in the sense that its precision matrix is
+not positive definite and the belief cannot be normalized to a proper distribution,
+then a warning is sent, `residual` and `sepset` are not updated, and
+`false` is returned.
 
 ## Calculation:
 
-message sent: f(x) = C(Jₘ, hₘ, _) ≡ x ~ 𝒩(μ=Jₘ⁻¹hₘ, Σ=Jₘ⁻¹)  
-sepset (before belief-update): C(Jₛ, hₛ, gₛ)  
-sepset (after belief-update): C(Jₘ, hₘ, gₘ)  
-residual: C(ΔJ = Jₘ - Jₛ, Δh = hₘ - hₛ, Δg = gₘ - gₛ)
+This approximation computes the negative average energy of the residual canonical
+parameters, with the `g` parameter set to 0, with respect to the message
+canonical parameters.
 
-    KL(C(Jₘ, hₘ, gₘ) || C(Jₛ, hₛ, gₛ))
-    = E[log C(Jₘ, hₘ, gₘ)/C(Jₛ, hₛ, gₛ)] where x ∼ C(Jₘ, hₘ, gₘ)
-    = E[-(1/2)x'*ΔJ*x + Δh'x + Δg)]
-    ≈ E[-(1/2)x'*ΔJ*x + Δh'x], Δg dropped
+message sent: f(x) = C(x | Jₘ, hₘ, _) ≡ x ~ 𝒩(μ=Jₘ⁻¹hₘ, Σ=Jₘ⁻¹)  
+sepset (before belief-update): C(.| Jₛ, hₛ, gₛ)  
+sepset (after belief-update): C(.| Jₘ, hₘ, gₘ)  
+residual: ΔJ = Jₘ - Jₛ, Δh = hₘ - hₛ  
+Below, we use the nodation Δg for the change in constants to normalize each
+message, which is *not* gₘ-gₛ because the stored beliefs are not normalized.
+
+    KL(C(Jₘ, hₘ, _) || C(Jₛ, hₛ, _))
+    = E[log C(x | Jₘ,hₘ,_)/C(x | Jₛ,hₛ,_)] where x ∼ C(Jₘ,hₘ,_)
+    = E[-(1/2) x'ΔJx + Δh'x + Δg)]
+    ≈ E[-(1/2) x'ΔJx + Δh'x], Δg dropped
     = -average_energy(C(Jₘ, hₘ, _), C(ΔJ, Δh, 0))
 
 See also: [`average_energy!`](@ref)
 """
-function approximate_kl!(res::AbstractResidual, sepset::AbstractBelief,
-    residcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}, T}) where {T <: Real}
-    # TODO: For ForwardDiff to work well with GeneralLazyBufferCache, type T must be specified.
+function approximate_kl!(res::AbstractResidual{T}, sepset::AbstractBelief{T},
+        residcanon::Tuple{AbstractMatrix{T}, AbstractVector{T}, T}) where {T <: Real}
     #= Check if empty because `isposdef` returns true for empty matrices, e.g.
     both `Real[;;] |> isposdef` and `MMatrix{0,0}(Real[;;]) |> isposdef` return
     `true`. =#
     isempty(sepset.J) && return
     sepsetJchol = LA.cholesky(sepset.J; check=false)
-    if LA.issuccess(sepsetJchol) && # factorization succeeded
         #= Check that diagonal entries of lower factor are positive, to make sure
         that J is psd. This is needed because the more generic cholesky method,
         which is applied for example to matrices of Dual numbers, or Float64
@@ -638,8 +648,11 @@ function approximate_kl!(res::AbstractResidual, sepset::AbstractBelief,
         This bug has been fixed here: https://github.com/JuliaLang/julia/pull/49417/commits,
         though it has not been incorporated into the lastest stable release (1.9.3).
         =#
-            all(sepsetJchol.L[i,i] > 0.0 for i in 1:dimension(sepset))#
-        res.kldiv[1] = -average_energy!(sepset, residcanon[1], residcanon[2], zero(T))
-        iscalibrated_kl!(res)
+    if !LA.issuccess(sepsetJchol) || any(sepsetJchol.L[i,i] <= 0 for i in 1:dimension(sepset))
+        @warn """cannot approximate KL divergence between messages: degenerate sepset belief"""
+        return false
     end
+    all(sepsetJchol.L[i,i] > 0.0 for i in 1:dimension(sepset))
+    res.kldiv[1] = -average_energy!(sepset, residcanon[1], residcanon[2], zero(T))
+    iscalibrated_kl!(res)
 end

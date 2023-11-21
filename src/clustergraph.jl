@@ -251,9 +251,9 @@ by an edge labelled with sepset `{v}`.
 
 ## References
 
-D. Koller and N. Friedman. *Probabilistic graphical models: principles and
-techniques*. MIT Press, 2009. ISBN 9780262013192.
-doi: [10.5555/1795555](https://doi.org/10.5555/1795555).
+D. Koller and N. Friedman.
+*Probabilistic graphical models: principles and techniques*.
+MIT Press, 2009. ISBN 9780262013192.
 """
 struct Bethe <: AbstractClusterGraphMethod end
 
@@ -408,9 +408,9 @@ Subtype of [`AbstractClusterGraphMethod`](@ref).
 
 ## References
 
-D. Koller and N. Friedman. *Probabilistic graphical models: principles and
-techniques*. MIT Press, 2009. ISBN 9780262013192.
-doi: [10.5555/1795555](https://doi.org/10.5555/1795555).
+D. Koller and N. Friedman.
+*Probabilistic graphical models: principles and techniques*.
+MIT Press, 2009. ISBN 9780262013192.
 """
 struct Cliquetree <: AbstractClusterGraphMethod end
 
