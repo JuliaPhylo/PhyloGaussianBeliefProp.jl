@@ -667,6 +667,7 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
                     for (l1,l2) in edge_labels(cg)
                         haskey(cg.edge_data, (l1,l2)) && continue
                         haskey(cg.edge_data, (l2,l1)) || error("edge_data is lacking an edge")
+                        @warn "metagraphsnext still not deleting node correctly!!!"
                         cg.edge_data[(l1,l2)] = cg.edge_data[(l2,l1)]
                         delete!(cg.edge_data, (l2,l1))
                     end
@@ -873,24 +874,6 @@ function spanningtree_clusterlist(cgraph::MetaGraph, rootj::Integer)
     childclust_lab  = [cgraph.vertex_labels[j] for j in childclust_j]
     parentclust_lab = [cgraph.vertex_labels[j] for j in parentclust_j]
     return parentclust_lab, childclust_lab, parentclust_j, childclust_j
-end
-
-# fixit: move this elsewhere? This wrapper is not defined in MetaGraphsNext.jl,
-# though it should be.
-function Graphs.induced_subgraph(
-    meta_graph::MetaGraph, edge_codes::AbstractVector{<:AbstractEdge})
-    inducedgraph, code_map = induced_subgraph(meta_graph.graph, edge_codes)
-    new_graph = MetaGraph(
-        inducedgraph,
-        empty(meta_graph.vertex_labels),
-        empty(meta_graph.vertex_properties),
-        empty(meta_graph.edge_data),
-        meta_graph.graph_data,
-        meta_graph.weight_function,
-        meta_graph.default_weight,
-    )
-    MetaGraphsNext._copy_props!(meta_graph, new_graph, code_map)
-    return new_graph, code_map
 end
 
 """
