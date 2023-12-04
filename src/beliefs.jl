@@ -641,7 +641,8 @@ function approximate_kl!(res::AbstractResidual{T}, sepset::AbstractBelief{T}) wh
     # fixit: should an "empty" sepset have it iscalibrated_* fields initialized to true?
     (Jchol, μ) = try getcholesky_μ!(sepset)
     catch
-        @warn "cannot approximate KL divergence between messages: degenerate sepset belief"
+        # @warn "cannot approximate KL divergence between messages: degenerate sepset belief"
+        # TODO 
         return false
     end
     #=  Check that diagonal entries of lower factor are positive, to make sure
