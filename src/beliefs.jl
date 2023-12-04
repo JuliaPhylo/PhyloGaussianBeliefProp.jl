@@ -432,7 +432,7 @@ function init_beliefs_assignfactors!(
                 end
             else
                 i_inscope = (i_node, i_parents...)
-                h,J,g = factor_hybridnode(model, [e.length for e in pae], [p.gamma for p in pae])
+                h,J,g = factor_hybridnode(model, pae)
                 @debug "node $(node.name), lengths $([e.length for e in pae]), gammas $([p.gamma for p in pae])\nh=$h, J=$J, g=$g"
             end
             i_b = findfirst(b -> issubset(i_inscope, nodelabels(b)), beliefs)
@@ -443,7 +443,7 @@ function init_beliefs_assignfactors!(
             i_parent = findfirst(n -> n===pa, prenodes)
             i_b = findfirst(x -> i_parent ∈ x && i_node ∈ x, nodelabels(b) for b in beliefs)
             isnothing(i_b) && error("no cluster containing nodes $(node.number) and $(pa.number).")
-            h,J,g = factor_treeedge(model, e.length)
+            h,J,g = factor_treeedge(model, e)
             if node.leaf
                 i_datarow = findfirst(isequal(nodelab), taxa)
                 h,J,g = absorbleaf!(h,J,g, i_datarow, tbl)
