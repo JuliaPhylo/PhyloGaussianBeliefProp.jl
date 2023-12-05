@@ -75,8 +75,13 @@ conditional mean q X₁ + ω and conditional variance Σ independent of X₁.
 Under a Brownian motion, we have q=I, ω=0, and conditional variance tR
 where R is the model's variance rate.
 """
-function branch_actualization(obj::EvolutionaryModel, edge::PN.Edge)
-    error("branch_actualization not implemented for type $(typeof(obj)).")
+function branch_actualization(obj::EvolutionaryModel{T}, edge::PN.Edge) where T
+    p = dimension(obj)
+    M = Matrix{T}(undef, p, p)
+    branch_actualization!(M, obj, edge)
+end
+function branch_actualization!(M::AbstractMatrix, obj::EvolutionaryModel, edge::PN.Edge)
+    error("branch_actualization! not implemented for type $(typeof(obj)).")
 end
 @doc (@doc branch_actualization) branch_displacement
 function branch_displacement(obj::EvolutionaryModel, edge::PN.Edge)
@@ -113,7 +118,7 @@ and the default fallback is not used.
 """
 function factor_treeedge(m::EvolutionaryModel{T}, edge::PN.Edge) where T
     j = branch_precision(m, edge)  # bloc precision
-    q = - branch_actualization(m, edge)
+    q = branch_actualization(m, edge)
     ω = branch_displacement(m, edge)
     factor_treeedge(j, q, ω, 1, dimension(m))
 end
@@ -122,16 +127,16 @@ end
 function factor_treeedge(j::AbstractMatrix{T}, q::AbstractMatrix{T}, ω::AbstractVector{T},
                          nparents::Int, ntraits::Int) where T
     nn = 1 + nparents; ntot = ntraits * nn
-    jq = j * q
-    qjq = transpose(q) * jq
+    jq = - j * q
+    qjq = - transpose(q) * jq
     # J = [j -jq; -q'j q'jq]
-    gen = ((u,tu,v,tv) for u in 1:2 for tu in 1:ntraits for v in 1:2 for tv in 1:ntraits)
+    gen = ((u,tu,v,tv) for u in 0:nparents for tu in 1:ntraits for v in 0:nparents for tv in 1:ntraits)
     Juv = (u,tu,v,tv) -> (u==0 ? (v==0 ? j[tu,tv] : jq[tu,tv]) :
                                  (v==0 ? jq[tv,tu] : qjq[tu,tv]))
     J = LA.Symmetric(SMatrix{ntot,ntot,T}(Juv(x...) for x in gen))
     qjomega = transpose(jq) * ω
     jomega = j * ω
-    gen = ((u,tu) for u in 1:2 for tu in 1:ntraits)
+    gen = ((u,tu) for u in 0:nparents for tu in 1:ntraits)
     huv = (u,tu) -> (u==0 ? jomega[tu] : qjomega[tu])
     h =  SVector{ntot,T}(huv(x...) for x in gen)
     g = (- ntraits * log2π + LA.logdet(j) - LA.dot(ω, jomega)) / 2
@@ -154,11 +159,11 @@ plus a displacement vecror ω and conditional variance Σ independent of X₁, X
 `hybdridnode_precision` defaults to the inverse of `hybdridnode_variance`
 """
 function hybdridnode_displacement(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
-    error("branch_actualization not implemented for type $(typeof(obj)).")
+    error("hybdridnode_displacement not implemented for type $(typeof(obj)).")
 end
 @doc (@doc hybdridnode_displacement) hybdridnode_variance
 function hybdridnode_variance(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
-    error("`branch_precision` not implemented for type $(typeof(obj)).")
+    error("`hybdridnode_variance` not implemented for type $(typeof(obj)).")
 end
 @doc (@doc hybdridnode_displacement) hybdridnode_precision
 function hybdridnode_precision(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
@@ -200,34 +205,42 @@ the last coordinates for the parents, in the same order in which
 the edge lengths and γs are given.
 """
 function factor_hybridnode(m::EvolutionaryModel{T}, pae::AbstractVector{PN.Edge}) where T
+    ntraits = dimension(m)
+    nparents = length(pae)
     v = hybridnode_variance(m, pae) # extra node variance
     ω = hybdridnode_displacement(m, pae) # extra node displacement
-    for edge in pae
-        LA.mul!(v, branch_variance(m, edge), LA.I, edge.gamma^2, 1.0)
-        LA.mul!(ω, branch_displacement(m, edge), LA.I, edge.gamma, 1.0)
+    q = Matrix{T}(undef, ntraits, nparents * ntraits) # init actualisation
+    for (k, edge) in enumerate(pae)
+        v .+= edge.gamma^2 .* branch_variance(m, edge)
+        ω .+= edge.gamma .* branch_displacement(m, edge)
+        branch_actualization!(view(q, :, ((k-1) * ntraits + 1):(k*ntraits)), m, edge)
     end
     j = inv(v) # bloc variance
-    q = - reduce(hcat, edge.gamma * branch_actualization(m, edge) for edge in pae)
-    factor_treeedge(j, q, ω, length(pae), dimension(m))
+    factor_treeedge(j, q, ω, nparents, ntraits)
 end
 
 # j = Sigma_child^{-1}
 # omega = q_child * (sum_k gamma_k omega_k + omega_hybrid)
 # q = q_child [gamma_k q_k]
+# TODO: is this necessary ?
 function factor_tree_degeneratehybrid(m::EvolutionaryModel{T}, pae::AbstractVector{PN.Edge}, che::PN.Edge) where T
+    ntraits = dimension(m)
+    nparents = length(pae)
     # hybridnode_variance(m, pae) is zero if degenerate, as well as branch_variance(m, edge) for all edge in pae
     j = branch_precision(m, che)
-    # child actualization
-    qche =  branch_actualization(m, che)
-    # displacement
-    ω = branch_displacement(m, che)
-    LA.mul!(ω, qche, hybdridnode_displacement(m, pae), 1.0, 1.0)
-    for edge in pae
-        LA.mul!(ω, qche, branch_displacement(m, edge), edge.gamma, 1.0)
+    # hybrid displacement and actualisation
+    ωh = hybdridnode_displacement(m, pae)
+    qh = Matrix{T}(undef, ntraits, nparents * ntraits)
+    for (k, edge) in enumerate(pae)
+        ωh .+= edge.gamma .* qche * branch_displacement(m, edge)
+        branch_actualization!(view(qh, :, ((k-1) * ntraits + 1):(k*ntraits)), m, edge)
     end
-    # actualization
-    q = - reduce(hcat, edge.gamma * qche * branch_actualization(m, edge) for edge in pae)
-    factor_treeedge(j, q, ω, length(pae), dimension(m))
+    # child displacement and actualization
+    # TODO: can we avoid re-allocation here ?
+    qche =  branch_actualization(m, che)
+    ω = branch_displacement(m, che) + qche * ωh
+    q = qche * qh
+    factor_treeedge(j, q, ω, nparents, ntraits)
 end
 
 ################################################################
