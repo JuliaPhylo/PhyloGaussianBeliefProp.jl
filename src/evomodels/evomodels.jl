@@ -57,14 +57,20 @@ function Base.show(io::IO, obj::EvolutionaryModel)
     print(io, disp)
 end
 
+################################################################
+## factor_treeedge
+################################################################
+
 """
     branch_actualization(obj::EvolutionaryModel, edge::PN.Edge) 
     branch_displacement(obj::EvolutionaryModel, edge::PN.Edge)
     branch_precision(obj::EvolutionaryModel, edge::PN.Edge)
+    branch_variance(obj::EvolutionaryModel, edge::PN.Edge)
 
 Under the most general linear Gaussian model, X₀ given X₁ is Gaussian with
 conditional mean q X₁ + ω and conditional variance Σ independent of X₁.
-`branch_precision` should return a matrix of symmetric type.
+`branch_precision` and `branch_variance`should return a matrix of symmetric type.
+`branch_variance` defaults to the inverse of `branch_precision`.
 
 Under a Brownian motion, we have q=I, ω=0, and conditional variance tR
 where R is the model's variance rate.
@@ -79,6 +85,10 @@ end
 @doc (@doc branch_actualization) branch_precision
 function branch_precision(obj::EvolutionaryModel, edge::PN.Edge)
     error("`branch_precision` not implemented for type $(typeof(obj)).")
+end
+@doc (@doc branch_actualization) branch_variance
+function branch_variance(obj::EvolutionaryModel, edge::PN.Edge)
+    return inv(branch_precision(obj, edge))
 end
 
 """
@@ -102,53 +112,86 @@ In that case, a specific (more efficient) method is implemented,
 and the default fallback is not used.
 """
 function factor_treeedge(m::EvolutionaryModel{T}, edge::PN.Edge) where T
-    numt = dimension(m); ntot = numt * 2
     j = branch_precision(m, edge)  # bloc precision
     q = - branch_actualization(m, edge)
     ω = branch_displacement(m, edge)
+    factor_treeedge(j, q, ω, 1, dimension(m))
+end
+
+# factor from precision, actualization, displacement
+function factor_treeedge(j::AbstractMatrix{T}, q::AbstractMatrix{T}, ω::AbstractVector{T},
+                         nparents::Int, ntraits::Int) where T
+    nn = 1 + nparents; ntot = ntraits * nn
     jq = j * q
     qjq = transpose(q) * jq
     # J = [j -jq; -q'j q'jq]
-    gen = ((u,tu,v,tv) for u in 1:2 for tu in 1:numt for v in 1:2 for tv in 1:numt)
+    gen = ((u,tu,v,tv) for u in 1:2 for tu in 1:ntraits for v in 1:2 for tv in 1:ntraits)
     Juv = (u,tu,v,tv) -> (u==0 ? (v==0 ? j[tu,tv] : jq[tu,tv]) :
                                  (v==0 ? jq[tv,tu] : qjq[tu,tv]))
     J = LA.Symmetric(SMatrix{ntot,ntot,T}(Juv(x...) for x in gen))
     qjomega = transpose(jq) * ω
     jomega = j * ω
-    gen = ((u,tu) for u in 1:2 for tu in 1:numt)
+    gen = ((u,tu) for u in 1:2 for tu in 1:ntraits)
     huv = (u,tu) -> (u==0 ? jomega[tu] : qjomega[tu])
     h =  SVector{ntot,T}(huv(x...) for x in gen)
-    g = (- numt * log2π + LA.logdet(j) - LA.dot(ω, jomega)) / 2
+    g = (- ntraits * log2π + LA.logdet(j) - LA.dot(ω, jomega)) / 2
     return(h,J,g)
+end
+
+################################################################
+## factor_hybridnode
+################################################################
+
+"""
+    hybdridnode_displacement(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
+    hybdridnode_precision(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
+    hybdridnode_variance(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
+
+Under the most general weighted average Gaussian model, X₀ given its parents X₁, X₂, ...
+is Gaussian with conditional mean the weighted average of the parents
+plus a displacement vecror ω and conditional variance Σ independent of X₁, X₂, ... .
+`hybdridnode_variance` and `hybdridnode_precision`should return a matrix of symmetric type.
+`hybdridnode_precision` defaults to the inverse of `hybdridnode_variance`
+"""
+function hybdridnode_displacement(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
+    error("branch_actualization not implemented for type $(typeof(obj)).")
+end
+@doc (@doc hybdridnode_displacement) hybdridnode_variance
+function hybdridnode_variance(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
+    error("`branch_precision` not implemented for type $(typeof(obj)).")
+end
+@doc (@doc hybdridnode_displacement) hybdridnode_precision
+function hybdridnode_precision(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
+    return inv(hybdridnode_variance(obj, parentedges))
 end
 
 """
     factor_hybridnode(evolutionarymodel, ts::AbstractVector, γs)
     factor_tree_degeneratehybrid(model,  t0::Real,           γs)
 
-Canonical parameters `h,J,g` of factor ϕ(X0, X1,X2,...) from the evolutionary model
-for a hybrid node: where X0 is the state at the hybrid node and X1,X2,... the
+Canonical parameters `h,J,g` of factor ϕ(X₀, X₁, X₂, ...) from the evolutionary model
+for a hybrid node: where X₀ is the state at the hybrid node and X₁, X₂, ... the
 states of the parent nodes.
 **Warning:** `γs` is modified in placed, changed to `[1 -γs]`.
 
 It is assumed that the conditional mean is a simple weighted average:
 
-``X0 = \\sum_k \\gamma_k Xk = q vec(X1,X2,...) + \\omega``
+``E[X_0 | X_1, X_2, ...] = \\sum_k \\gamma_k X_k = q vec(X_1,X_2,...) + \\omega``
 
 where q has one block for each parent, and each block is diagonal scalar:
 ``\\gamma_k I_p``.
-More complex models could consider adding a shift ω.
+More complex models could consider adding a shift ω to the conditional mean.
 
 If all the parent hybrid edges edges have length 0, then it is assumed that
 the model gives a degenerate distribution, with 0 conditional variance.
-More complex models could consider adding a hybrid conditional variance.
+More complex models could consider adding a hybrid conditional variance Σ.
 
 - The first form assumes that at least 1 parent edge length is positive,
   with conditional variance ``\\sum_k \\gamma_k^2 V_k`` where ``V_k`` is
   the conditional variance from the kth parent edge.
 - The second form can be used in case all parent edges have 0 length,
-  to integrate out the hybrid node state and the factor ϕ(X0, X1,X2,...)
-  when X0 is its **child** state, along an edge of length `t0` between
+  to integrate out the hybrid node state and the factor ϕ(X₀, X₁, X₂, ...)
+  when X₀ is its **child** state, along an edge of length `t0` between
   the hybrid node and its child. This second form is appropriate when
   this hybrid's child is a tree node, and `t0>0`.`
 
@@ -157,8 +200,39 @@ the last coordinates for the parents, in the same order in which
 the edge lengths and γs are given.
 """
 function factor_hybridnode(m::EvolutionaryModel{T}, pae::AbstractVector{PN.Edge}) where T
-    "error: 'factor_hybridnode' not implemented"
+    v = hybridnode_variance(m, pae) # extra node variance
+    ω = hybdridnode_displacement(m, pae) # extra node displacement
+    for edge in pae
+        LA.mul!(v, branch_variance(m, edge), LA.I, edge.gamma^2, 1.0)
+        LA.mul!(ω, branch_displacement(m, edge), LA.I, edge.gamma, 1.0)
+    end
+    j = inv(v) # bloc variance
+    q = - reduce(hcat, edge.gamma * branch_actualization(m, edge) for edge in pae)
+    factor_treeedge(j, q, ω, length(pae), dimension(m))
 end
+
+# j = Sigma_child^{-1}
+# omega = q_child * (sum_k gamma_k omega_k + omega_hybrid)
+# q = q_child [gamma_k q_k]
+function factor_tree_degeneratehybrid(m::EvolutionaryModel{T}, pae::AbstractVector{PN.Edge}, che::PN.Edge) where T
+    # hybridnode_variance(m, pae) is zero if degenerate, as well as branch_variance(m, edge) for all edge in pae
+    j = branch_precision(m, che)
+    # child actualization
+    qche =  branch_actualization(m, che)
+    # displacement
+    ω = branch_displacement(m, che)
+    LA.mul!(ω, qche, hybdridnode_displacement(m, pae), 1.0, 1.0)
+    for edge in pae
+        LA.mul!(ω, qche, branch_displacement(m, edge), edge.gamma, 1.0)
+    end
+    # actualization
+    q = - reduce(hcat, edge.gamma * qche * branch_actualization(m, edge) for edge in pae)
+    factor_treeedge(j, q, ω, length(pae), dimension(m))
+end
+
+################################################################
+## factor_root
+################################################################
 
 """
     factor_root(m::EvolutionaryModel)

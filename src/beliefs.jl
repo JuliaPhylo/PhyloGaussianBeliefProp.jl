@@ -422,7 +422,7 @@ function init_beliefs_assignfactors!(
                 ch = getchild(che)
                 i_child = findfirst(n -> n===ch, prenodes)
                 visited[i_child] = true
-                h,J,g = factor_tree_degeneratehybrid(model, che.length, [p.gamma for p in pae])
+                h,J,g = factor_tree_degeneratehybrid(model, pae, che)
                 if ch.leaf
                     i_datarow = findfirst(isequal(ch.name), taxa)
                     h,J,g = absorbleaf!(h,J,g, i_datarow, tbl)

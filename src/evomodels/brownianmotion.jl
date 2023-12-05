@@ -154,6 +154,9 @@ end
 factor_hybridnode(m::BrownianMotion, pae::AbstractVector{PN.Edge}) = 
 factor_hybridnode(m, [e.length for e in pae], [p.gamma for p in pae])
 
+factor_tree_degeneratehybrid(m::BrownianMotion, pae::AbstractVector{PN.Edge}, che::PN.Edge) =
+factor_tree_degeneratehybrid(m, che.length, [p.gamma for p in pae])
+
 function factor_hybridnode(m::BrownianMotion{T}, t::AbstractVector, γ::AbstractVector) where T
     t0 = T(sum(γ.^2 .* t)) # >0 if hybrid node is not degenerate
     factor_tree_degeneratehybrid(m, t0, γ)
