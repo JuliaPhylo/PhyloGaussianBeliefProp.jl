@@ -275,7 +275,7 @@ function factor_root(::IsMultivariate, m::EvolutionaryModel{T}) where T
     j = rootpriorprecision(m)
     μ = rootpriormeanvector(m)
     h = j * μ
-    improper = any(diag(j) .== 0.0) # then assumes that *all* are 0
+    improper = any(LA.diag(j) .== 0.0) # then assumes that *all* are 0
     g = (improper ? zero(T) : (-dimension(m) * log2π + LA.logdet(j) - LA.dot(m.μ, h))/2)
     return(h, j, g)
 end
