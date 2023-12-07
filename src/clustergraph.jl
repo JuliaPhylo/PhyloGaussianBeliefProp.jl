@@ -664,13 +664,17 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
                     issue #69 https://github.com/JuliaGraphs/MetaGraphsNext.jl/issues/69
                     fixit: delete work-around below after MetaGraphsNext has new version with the fix
                     =#
-                    for (l1,l2) in edge_labels(cg)
-                        haskey(cg.edge_data, (l1,l2)) && continue
-                        haskey(cg.edge_data, (l2,l1)) || error("edge_data is lacking an edge")
-                        @warn "metagraphsnext still not deleting node correctly!!!"
-                        cg.edge_data[(l1,l2)] = cg.edge_data[(l2,l1)]
-                        delete!(cg.edge_data, (l2,l1))
-                    end
+                    #= Commented out code below is no longer needed after the
+                    recent MetaGraphsNext update (v0.7.0) since cg.edge_data
+                    keys are now tuples ordered by a comparison of vertex labels
+                    instead of vertex codes. =#
+                    # for (l1,l2) in edge_labels(cg)
+                    #     haskey(cg.edge_data, (l1,l2)) && continue
+                    #     haskey(cg.edge_data, (l2,l1)) || error("edge_data is lacking an edge")
+                    #     @warn "metagraphsnext still not deleting node correctly!!!"
+                    #     cg.edge_data[(l1,l2)] = cg.edge_data[(l2,l1)]
+                    #     delete!(cg.edge_data, (l2,l1))
+                    # end
                 end
             end
         end
@@ -903,7 +907,12 @@ function spanningtrees_cover_clusterlist(cgraph::MetaGraph,
     for (clusterlab, clusterlab2) in edge_labels(cgraph)
         add_edge!(cg, clusterlab, clusterlab2, 0) # initial edge weights are 0
     end
-    edgenotused = Set(edge_labels(cg)) # track edges not used in any spanning tree
+    # track edges not used in any spanning tree
+    #= need to call `arrange` on output of `edge_labels`, since the ordering
+    within the tuple is not based on comparing vertex labels.
+    See: https://github.com/JuliaGraphs/MetaGraphsNext.jl/blob/v0.7.0/src/graphs.jl =#
+    edgenotused = Set(map(e -> MetaGraphsNext.arrange(cg, e...),
+        edge_labels(cg)))
     # schedule/vector of spanning trees that covers all edges of `cgraph`
     schedule = Tuple{Vector{Symbol}, Vector{Symbol}, Vector{T}, Vector{T}}[]
     while !isempty(edgenotused) # till each edge is used in ≥1 spanning tree
