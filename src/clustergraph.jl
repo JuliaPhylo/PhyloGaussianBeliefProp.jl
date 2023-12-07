@@ -903,7 +903,12 @@ function spanningtrees_cover_clusterlist(cgraph::MetaGraph,
     for (clusterlab, clusterlab2) in edge_labels(cgraph)
         add_edge!(cg, clusterlab, clusterlab2, 0) # initial edge weights are 0
     end
-    edgenotused = Set(edge_labels(cg)) # track edges not used in any spanning tree
+    # track edges not used in any spanning tree
+    #= need to call `arrange` on output of `edge_labels`, since the ordering
+    within the tuple is not based on comparing vertex labels.
+    See: https://github.com/JuliaGraphs/MetaGraphsNext.jl/blob/v0.7.0/src/graphs.jl =#
+    edgenotused = Set(map(e -> MetaGraphsNext.arrange(cg, e...),
+        edge_labels(cg)))
     # schedule/vector of spanning trees that covers all edges of `cgraph`
     schedule = Tuple{Vector{Symbol}, Vector{Symbol}, Vector{T}, Vector{T}}[]
     while !isempty(edgenotused) # till each edge is used in ≥1 spanning tree
