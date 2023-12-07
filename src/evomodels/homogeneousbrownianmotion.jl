@@ -3,16 +3,16 @@
 ################################################################
 
 ## Abstract BM type
-abstract type BrownianMotion{T} <: EvolutionaryModel{T} end
+abstract type HomogeneousBrownianMotion{T} <: EvolutionaryModel{T} end
 
 ## Univariate BM
 """
-    UnivariateBrownianMotion{T} <: BrownianMotion{T}
+    UnivariateBrownianMotion{T} <: HomogeneousBrownianMotion{T}
 
 The univariate Brownian motion.
 TODO
 """
-struct UnivariateBrownianMotion{T<:Real} <: BrownianMotion{T}
+struct UnivariateBrownianMotion{T<:Real} <: HomogeneousBrownianMotion{T}
     "variance rate"
     σ2::T
     "inverse variance (precision) rate"
@@ -49,7 +49,7 @@ params_optimize(m::UnivariateBrownianMotion) = [-2*m.g0 - log2π, m.μ] # log(σ
 params_original(m::UnivariateBrownianMotion, logσ2μ::AbstractArray) = (exp(logσ2μ[1]), logσ2μ[2], m.v)
 
 ## Diagonal BM
-struct MvDiagBrownianMotion{T<:Real, V<:AbstractVector{T}} <: BrownianMotion{T}
+struct MvDiagBrownianMotion{T<:Real, V<:AbstractVector{T}} <: HomogeneousBrownianMotion{T}
     "diagonal entries of the diagonal variance rate matrix"
     R::V
     "inverse variance rates (precision) on the diagonal inverse rate matrix"
@@ -86,7 +86,7 @@ params_original(m::MvDiagBrownianMotion, logRμ::AbstractArray) = (exp.(logRμ[1
 rootpriorvariance(obj::MvDiagBrownianMotion) = LA.Diagonal(obj.v)
 
 ## Full BM
-struct MvFullBrownianMotion{T<:Real, P1<:AbstractMatrix{T}, V<:AbstractVector{T}, P2<:AbstractMatrix{T}} <: BrownianMotion{T}
+struct MvFullBrownianMotion{T<:Real, P1<:AbstractMatrix{T}, V<:AbstractVector{T}, P2<:AbstractMatrix{T}} <: HomogeneousBrownianMotion{T}
     "variance rate matrix"
     R::P1
     "inverse variance (precision) rate matrix"
@@ -126,7 +126,7 @@ params(m::MvFullBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v
 ## factor_treeedge
 ################################################################
 
-factor_treeedge(m::BrownianMotion, edge::PN.Edge) = factor_treeedge(m, edge.length)
+factor_treeedge(m::HomogeneousBrownianMotion, edge::PN.Edge) = factor_treeedge(m, edge.length)
 
 function factor_treeedge(m::UnivariateBrownianMotion{T}, t::Real) where T
     j = T(m.J / t)
@@ -151,13 +151,13 @@ end
 ## factor_hybridnode
 ################################################################
 
-factor_hybridnode(m::BrownianMotion, pae::AbstractVector{PN.Edge}) = 
+factor_hybridnode(m::HomogeneousBrownianMotion, pae::AbstractVector{PN.Edge}) = 
 factor_hybridnode(m, [e.length for e in pae], [p.gamma for p in pae])
 
-factor_tree_degeneratehybrid(m::BrownianMotion, pae::AbstractVector{PN.Edge}, che::PN.Edge) =
+factor_tree_degeneratehybrid(m::HomogeneousBrownianMotion, pae::AbstractVector{PN.Edge}, che::PN.Edge) =
 factor_tree_degeneratehybrid(m, che.length, [p.gamma for p in pae])
 
-function factor_hybridnode(m::BrownianMotion{T}, t::AbstractVector, γ::AbstractVector) where T
+function factor_hybridnode(m::HomogeneousBrownianMotion{T}, t::AbstractVector, γ::AbstractVector) where T
     t0 = T(sum(γ.^2 .* t)) # >0 if hybrid node is not degenerate
     factor_tree_degeneratehybrid(m, t0, γ)
 end

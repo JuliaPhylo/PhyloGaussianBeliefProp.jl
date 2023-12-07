@@ -95,6 +95,18 @@ end
 function branch_variance(obj::EvolutionaryModel, edge::PN.Edge)
     return inv(branch_precision(obj, edge))
 end
+function branch_transition_qωj(obj::EvolutionaryModel{T}, edge::PN.Edge) where T
+    j = branch_precision(obj, edge)
+    ω = branch_displacement(obj, edge)
+    q = branch_actualization(obj, edge)
+    return (q,ω,j)
+end
+function branch_transition_qωv!(q::AbstractMatrix, obj::EvolutionaryModel{T}, edge::PN.Edge) where T
+    v = branch_variance(obj, edge)
+    ω = branch_displacement(obj, edge)
+    branch_actualization!(q,obj, edge)
+    return (ω,v)
+end
 
 """
     factor_treeedge(evolutionarymodel, edge)
@@ -117,14 +129,12 @@ In that case, a specific (more efficient) method is implemented,
 and the default fallback is not used.
 """
 function factor_treeedge(m::EvolutionaryModel{T}, edge::PN.Edge) where T
-    j = branch_precision(m, edge)  # bloc precision
-    q = branch_actualization(m, edge)
-    ω = branch_displacement(m, edge)
-    factor_treeedge(j, q, ω, 1, dimension(m))
+    (q,ω,j) = branch_transition_qωj(m, edge)
+    factor_treeedge(q, ω, j, 1, dimension(m))
 end
 
 # factor from precision, actualization, displacement
-function factor_treeedge(j::AbstractMatrix{T}, q::AbstractMatrix{T}, ω::AbstractVector{T},
+function factor_treeedge(q::AbstractMatrix{T}, ω::AbstractVector{T}, j::AbstractMatrix{T},
                          nparents::Int, ntraits::Int) where T
     nn = 1 + nparents; ntot = ntraits * nn
     jq = - j * q
@@ -211,12 +221,12 @@ function factor_hybridnode(m::EvolutionaryModel{T}, pae::AbstractVector{PN.Edge}
     ω = hybdridnode_displacement(m, pae) # extra node displacement
     q = Matrix{T}(undef, ntraits, nparents * ntraits) # init actualisation
     for (k, edge) in enumerate(pae)
-        v .+= edge.gamma^2 .* branch_variance(m, edge)
-        ω .+= edge.gamma .* branch_displacement(m, edge)
-        branch_actualization!(view(q, :, ((k-1) * ntraits + 1):(k*ntraits)), m, edge)
+        (ωe , ve) = branch_transition_qωv!(view(q, :, ((k-1) * ntraits + 1):(k*ntraits)), m, edge)
+        v .+= edge.gamma^2 .* ve
+        ω .+= edge.gamma .* ωe
     end
     j = inv(v) # bloc variance
-    factor_treeedge(j, q, ω, nparents, ntraits)
+    factor_treeedge(q, ω, j, nparents, ntraits)
 end
 
 # j = Sigma_child^{-1}
@@ -240,7 +250,7 @@ function factor_tree_degeneratehybrid(m::EvolutionaryModel{T}, pae::AbstractVect
     qche =  branch_actualization(m, che)
     ω = branch_displacement(m, che) + qche * ωh
     q = qche * qh
-    factor_treeedge(j, q, ω, nparents, ntraits)
+    factor_treeedge(q, ω, j, nparents, ntraits)
 end
 
 ################################################################
