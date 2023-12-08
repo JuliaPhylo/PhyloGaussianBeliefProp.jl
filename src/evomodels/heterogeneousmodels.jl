@@ -20,7 +20,7 @@ struct PaintedParameter{T}
     color::DefaultDict{Int,Int}
 end
 
-function PaintedParameter(parameter::Vector{T}, d::Dict=DefaultDict{Int,Int}(1)) where T
+function PaintedParameter(parameter::Vector{T}, d::Dict=Dict{Int,Int}()) where T
     PaintedParameter{T}(parameter, DefaultDict(1, d))
 end
 
@@ -72,23 +72,26 @@ struct HeterogeneousBrownianMotion{T<:Real, U<:AbstractVector{T}, V<:AbstractMat
     v::V
     "g0: -log(2π variancerate)/2"
     g0::PaintedParameter{T}
+    # TODO: we do not use g0 right now. Should we ? Or delete ? Or maybe will be used if we do not rely on fall backs anymore.
 end
 
 modelname(m::HeterogeneousBrownianMotion) = "Heterogeneous Brownian motion"
 variancename(m::HeterogeneousBrownianMotion) = "evolutionary variance rates"
 varianceparam(m::HeterogeneousBrownianMotion) = m.variancerate
 # TODO: extend this constructor to take instead of vector of rates and a color map
-function HeterogeneousBrownianMotion(R, μ, v=nothing)
-    HeterogeneousBrownianMotion([R], DefaultDict{Int,Int}(1), μ, v)
+function HeterogeneousBrownianMotion(R::AbstractMatrix, μ, v=nothing)
+    HeterogeneousBrownianMotion([R], Dict{Int,Int}(), μ, v)
 end
-function HeterogeneousBrownianMotion(Rvec, colors, μ, v=nothing)
+function HeterogeneousBrownianMotion(Rvec, colors::Dict, μ, v=nothing)
     if !isa(μ, Array) μ = [μ]; end
     numt = length(μ)
-    T = promote_type(Float64, eltype(R), eltype(μ))
+    length(Rvec) >= 1 || error("Rvec must have at list one component")
+    T = promote_type(Float64, eltype(Rvec[1]), eltype(μ))
     all(size(R) == (numt,numt) for R in Rvec) || error("R and μ have conflicting sizes")
     all(LA.issymmetric(R) for R in Rvec) || error("R should be symmetric")
     Rvec = [PDMat(R) for R in Rvec]
     Jvec = inv.(Rvec) # uses cholesky. fails if not symmetric positive definite
+    gvec = [-(numt * log2π + LA.logdet(R))/2 for R in Rvec]
     if isnothing(v)
         v = LA.Symmetric(zeros(T, numt, numt))
     else
@@ -97,9 +100,9 @@ function HeterogeneousBrownianMotion(Rvec, colors, μ, v=nothing)
         v = LA.Symmetric(v)
         LA.isposdef(v)               || error("v is not positive semi-definite")
     end
-    HeterogeneousBrownianMotion{T, typeof(μ), typeof(v), typeof(R)}(
-        PaintedParameter(Rvec, colors), PaintedParameter(Rvec, colors), μ, v,
-        PaintedParameter([-(numt * log2π + LA.logdet(R))/2], colors)
+    HeterogeneousBrownianMotion{T, typeof(μ), typeof(v), typeof(Rvec[1])}(
+        PaintedParameter(Rvec, colors), PaintedParameter(Jvec, colors), μ, v,
+        PaintedParameter(gvec, colors)
     )
 end
 # params(m::HeterogeneousBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v)

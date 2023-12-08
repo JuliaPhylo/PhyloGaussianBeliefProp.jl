@@ -128,36 +128,43 @@ end
         _, tmp = PGBP.integratebelief!(ctb)
         @test tmp ≈ -24.312323855394055
         end
+        @testset "Random root several mv rates" begin
+        rates = [[2.0 0.5; 0.5 1.0], [2.0 0.5; 0.5 1.0]]
+        colors = Dict(9 => 2, 7 => 2, 8 => 2) # includes one hybrid edge
+        m = PGBP.HeterogeneousBrownianMotion(rates, colors, [3.0, -3.0], [0.1 0.01; 0.01 0.2])
+        show(devnull, m)
+        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b)
+        PGBP.calibrate!(ctb, [spt])
+        _, tmp = PGBP.integratebelief!(ctb)
+        @test tmp ≈ -23.16482738327936
+        end
     end
     #= likelihood using PN.vcv and matrix inversion
     using Distributions
-    σ2tmp = 2; μtmp = 3
-    Σnet = σ2tmp .* Matrix(vcv(net)[!,Symbol.(df.taxon)])
-    # for y
-    loglikelihood(MvNormal(repeat([μtmp],4), Σnet), tbl.y) # -10.732857817537196
-    # for x: third value is missing
+    Σnet = Matrix(vcv(net)[!,Symbol.(df.taxon)])
+    ## univariate y
+    loglikelihood(MvNormal(repeat([3.0],4), Σnet), tbl.y) # -10.732857817537196
+    ## univariate x
     xind = [1,2,4]; n = length(xind); i = ones(n) # intercept
-    Σ = Σnet[xind,xind] .+ 0.4
-    loglikelihood(MvNormal(repeat([μtmp],3), Σ), Vector{Float64}(tbl.x[xind])) # -13.75408386332493
-    # For y, REML
+    Σ = 2.0 * Σnet[xind,xind] .+ 0.4
+    loglikelihood(MvNormal(repeat([3.0],3), Σ), Vector{Float64}(tbl.x[xind])) # -13.75408386332493
+    ## Univariate y, REML
     ll(μ) = loglikelihood(MvNormal(repeat([μ],4), Σnet), tbl.y)
     using Integrals
     log(solve(IntegralProblem((x,p) -> exp(ll(x)), -Inf, Inf), QuadGKJL()).u) # -5.899094849099194
-    # For x, y, Diagonal
-    Σnet = Matrix(vcv(net)[!,Symbol.(df.taxon)])
+    ## Diagonal x, y
     loglikelihood(MvNormal(repeat([3],3), 2 .* Σnet[xind,xind]), Vector{Float64}(tbl.x[xind])) + 
     loglikelihood(MvNormal(repeat([-3],4), 1 .* Σnet), tbl.y) 
-    # For x, y, Diagonal, random root
-    Σnet = Matrix(vcv(net)[!,Symbol.(df.taxon)])
+    ## Diagonal x y random root
     loglikelihood(MvNormal(repeat([3],3), 2 .* Σnet[xind,xind] .+ 0.1), Vector{Float64}(tbl.x[xind])) + 
     loglikelihood(MvNormal(repeat([-3],4), 1 .* Σnet .+ 10), tbl.y) 
-    # Diagonal, REML
-    Σnet = Matrix(vcv(net)[!,Symbol.(df.taxon)])
+    # Diagonal x y REML
     ll(μ) = loglikelihood(MvNormal(repeat([μ[1]],3), 2 .* Σnet[xind,xind]), Vector{Float64}(tbl.x[xind])) + loglikelihood(MvNormal(repeat([μ[2]],4), 1 .* Σnet), tbl.y) 
     using Integrals
     log(solve(IntegralProblem((x,p) -> exp(ll(x)), [-Inf, -Inf], [Inf, Inf]), HCubatureJL(), reltol = 1e-16, abstol = 1e-16).u) # -17.66791635814575
-    # For x, y, full
-    Σnet = Matrix(vcv(net)[!,Symbol.(df.taxon)])
+    # Full x y fixed root
     R = [2.0 0.5; 0.5 1.0]
     varxy = kron(R, Σnet)
     xyind = vcat(xind, 4 .+ [1,2,3,4])
@@ -165,5 +172,14 @@ end
     meanxy = vcat(repeat([3.0],3), repeat([-3.0],4))
     datxy = Vector{Float64}(vcat(tbl.x[xind], tbl.y))
     loglikelihood(MvNormal(meanxy, varxy), datxy) # -24.312323855394055
+    # Full x y random root
+    R = [2.0 0.5; 0.5 1.0]
+    V = [0.1 0.01; 0.01 0.2]
+    varxy = kron(R, Σnet) + kron(V, ones(4, 4))
+    xyind = vcat(xind, 4 .+ [1,2,3,4])
+    varxy = varxy[xyind, xyind]
+    meanxy = vcat(repeat([3.0],3), repeat([-3.0],4))
+    datxy = Vector{Float64}(vcat(tbl.x[xind], tbl.y))
+    loglikelihood(MvNormal(meanxy, varxy), datxy) # -23.16482738327936
     =#
 end
