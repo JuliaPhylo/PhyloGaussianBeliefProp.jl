@@ -86,14 +86,14 @@ end
     net = readTopology(mateescu)
     # Mateescu network: 1 bucket has multiple minibuckets
     cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3))
-    @test_broken all(t[2] for t in PGBP.check_runningintersection(cg, net))
+    @test all(t[2] for t in PGBP.check_runningintersection(cg, net))
     @test !is_tree(cg)
     clusters = [[1],[2,1],[3,2,1],[4,3,2],[5,2],[5,4,3],[6,5,2],[7,6,5],[8,7],[9,4]]
     # clusters for netstr: [[2,1],[3],[3,1],[4,3],[5,4],[6,4,3],[7,6],[8,6,3],[9,8,6],[10,9],[11,8]]
     @test sort([v[2][2] for v in values(cg.vertex_properties)]) == clusters
     sepsets = [[1],[2],[2,1],[3,2],[4],[4,3],[5],[5,2],[6,5],[7]]
     # sepstes for netstr: [[1],[3],[3],[4],[4,3],[6],[6,3],[8],[8,6],[9]]
-    @test_broken sort([cg[l1,l2] for (l1,l2) in edge_labels(cg)]) == sepsets
+    @test sort([cg[l1,l2] for (l1,l2) in edge_labels(cg)]) == sepsets
     @test PGBP.isfamilypreserving(clusters, net)[1]
     # maxclustersize smaller than largest family:
     @test_throws ErrorException PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(2))
@@ -118,16 +118,14 @@ end
     @test ct[:H3DH1B][2] == [5,4,3,2] # largest clique
 end
 
-@test_broken false
-#=
 @testset "Traversal" begin
     net = readTopology(netstr)
     cg = PGBP.clustergraph!(net, PGBP.Bethe())
     clusterlabs = Set(labels(cg))
     nclusters = length(clusterlabs)
-    edgenotused = Set(edge_labels(cg))
+    edgenotused = Set(map(e -> MetaGraphsNext.arrange(cg, e...),
+        edge_labels(cg)))
     schedule = PGBP.spanningtrees_cover_clusterlist(cg, net.nodes_changed)
-    ntrees = length(schedule)
     # Check that `schedule` contains spanning trees of `cg`
     for (i, spt) in enumerate(schedule)
         spt_nedges = length(spt[1])
@@ -143,6 +141,5 @@ end
     # (3) Set of spanning trees covers all cluster graph edges
     @test isempty(edgenotused)
 end
-=#
 
 end
