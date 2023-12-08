@@ -29,6 +29,8 @@ UnivariateType(::Type) = IsMultivariate()
 modelname(obj::EvolutionaryModel) = string(typeof(obj))
 variancename(obj::EvolutionaryModel) = "variance"
 varianceparam(obj::EvolutionaryModel) = "error: 'varianceparam' not implemented"
+
+## Root
 # requires all models to have a field named μ
 rootpriormeanvector(obj::T) where {T <: EvolutionaryModel} = rootpriormeanvector(UnivariateType(T), obj)
 rootpriormeanvector(::IsMultivariate, obj) = obj.μ
@@ -37,6 +39,34 @@ rootpriormeanvector(::IsUnivariate, obj) = [obj.μ]
 isrootfixed(obj::EvolutionaryModel) = all(obj.v .== 0)
 rootpriorvariance(obj::EvolutionaryModel) = obj.v
 rootpriorprecision(obj::EvolutionaryModel) = inv(rootpriorvariance(obj))
+# default root variance
+function getrootvarianceunivariate(T, v=nothing)
+    if isnothing(v) v = zero(T); end
+    typeof(v) <: Number || error("root variance v=$v must be a number")
+    v >= 0 || error("root variance v=$v must be non-negative")
+    return v
+end
+function getrootvariancediagonal(T, numt, v=nothing)
+    SV = SVector{numt, T}
+    if isnothing(v)
+        v = SV(zero(T) for _ in 1:numt)
+    else
+        length(v) == numt || error("v and μ have different lengths")
+        all(v .>= 0.0) || error("root variances v=$v must all be non-negative")
+    end
+    return v
+end
+function getrootvariancemultivariate(T, numt, v=nothing)
+    if isnothing(v)
+        v = LA.Symmetric(zeros(T, numt, numt))
+    else
+        size(v) == (numt,numt)       || error("v and μ have conflicting sizes")
+        LA.issymmetric(v)            || error("v should be symmetric")
+        v = LA.Symmetric(Matrix{T}(v))
+        LA.isposdef(v)               || error("v is not positive semi-definite")
+    end
+    return v
+end
 
 """
     dimension(m::EvolutionaryModel)

@@ -30,9 +30,8 @@ variancename(m::UnivariateBrownianMotion) = "evolutionary variance rate σ2"
 varianceparam(m::UnivariateBrownianMotion) = m.σ2
 function UnivariateBrownianMotion(σ2::U1, μ::U2, v=nothing) where {U1<:Number, U2<:Number}
     T = promote_type(Float64, typeof(σ2), typeof(μ))
-    if isnothing(v) v = zero(T); end
+    v = getrootvarianceunivariate(T, v)
     σ2 > 0 || error("evolutionary variance rate σ2 = $(σ2) must be positive")
-    v >= 0 || error("root variance v=$v must be non-negative")
     UnivariateBrownianMotion{T}(σ2, 1/σ2, μ, v, -(log2π + log(σ2))/2)
 end
 function UnivariateBrownianMotion(σ2::Union{U1,V1}, μ::Union{U2,V2}, v=nothing) where {U1<:Number, U2<:Number, V1<:AbstractArray{U1}, V2<:AbstractArray{U2}}
@@ -68,14 +67,9 @@ function MvDiagBrownianMotion(R, μ, v=nothing)
     numt = length(μ) # number of traits
     length(R) == numt || error("R and μ have different lengths")
     T = promote_type(Float64, eltype(R), eltype(μ))
-    SV = SVector{numt, T}
+    v = getrootvariancediagonal(T, numt, v)
     all(R .> 0.0) || error("evolutionary variance rates R = $R must all be positive")
-    if isnothing(v)
-        v = SV(zero(T) for _ in 1:numt)
-    else
-        length(v) == numt || error("v and μ have different lengths")
-        all(v .>= 0.0) || error("root variances v=$v must all be non-negative")
-    end
+    SV = SVector{numt, T}
     R = SV(R)
     J = 1 ./R
     MvDiagBrownianMotion{T, SV}(R, J, SV(μ), SV(v), -(numt * log2π + sum(log.(R)))/2)
@@ -104,20 +98,12 @@ varianceparam(m::MvFullBrownianMotion) = m.R
 function MvFullBrownianMotion(R, μ, v=nothing)
     numt = length(μ)
     T = promote_type(Float64, eltype(R), eltype(μ))
+    v = getrootvariancemultivariate(T, numt, v)
     SV = SVector{numt, T}
     size(R) == (numt,numt)       || error("R and μ have conflicting sizes")
     LA.issymmetric(R) || error("R should be symmetric")
     R = PDMat(R)
     J = inv(R) # uses cholesky. fails if not symmetric positive definite
-    if isnothing(v)
-        v = LA.Symmetric(SMatrix{numt,numt,T}(zero(T) for _ in 1:(numt*numt)))
-    else
-        size(v) == (numt,numt)       || error("v and μ have conflicting sizes")
-        LA.issymmetric(v) || error("v should be symmetric")
-        v = LA.Symmetric(SMatrix{numt,numt,T}(v))
-        λ = LA.eigvals(v)
-        all(λ .>= 0)                 || error("v is not positive semi-definite")
-    end
     MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, -(numt * log2π + LA.logdet(R))/2)
 end
 params(m::MvFullBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v)

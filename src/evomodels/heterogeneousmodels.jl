@@ -30,9 +30,9 @@ getparameter(pp::PaintedParameter, e::PN.Edge) = getparameter(pp, e.number)
 getparameter(pp::PaintedParameter, number::Int) = pp.parameter[pp.color[number]]
 
 function Base.show(io::IO, obj::PaintedParameter)
-    disp = "Painted parameter on a network with $(ncolors(obj)) different parameters:\n"
-    for pp in obj.parameter
-        disp *= " $pp"
+    disp = "Painted parameter on a network with $(ncolors(obj)) different parameters:"
+    for (ind, pp) in enumerate(obj.parameter)
+        disp *= "\n$ind: $pp"
     end
     disp *= "\nmapping of edge/node number to parameter color:\n$(obj.color)"
     print(io, disp)
@@ -82,28 +82,24 @@ varianceparam(m::HeterogeneousBrownianMotion) = m.variancerate
 function HeterogeneousBrownianMotion(R::AbstractMatrix, μ, v=nothing)
     HeterogeneousBrownianMotion([R], Dict{Int,Int}(), μ, v)
 end
-function HeterogeneousBrownianMotion(Rvec, colors::Dict, μ, v=nothing)
+function HeterogeneousBrownianMotion(Rvec, colors::AbstractDict, μ, v=nothing)
     if !isa(μ, Array) μ = [μ]; end
     numt = length(μ)
     length(Rvec) >= 1 || error("Rvec must have at list one component")
     T = promote_type(Float64, eltype(Rvec[1]), eltype(μ))
+    v = getrootvariancemultivariate(T, numt, v)
     all(size(R) == (numt,numt) for R in Rvec) || error("R and μ have conflicting sizes")
     all(LA.issymmetric(R) for R in Rvec) || error("R should be symmetric")
     Rvec = [PDMat(R) for R in Rvec]
     Jvec = inv.(Rvec) # uses cholesky. fails if not symmetric positive definite
     gvec = [-(numt * log2π + LA.logdet(R))/2 for R in Rvec]
-    if isnothing(v)
-        v = LA.Symmetric(zeros(T, numt, numt))
-    else
-        size(v) == (numt,numt)       || error("v and μ have conflicting sizes")
-        LA.issymmetric(v)            || error("v should be symmetric")
-        v = LA.Symmetric(v)
-        LA.isposdef(v)               || error("v is not positive semi-definite")
-    end
     HeterogeneousBrownianMotion{T, typeof(μ), typeof(v), typeof(Rvec[1])}(
         PaintedParameter(Rvec, colors), PaintedParameter(Jvec, colors), μ, v,
         PaintedParameter(gvec, colors)
     )
+end
+function HeterogeneousBrownianMotion(paintedrates::PaintedParameter, μ, v=nothing)
+    HeterogeneousBrownianMotion(paintedrates.parameter, paintedrates.color, μ, v)
 end
 # params(m::HeterogeneousBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v)
 

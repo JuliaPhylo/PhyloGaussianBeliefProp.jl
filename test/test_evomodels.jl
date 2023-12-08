@@ -131,7 +131,9 @@ end
         @testset "Random root several mv rates" begin
         rates = [[2.0 0.5; 0.5 1.0], [2.0 0.5; 0.5 1.0]]
         colors = Dict(9 => 2, 7 => 2, 8 => 2) # includes one hybrid edge
-        m = PGBP.HeterogeneousBrownianMotion(rates, colors, [3.0, -3.0], [0.1 0.01; 0.01 0.2])
+        pp = PGBP.PaintedParameter(rates, colors)
+        show(devnull, pp)
+        m = PGBP.HeterogeneousBrownianMotion(pp, [3.0, -3.0], [0.1 0.01; 0.01 0.2])
         show(devnull, m)
         b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
