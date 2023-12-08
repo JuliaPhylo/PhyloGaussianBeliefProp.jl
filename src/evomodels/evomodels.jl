@@ -160,24 +160,24 @@ end
 """
     hybdridnode_displacement(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
     hybdridnode_precision(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
-    hybdridnode_variance(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
+    hybridnode_variance(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
 
 Under the most general weighted average Gaussian model, X₀ given its parents X₁, X₂, ...
 is Gaussian with conditional mean the weighted average of the parents
 plus a displacement vecror ω and conditional variance Σ independent of X₁, X₂, ... .
-`hybdridnode_variance` and `hybdridnode_precision`should return a matrix of symmetric type.
-`hybdridnode_precision` defaults to the inverse of `hybdridnode_variance`
+`hybridnode_variance` and `hybdridnode_precision`should return a matrix of symmetric type.
+`hybdridnode_precision` defaults to the inverse of `hybridnode_variance`
 """
 function hybdridnode_displacement(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
     error("hybdridnode_displacement not implemented for type $(typeof(obj)).")
 end
-@doc (@doc hybdridnode_displacement) hybdridnode_variance
-function hybdridnode_variance(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
-    error("`hybdridnode_variance` not implemented for type $(typeof(obj)).")
+@doc (@doc hybdridnode_displacement) hybridnode_variance
+function hybridnode_variance(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
+    error("`hybridnode_variance` not implemented for type $(typeof(obj)).")
 end
 @doc (@doc hybdridnode_displacement) hybdridnode_precision
 function hybdridnode_precision(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
-    return inv(hybdridnode_variance(obj, parentedges))
+    return inv(hybridnode_variance(obj, parentedges))
 end
 
 """
@@ -222,6 +222,7 @@ function factor_hybridnode(m::EvolutionaryModel{T}, pae::AbstractVector{PN.Edge}
     q = Matrix{T}(undef, ntraits, nparents * ntraits) # init actualisation
     for (k, edge) in enumerate(pae)
         (ωe , ve) = branch_transition_qωv!(view(q, :, ((k-1) * ntraits + 1):(k*ntraits)), m, edge)
+        view(q, :, ((k-1) * ntraits + 1):(k*ntraits)) .*= edge.gamma
         v .+= edge.gamma^2 .* ve
         ω .+= edge.gamma .* ωe
     end

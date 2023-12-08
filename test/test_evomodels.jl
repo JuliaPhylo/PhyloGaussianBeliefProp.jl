@@ -116,7 +116,28 @@ end
         @test tmp ≈ -17.66791635814575
         end
     end
+    @testset "Full BM" begin
+        @testset "Fixed Root diagonal" begin
+        m = PGBP.HeterogeneousBrownianMotion([2.0 0.0; 0.0 1.0], [3.0, -3.0])
+        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b)
+        PGBP.calibrate!(ctb, [spt])
+        _, tmp = PGBP.integratebelief!(ctb)
+        @test_broken tmp ≈ -24.8958130127972
+        end
+        @testset "Fixed Root full" begin
+        m = PGBP.HeterogeneousBrownianMotion([2.0 0.5; 0.5 1.0], [3.0, -3.0])
+        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b)
+        PGBP.calibrate!(ctb, [spt])
+        _, tmp = PGBP.integratebelief!(ctb)
+        @test_broken tmp ≈ -24.312323855394055
+        end
+    end
     #= likelihood using PN.vcv and matrix inversion
+    using Distributions
     σ2tmp = 2; μtmp = 3
     Σnet = σ2tmp .* Matrix(vcv(net)[!,Symbol.(df.taxon)])
     # for y
@@ -142,5 +163,14 @@ end
     ll(μ) = loglikelihood(MvNormal(repeat([μ[1]],3), 2 .* Σnet[xind,xind]), Vector{Float64}(tbl.x[xind])) + loglikelihood(MvNormal(repeat([μ[2]],4), 1 .* Σnet), tbl.y) 
     using Integrals
     log(solve(IntegralProblem((x,p) -> exp(ll(x)), [-Inf, -Inf], [Inf, Inf]), HCubatureJL(), reltol = 1e-16, abstol = 1e-16).u) # -17.66791635814575
+    # For x, y, full
+    Σnet = Matrix(vcv(net)[!,Symbol.(df.taxon)])
+    R = [2.0 0.5; 0.5 1.0]
+    varxy = kron(R, Σnet)
+    xyind = vcat(xind, 4 .+ [1,2,3,4])
+    varxy = varxy[xyind, xyind]
+    meanxy = vcat(repeat([3.0],3), repeat([-3.0],4))
+    datxy = Vector{Float64}(vcat(tbl.x[xind], tbl.y))
+    loglikelihood(MvNormal(meanxy, varxy), datxy) # -24.312323855394055
     =#
 end

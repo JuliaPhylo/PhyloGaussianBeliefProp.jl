@@ -17,6 +17,18 @@ end
 
 ncolors(pp::PaintedParameter) = length(pp.parameter)
 
+function getparameter(pp::PaintedParameter, number::Int)
+    pp.parameter[pp.color[number]]
+end
+
+function Base.show(io::IO, obj::PaintedParameter)
+    disp = "Painted parameter on a network with $(ncolors(obj)) different parameters: "
+    for pp in obj.parameter
+        disp *= "$(pp) "
+    end
+    print(io, disp)
+end
+
 ################################################################
 ## Heterogeneous Model
 ################################################################
@@ -29,7 +41,7 @@ abstract type HeterogeneousEvolutionaryModel{T} <: EvolutionaryModel{T} end
 The heterogeneous Brownian motion.
 TODO
 """
-struct HeterogeneousBrownianMotion{T<:Real, U<:AbstractVector{T}, V<:AbstractMatrix{T}, W<:Union{T, V}} <: HeterogeneousEvolutionaryModel{T}
+struct HeterogeneousBrownianMotion{T<:Real, U<:AbstractVector{T}, V<:AbstractMatrix{T}, W<:Union{T, V, PDMats.PDMat{T}}} <: HeterogeneousEvolutionaryModel{T}
     "variance rate"
     variancerate::PaintedParameter{W}
     "inverse variance (precision) rate"
@@ -67,3 +79,28 @@ function HeterogeneousBrownianMotion(R, μ, v=nothing)
     )
 end
 # params(m::HeterogeneousBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v)
+
+function branch_actualization(obj::HeterogeneousBrownianMotion{T}, edge::PN.Edge) where T
+    LA.Diagonal{T, Vector{T}}(LA.I(dimension(obj)))
+end
+function branch_actualization!(q::AbstractMatrix, obj::HeterogeneousBrownianMotion, edge::PN.Edge)
+    q[LA.diagind(q)] .= 1.0
+    LA.tril!(q)
+    LA.triu!(q)
+    # TODO: space is already allocated, so we cannot use the Identity ?
+end
+function branch_displacement(obj::HeterogeneousBrownianMotion{T}, edge::PN.Edge) where T
+    zeros(T, dimension(obj))
+end
+function branch_precision(obj::HeterogeneousBrownianMotion, edge::PN.Edge)
+    getparameter(obj.inverserate, edge.number) ./ edge.length
+end
+function branch_variance(obj::HeterogeneousBrownianMotion, edge::PN.Edge)
+    edge.length .* getparameter(obj.variancerate, edge.number)
+end
+function hybdridnode_displacement(obj::HeterogeneousBrownianMotion{T}, parentedges::AbstractVector{PN.Edge}) where T
+    zeros(T, dimension(obj))
+end
+function hybridnode_variance(obj::HeterogeneousBrownianMotion{T}, parentedges::AbstractVector{PN.Edge}) where T
+    zeros(T, dimension(obj), dimension(obj))
+end
