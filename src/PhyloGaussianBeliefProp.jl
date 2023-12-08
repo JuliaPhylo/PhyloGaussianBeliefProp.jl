@@ -19,7 +19,7 @@ using PhyloNetworks: HybridNetwork, getparents, getparent, getparentedge,
 include("utils.jl")
 include("clustergraph.jl")
 include("evomodels/evomodels.jl") # abstract evomodel must be included before all other models
-include("evomodels/brownianmotion.jl")
+include("evomodels/homogeneousbrownianmotion.jl")
 include("beliefs.jl")
 include("beliefupdates.jl")
 include("clustergraphbeliefs.jl")
