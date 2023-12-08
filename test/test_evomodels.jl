@@ -59,6 +59,7 @@ end
         @testset "Fixed Root, no missing" begin
         # y no missing, fixed root
         m = PGBP.UnivariateBrownianMotion(2, 3, 0)
+        show(devnull, m)
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
         ctb = PGBP.ClusterGraphBelief(b)
@@ -117,23 +118,15 @@ end
         end
     end
     @testset "heterogeneous BM" begin
-        @testset "Fixed Root diagonal" begin
-        m = PGBP.HeterogeneousBrownianMotion([2.0 0.0; 0.0 1.0], [3.0, -3.0])
-        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b)
-        PGBP.calibrate!(ctb, [spt])
-        _, tmp = PGBP.integratebelief!(ctb)
-        @test_broken tmp ≈ -24.8958130127972
-        end
-        @testset "Fixed Root full" begin
+        @testset "Fixed Root one mv rate" begin
         m = PGBP.HeterogeneousBrownianMotion([2.0 0.5; 0.5 1.0], [3.0, -3.0])
+        show(devnull, m)
         b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
         ctb = PGBP.ClusterGraphBelief(b)
         PGBP.calibrate!(ctb, [spt])
         _, tmp = PGBP.integratebelief!(ctb)
-        @test_broken tmp ≈ -24.312323855394055
+        @test tmp ≈ -24.312323855394055
         end
     end
     #= likelihood using PN.vcv and matrix inversion

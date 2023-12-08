@@ -52,8 +52,8 @@ Tuple of parameters, the same that can be used to construct the evolutionary mod
 params(d::EvolutionaryModel) # extends StatsAPI.params
 
 function Base.show(io::IO, obj::EvolutionaryModel)
-    disp = modelname(obj) * "\n" * variancename(obj) * " = $(varianceparam(obj))"
-    disp *= "\nroot mean: μ = $(obj.μ)\nroot variance: v = $(obj.v)"
+    disp = modelname(obj) * "\n- " * variancename(obj) * ":\n$(varianceparam(obj))"
+    disp *= "\n- root mean: μ = $(obj.μ)\n- root variance: v = $(obj.v)"
     print(io, disp)
 end
 
@@ -106,7 +106,7 @@ end
 function branch_transition_qωv!(q::AbstractMatrix, obj::EvolutionaryModel, edge::PN.Edge)
     v = branch_variance(obj, edge)
     ω = branch_displacement(obj, edge)
-    branch_actualization!(q,obj, edge)
+    branch_actualization!(q, obj, edge)
     return (ω,v)
 end
 
@@ -143,8 +143,8 @@ function factor_treeedge(q::AbstractMatrix{T}, ω::AbstractVector{T}, j::Abstrac
     qjq = - transpose(q) * jq
     # J = [j -jq; -q'j q'jq]
     gen = ((u,tu,v,tv) for u in 0:nparents for tu in 1:ntraits for v in 0:nparents for tv in 1:ntraits)
-    Juv = (u,tu,v,tv) -> (u==0 ? (v==0 ? j[tu,tv] : jq[tu,tv]) :
-                                 (v==0 ? jq[tv,tu] : qjq[tu,tv]))
+    Juv = (u,tu,v,tv) -> (u==0 ? (v==0 ? j[tu,tv] : jq[tu,(v-1)*ntraits+tv]) :
+                                 (v==0 ? jq[tv,(u-1)*ntraits+tu] : qjq[(u-1)*ntraits+tu,(v-1)*ntraits+tv]))
     J = LA.Symmetric(SMatrix{ntot,ntot,T}(Juv(x...) for x in gen))
     qjomega = transpose(jq) * ω
     jomega = j * ω
