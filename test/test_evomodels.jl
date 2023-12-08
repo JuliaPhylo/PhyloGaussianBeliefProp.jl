@@ -55,7 +55,7 @@ end
     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
     spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
 
-    @testset "Univariate BM" begin
+    @testset "homogeneous univariate BM" begin
         @testset "Fixed Root, no missing" begin
         # y no missing, fixed root
         m = PGBP.UnivariateBrownianMotion(2, 3, 0)
@@ -88,7 +88,7 @@ end
         end
     end
     @testset "Diagonal BM" begin
-        @testset "Fixed Root" begin
+        @testset "homogeneous, fixed root" begin
         m = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0,0))
         b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
@@ -97,7 +97,7 @@ end
         _, tmp = PGBP.integratebelief!(ctb)
         @test tmp ≈ -24.8958130127972
         end
-        @testset "Random Root" begin
+        @testset "homogeneous, random root" begin
         m = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0.1,10))
         b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
@@ -106,7 +106,7 @@ end
         _, tmp = PGBP.integratebelief!(ctb)
         @test tmp ≈ -21.347496753649892
         end
-        @testset "Infinite Root" begin
+        @testset "homogeneous, improper root" begin
         m = PGBP.MvDiagBrownianMotion((2,1), (1,-3), (Inf,Inf))
         b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
@@ -116,7 +116,7 @@ end
         @test tmp ≈ -17.66791635814575
         end
     end
-    @testset "Full BM" begin
+    @testset "heterogeneous BM" begin
         @testset "Fixed Root diagonal" begin
         m = PGBP.HeterogeneousBrownianMotion([2.0 0.0; 0.0 1.0], [3.0, -3.0])
         b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);

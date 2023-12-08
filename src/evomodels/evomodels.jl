@@ -9,7 +9,7 @@ An object of this type must contain at least the following elements:
 * μ: the mean of the trait at the root.
 * v: the variance of the trait at the root. Can be zero (fixed root) or infinite.
 
-New evoloutionary models must implement the following interfaces:
+New evolutionary models must implement the following interfaces:
 ```julia
 params(obj::EvolutionaryModel)
 params_optimize(obj::EvolutionaryModel)
@@ -66,6 +66,8 @@ end
     branch_displacement(obj::EvolutionaryModel, edge::PN.Edge)
     branch_precision(obj::EvolutionaryModel, edge::PN.Edge)
     branch_variance(obj::EvolutionaryModel, edge::PN.Edge)
+    branch_transition_qωj(obj::EvolutionaryModel, edge)
+    branch_transition_qωv!(q, obj::EvolutionaryModel, edge)
 
 Under the most general linear Gaussian model, X₀ given X₁ is Gaussian with
 conditional mean q X₁ + ω and conditional variance Σ independent of X₁.
@@ -95,13 +97,13 @@ end
 function branch_variance(obj::EvolutionaryModel, edge::PN.Edge)
     return inv(branch_precision(obj, edge))
 end
-function branch_transition_qωj(obj::EvolutionaryModel{T}, edge::PN.Edge) where T
+function branch_transition_qωj(obj::EvolutionaryModel, edge::PN.Edge)
     j = branch_precision(obj, edge)
     ω = branch_displacement(obj, edge)
     q = branch_actualization(obj, edge)
     return (q,ω,j)
 end
-function branch_transition_qωv!(q::AbstractMatrix, obj::EvolutionaryModel{T}, edge::PN.Edge) where T
+function branch_transition_qωv!(q::AbstractMatrix, obj::EvolutionaryModel, edge::PN.Edge)
     v = branch_variance(obj, edge)
     ω = branch_displacement(obj, edge)
     branch_actualization!(q,obj, edge)
