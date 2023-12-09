@@ -315,10 +315,14 @@ function factor_root(::IsUnivariate, m::EvolutionaryModel{T}) where T
     return(m.μ*j, j, g)
 end
 function factor_root(::IsMultivariate, m::EvolutionaryModel{T}) where T
-    j = rootpriorprecision(m)
+    #= check if improper from m.v since inv(m.v), called by `rootpriorprecision`,
+    errors if m.v contains Infs or NaNs for m.v == Symmetric =#
+    improper = any(LA.diag(rootpriorvariance(m)) .== Inf)
+    j = improper ? zeros(T, size(rootpriorvariance(m))) : rootpriorprecision(m)
+    # j = rootpriorprecision(m)
     μ = rootpriormeanvector(m)
     h = j * μ
-    improper = any(LA.diag(j) .== 0.0) # then assumes that *all* are 0
+    # improper = any(LA.diag(j) .== 0.0) # then assumes that *all* are 0
     g = (improper ? zero(T) : (-dimension(m) * log2π + LA.logdet(j) - LA.dot(m.μ, h))/2)
     return(h, j, g)
 end

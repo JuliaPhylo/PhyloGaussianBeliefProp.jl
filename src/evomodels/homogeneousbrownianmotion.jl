@@ -132,6 +132,17 @@ function factor_treeedge(m::MvDiagBrownianMotion{T,V}, t::Real) where {T,V}
     g = m.g0 - numt * log(t)/2
     return(h,J,g)
 end
+function factor_treeedge(m::MvFullBrownianMotion{T,P1,V,P2}, t::Real) where {T,P1,V,P2}
+    numt = dimension(m); ntot = numt * 2
+    j = m.J ./ T(t)
+    # J = [j -j; -j j]
+    gen = ((u,tu,v,tv) for u in 1:2 for tu in 1:numt for v in 1:2 for tv in 1:numt)
+    Juv = (u,tu,v,tv) -> (u==v ? j[tu,tv] : -j[tu,tv])
+    J = LA.Symmetric(SMatrix{ntot,ntot}(Juv(x...) for x in gen))
+    h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
+    g = m.g0 - numt * log(t)/2
+    return(h,J,g)
+end
 
 ################################################################
 ## factor_hybridnode
@@ -166,6 +177,19 @@ function factor_tree_degeneratehybrid(m::MvDiagBrownianMotion{T,V}, t0::Real, γ
     Juv = (u,tu,v,tv) -> (tu==tv ?
             (u==0 ? (v==0 ? j[tu] : -γ[v] * j[tu]) :
                     (v==0 ? -γ[u] * j[tu] : γ[u] * γ[v] * j[tu])) : zero(T))
+    J = LA.Symmetric(SMatrix{ntot,ntot, T}(Juv(x...) for x in gen))
+    h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
+    g = m.g0 - numt * log(t0)/2
+    return(h,J,g)
+end
+function factor_tree_degeneratehybrid(m::MvFullBrownianMotion{T,P1,V,P2}, t0::Real, γ::AbstractVector) where {T,P1,V,P2}
+    j = m.J ./ T(t0)
+    nparents = length(γ); nn = 1 + nparents
+    numt = dimension(m); ntot = nn * numt
+    # J = [j -γ1j -γ2j; -γ1j γ1γ1j γ1γ2j; -γ2j γ1γ2j γ2γ2j]
+    gen = ((u,tu,v,tv) for u in 0:nparents for tu in 1:numt for v in 0:nparents for tv in 1:numt)
+    Juv = (u,tu,v,tv) -> (u==0 ? (v==0 ? j[tu,tv] : -γ[v] * j[tu,tv]) :
+                                 (v==0 ? -γ[u] * j[tu,tv] : γ[u] * γ[v] * j[tu,tv]))
     J = LA.Symmetric(SMatrix{ntot,ntot, T}(Juv(x...) for x in gen))
     h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
     g = m.g0 - numt * log(t0)/2

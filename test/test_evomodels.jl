@@ -117,6 +117,37 @@ end
         @test tmp ≈ -17.66791635814575
         end
     end
+    @testset "Full BM" begin
+        @testset "homogeneous, fixed root" begin
+        m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0,-3.0])
+        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b)
+        PGBP.calibrate!(ctb, [spt])
+        _, tmp = PGBP.integratebelief!(ctb)
+        @test tmp ≈ -24.312323855394055
+        end
+        @testset "homogeneous, random root" begin
+        m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0,-3.0],
+                [0.1 0.01; 0.01 0.2])
+        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b)
+        PGBP.calibrate!(ctb, [spt])
+        _, tmp = PGBP.integratebelief!(ctb)
+        @test tmp ≈ -23.16482738327936
+        end
+        @testset "homogeneous, improper root" begin
+        m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0,-3.0],
+                [Inf 0; 0 Inf])
+        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b)
+        PGBP.calibrate!(ctb, [spt])
+        _, tmp = PGBP.integratebelief!(ctb)
+        @test tmp ≈ -16.9626044836951
+        end
+    end
     @testset "heterogeneous BM" begin
         @testset "Fixed Root one mv rate" begin
         m = PGBP.HeterogeneousBrownianMotion([2.0 0.5; 0.5 1.0], [3.0, -3.0])
@@ -183,5 +214,16 @@ end
     meanxy = vcat(repeat([3.0],3), repeat([-3.0],4))
     datxy = Vector{Float64}(vcat(tbl.x[xind], tbl.y))
     loglikelihood(MvNormal(meanxy, varxy), datxy) # -23.16482738327936
+    # Full x y improper root
+    R = [2.0 0.5; 0.5 1.0]
+    varxy = kron(R, Σnet)
+    xyind = vcat(xind, 4 .+ [1,2,3,4])
+    varxy = varxy[xyind, xyind]
+    meanxy = vcat(repeat([3.0],3), repeat([-3.0],4))
+    datxy = Vector{Float64}(vcat(tbl.x[xind], tbl.y))
+    ll(μ) = loglikelihood(MvNormal(vcat(repeat([μ[1]],3),repeat([μ[2]],4)), varxy), datxy)
+    using Integrals
+    log(solve(IntegralProblem((x,p) -> exp(ll(x)), [-Inf, -Inf], [Inf, Inf]),
+        HCubatureJL(), reltol = 1e-16, abstol = 1e-16).u) # -16.9626044836951
     =#
 end
