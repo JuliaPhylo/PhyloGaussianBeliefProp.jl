@@ -63,7 +63,10 @@ function getrootvariancemultivariate(T, numt, v=nothing)
         size(v) == (numt,numt)       || error("v and μ have conflicting sizes")
         LA.issymmetric(v)            || error("v should be symmetric")
         v = LA.Symmetric(Matrix{T}(v))
-        LA.isposdef(v)               || error("v is not positive semi-definite")
+        # `min(LA.eigvals(v)...) ≥ 0` catches the zero matrix (e.g. fixed root)
+        # `LA.isposdef(v)` catches symmetric matrices with ≥1 `Inf` on the diagonal
+        LA.isposdef(v) || min(LA.eigvals(v)...) ≥ 0 || error("v is not positive semi-definite")
+        # LA.isposdef(v)               || error("v is not positive semi-definite")
     end
     return v
 end
@@ -156,7 +159,7 @@ The generic fallback method uses functions
 [`branch_precision`](@ref) for Σ⁻¹.
 
 Under a Brownian motion, we have q=I, ω=0, and Σ=tR
-where R is the model's variance rate ant t the length of the branch.
+where R is the model's variance rate and t is the length of the branch.
 In that case, a specific (more efficient) method is implemented,
 and the default fallback is not used.
 """

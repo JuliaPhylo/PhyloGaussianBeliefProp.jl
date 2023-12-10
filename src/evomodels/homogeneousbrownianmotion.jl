@@ -106,7 +106,29 @@ function MvFullBrownianMotion(R, μ, v=nothing)
     J = inv(R) # uses cholesky. fails if not symmetric positive definite
     MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, -(numt * log2π + LA.logdet(R))/2)
 end
+MvFullBrownianMotion(Uvec::AbstractVector, μ, v=nothing) = begin
+    # R is specified by its upper cholesky factor that has been vectorized
+    # todo: this can be absorbed into the original constructor above
+    numt = length(μ)
+    div(numt*(1+numt),2) == length(Uvec) || error("Uvec and μ have conflicting sizes")
+    R = zeros(numt, numt)
+    for (k, (i,j)) in enumerate(((i,j) for i in 1:numt for j in i:numt))
+        R[i,j] = Uvec[k]
+    end
+    R = R' * R
+    MvFullBrownianMotion(R, μ, v)
+end
 params(m::MvFullBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v)
+params_optimize(m::MvFullBrownianMotion) = begin
+    U = LA.cholesky(m.R).U
+    # todo: fix below to allow for non-positive covariances
+    [log.(U[i,j] for d in dimension(m) for i in 1:d for j in i:d)..., m.μ...]
+end
+params_original(m::MvFullBrownianMotion, logRμ::AbstractArray) = begin
+    numut = (x -> div(x*(1+x),2))(dimension(m)) # no. of ◹ elements in m.R
+    # todo: fix below to allow for non-positive covariances
+    (exp.(logRμ[1:numut]), logRμ[(numut+1):end], m.v)
+end
 
 ################################################################
 ## factor_treeedge
