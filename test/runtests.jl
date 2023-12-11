@@ -15,5 +15,5 @@ const PGBP = PhyloGaussianBeliefProp
   include("test_evomodels.jl")
   include("test_canonicalform.jl")
   include("test_calibration.jl")
-  include("test_calibration2.jl")
+  include("test_optimization.jl")
 end

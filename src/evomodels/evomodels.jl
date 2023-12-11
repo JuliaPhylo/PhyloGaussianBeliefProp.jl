@@ -99,7 +99,8 @@ end
     branch_displacement(obj::EvolutionaryModel, edge::PN.Edge)
     branch_precision(obj::EvolutionaryModel, edge::PN.Edge)
     branch_variance(obj::EvolutionaryModel, edge::PN.Edge)
-    branch_transition_qωj(obj::EvolutionaryModel, edge)
+    branch_logdet(obj::EvolutionaryModel, edge::PN.Edge, j)
+    branch_transition_qωjg(obj::EvolutionaryModel, edge)
     branch_transition_qωv!(q, obj::EvolutionaryModel, edge)
 
 Under the most general linear Gaussian model, X₀ given X₁ is Gaussian with
@@ -130,11 +131,15 @@ end
 function branch_variance(obj::EvolutionaryModel, edge::PN.Edge)
     return inv(branch_precision(obj, edge))
 end
-function branch_transition_qωj(obj::EvolutionaryModel, edge::PN.Edge)
+function branch_logdet(obj::EvolutionaryModel, ::PN.Edge, j)
+    return (- dimension(obj) * log2π + LA.logdet(j))/2
+end
+function branch_transition_qωjg(obj::EvolutionaryModel, edge::PN.Edge)
     j = branch_precision(obj, edge)
     ω = branch_displacement(obj, edge)
     q = branch_actualization(obj, edge)
-    return (q,ω,j)
+    g = branch_logdet(obj, edge, j)
+    return (q,ω,j,g)
 end
 function branch_transition_qωv!(q::AbstractMatrix, obj::EvolutionaryModel, edge::PN.Edge)
     v = branch_variance(obj, edge)
@@ -163,14 +168,14 @@ where R is the model's variance rate and t is the length of the branch.
 In that case, a specific (more efficient) method is implemented,
 and the default fallback is not used.
 """
-function factor_treeedge(m::EvolutionaryModel{T}, edge::PN.Edge) where T
-    (q,ω,j) = branch_transition_qωj(m, edge)
-    factor_treeedge(q, ω, j, 1, dimension(m))
+function factor_treeedge(m::EvolutionaryModel, edge::PN.Edge)
+    (q,ω,j,g0) = branch_transition_qωjg(m, edge)
+    factor_treeedge(q, ω, j, 1, dimension(m), g0)
 end
 
 # factor from precision, actualization, displacement
 function factor_treeedge(q::AbstractMatrix{T}, ω::AbstractVector{T}, j::AbstractMatrix{T},
-                         nparents::Int, ntraits::Int) where T
+                         nparents::Int, ntraits::Int, g0::T) where T
     nn = 1 + nparents; ntot = ntraits * nn
     jq = - j * q
     qjq = - transpose(q) * jq
@@ -184,7 +189,20 @@ function factor_treeedge(q::AbstractMatrix{T}, ω::AbstractVector{T}, j::Abstrac
     gen = ((u,tu) for u in 0:nparents for tu in 1:ntraits)
     huv = (u,tu) -> (u==0 ? jomega[tu] : qjomega[tu])
     h =  SVector{ntot,T}(huv(x...) for x in gen)
-    g = (- ntraits * log2π + LA.logdet(j) - LA.dot(ω, jomega)) / 2
+    g = g0 - LA.dot(ω, jomega) / 2
+    return(h,J,g)
+end
+# frequent case when ω=0
+function factor_treeedge(q::AbstractMatrix{T}, j::AbstractMatrix{T},
+                         nparents::Int, ntraits::Int, g::T) where T
+    nn = 1 + nparents; ntot = ntraits * nn
+    jq = - j * q
+    qjq = - transpose(q) * jq
+    gen = ((u,tu,v,tv) for u in 0:nparents for tu in 1:ntraits for v in 0:nparents for tv in 1:ntraits)
+    Juv = (u,tu,v,tv) -> (u==0 ? (v==0 ? j[tu,tv] : jq[tu,(v-1)*ntraits+tv]) :
+                (v==0 ? jq[tv,(u-1)*ntraits+tu] : qjq[(u-1)*ntraits+tu,(v-1)*ntraits+tv]))
+    J = LA.Symmetric(SMatrix{ntot,ntot,T}(Juv(x...) for x in gen))
+    h =  SVector{ntot,T}(zero(T) for _ in 1:ntot)
     return(h,J,g)
 end
 
@@ -256,13 +274,15 @@ function factor_hybridnode(m::EvolutionaryModel{T}, pae::AbstractVector{PN.Edge}
     ω = hybdridnode_displacement(m, pae) # extra node displacement
     q = Matrix{T}(undef, ntraits, nparents * ntraits) # init actualisation
     for (k, edge) in enumerate(pae)
-        (ωe , ve) = branch_transition_qωv!(view(q, :, ((k-1) * ntraits + 1):(k*ntraits)), m, edge)
-        view(q, :, ((k-1) * ntraits + 1):(k*ntraits)) .*= edge.gamma
+        qe = view(q, :, ((k-1) * ntraits + 1):(k*ntraits))
+        (ωe, ve) = branch_transition_qωv!(qe, m, edge)
+        qe .*= edge.gamma
         v .+= edge.gamma^2 .* ve
         ω .+= edge.gamma .* ωe
     end
     j = inv(v) # bloc variance
-    factor_treeedge(q, ω, j, nparents, ntraits)
+    g0 = (- ntraits * log2π + LA.logdet(j))/2
+    factor_treeedge(q, ω, j, nparents, ntraits, g0)
 end
 
 # j = Sigma_child^{-1}

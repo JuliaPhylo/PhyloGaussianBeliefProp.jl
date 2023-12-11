@@ -78,7 +78,6 @@ end
 modelname(m::HeterogeneousBrownianMotion) = "Heterogeneous Brownian motion"
 variancename(m::HeterogeneousBrownianMotion) = "evolutionary variance rates"
 varianceparam(m::HeterogeneousBrownianMotion) = m.variancerate
-# TODO: extend this constructor to take instead of vector of rates and a color map
 function HeterogeneousBrownianMotion(R::AbstractMatrix, μ, v=nothing)
     HeterogeneousBrownianMotion([R], Dict{Int,Int}(), μ, v)
 end
@@ -105,7 +104,6 @@ end
 
 function branch_actualization(obj::HeterogeneousBrownianMotion{T}, ::PN.Edge) where T
     ScalMat(dimension(obj), one(T))
-    # LA.Diagonal{T, Vector{T}}(LA.I(dimension(obj)))
 end
 function branch_actualization!(q::AbstractMatrix, ::HeterogeneousBrownianMotion, ::PN.Edge)
     # below: would error on a ScalMat, but used on a Matrix created by branch_actualization
@@ -113,18 +111,92 @@ function branch_actualization!(q::AbstractMatrix, ::HeterogeneousBrownianMotion,
     LA.tril!(q)
     LA.triu!(q)
 end
-function branch_displacement(obj::HeterogeneousBrownianMotion{T}, ::PN.Edge) where T
-    zeros(T, dimension(obj))
-end
 function branch_precision(obj::HeterogeneousBrownianMotion, edge::PN.Edge)
     getparameter(obj.inverserate, edge) ./ edge.length
 end
 function branch_variance(obj::HeterogeneousBrownianMotion, edge::PN.Edge)
     edge.length .* getparameter(obj.variancerate, edge)
 end
-function hybdridnode_displacement(obj::HeterogeneousBrownianMotion{T}, parentedges::AbstractVector{PN.Edge}) where T
+function branch_logdet(obj::HeterogeneousBrownianMotion, edge::PN.Edge)
+    getparameter(obj.g0, edge) - dimension(obj) * log(edge.length)/2
+end
+function factor_treeedge(m::HeterogeneousBrownianMotion, edge::PN.Edge)
+    ntraits = dimension(m)
+    q = branch_actualization(m, edge)
+    j = branch_precision(m, edge)
+    g = branch_logdet(m, edge)
+    factor_treeedge(q,j,1,ntraits,g)
+end
+function factor_hybridnode(m::HeterogeneousBrownianMotion{T}, pae::AbstractVector{PN.Edge}) where T
+    ntraits = dimension(m)
+    nparents = length(pae)
+    v = zeros(T, ntraits, ntraits) # no extra node variance
+    q = Matrix{T}(undef, ntraits, nparents * ntraits) # init actualisation
+    for (k, edge) in enumerate(pae)
+        qe = view(q, :, ((k-1) * ntraits + 1):(k*ntraits))
+        ve = branch_variance(m, edge)
+        branch_actualization!(qe, m, edge)
+        qe .*= edge.gamma
+        v .+= edge.gamma^2 .* ve
+    end
+    j = inv(v) # block variance
+    g0 = (- ntraits * log2π + LA.logdet(j))/2
+    factor_treeedge(q,j,nparents,ntraits,g0)
+end
+
+"""
+    HeterogeneousShiftedBrownianMotion{T,U,V,W} <: HeterogeneousEvolutionaryModel{T}
+
+Type for a heterogeneous Brownian motion model like
+[`HeterogeneousBrownianMotion`](@ref) but with a possible
+shift in the mean along each edge.
+"""
+struct HeterogeneousShiftedBrownianMotion{T<:Real, U<:AbstractVector{T}, V<:AbstractMatrix{T}, W<:Union{T, V, PDMats.PDMat{T}}} <: HeterogeneousEvolutionaryModel{T}
+    "variance rate"
+    variancerate::PaintedParameter{W}
+    "inverse variance (precision) rate"
+    inverserate::PaintedParameter{W}
+    "shift in the mean along edges"
+    shiftmean::PaintedParameter{U}
+    "prior mean at the root"
+    μ::U
+    "prior variance at the root"
+    v::V
+    "g0: -log(2π variancerate)/2"
+    g0::PaintedParameter{T}
+    # TODO: we do not use g0 right now. Should we ? Or delete ? Or maybe will be used if we do not rely on fall backs anymore.
+end
+
+modelname(m::HeterogeneousShiftedBrownianMotion) = "Heterogeneous Brownian motion with mean shifts"
+variancename(m::HeterogeneousShiftedBrownianMotion) = "evolutionary variance rates"
+varianceparam(m::HeterogeneousShiftedBrownianMotion) = m.variancerate
+# fixit: write a constructor
+
+function branch_actualization(obj::HeterogeneousShiftedBrownianMotion{T}, ::PN.Edge) where T
+    ScalMat(dimension(obj), one(T))
+end
+function branch_actualization!(q::AbstractMatrix, ::HeterogeneousShiftedBrownianMotion, ::PN.Edge)
+    # below: would error on a ScalMat, but used on a Matrix created by branch_actualization
+    q[LA.diagind(q)] .= 1.0
+    LA.tril!(q)
+    LA.triu!(q)
+end
+function branch_displacement(obj::HeterogeneousShiftedBrownianMotion, ::PN.Edge)
+    getparameter(obj.shiftmean, edge)
+end
+function branch_precision(obj::HeterogeneousShiftedBrownianMotion, edge::PN.Edge)
+    getparameter(obj.inverserate, edge) ./ edge.length
+end
+function branch_variance(obj::HeterogeneousShiftedBrownianMotion, edge::PN.Edge)
+    edge.length .* getparameter(obj.variancerate, edge)
+end
+function branch_logdet(obj::HeterogeneousShiftedBrownianMotion, edge::PN.Edge, j)
+    getparameter(obj.g0, edge) - dimension(obj) * log(edge.length)/2
+end
+function hybdridnode_displacement(obj::HeterogeneousShiftedBrownianMotion{T}, parentedges::AbstractVector{PN.Edge}) where T
     zeros(T, dimension(obj))
 end
-function hybridnode_variance(obj::HeterogeneousBrownianMotion{T}, parentedges::AbstractVector{PN.Edge}) where T
-    zeros(T, dimension(obj), dimension(obj))
+function hybridnode_variance(obj::HeterogeneousShiftedBrownianMotion{T}, parentedges::AbstractVector{PN.Edge}) where T
+    ntraits = dimension(obj)
+    zeros(T, ntraits, ntraits)
 end
