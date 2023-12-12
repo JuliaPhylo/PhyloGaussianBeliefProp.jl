@@ -632,6 +632,16 @@ message, which is *not* gₘ-gₛ because the stored beliefs are not normalized.
     = -average_energy(C(Jₘ, hₘ, _), C(ΔJ, Δh, 0))
 
 See also: [`average_energy!`](@ref)
+
+## Note:
+E[Δg] = Δg
+      = +(1/2) log|Jₘ Jₛ⁻¹|
+      = +(1/2) log|I - (I - Jₘ Jₛ⁻¹)|
+      = +(1/2) log|I - P(I-D)P⁻¹|, where JₘJₛ⁻¹ = PDP⁻¹ is the eigendecomposition
+      ≈ +(1/2) (1 + tr(P(I-D)P⁻¹)) + O(‖vec(I-D)‖²), where ‖⋅‖ is the 1-norm
+      = +(1/2) (1 + tr(I-D)), first-order approx wrt ‖vec(I-D)‖
+      = +(1/2) (1 + k - tr(D)), where k = dim(I)
+*todo: Discuss if above should be added to current output of approximate_kl!
 """
 function approximate_kl!(res::AbstractResidual{T}, sepset::AbstractBelief{T}) where {T <: Real}
     #= Check if empty because `isposdef` returns true for empty matrices, e.g.
