@@ -93,7 +93,7 @@ function HeterogeneousBrownianMotion(Rvec, colors::AbstractDict, μ, v=nothing)
     all(LA.issymmetric(R) for R in Rvec) || error("R should be symmetric")
     Rvec = [PDMat(R) for R in Rvec]
     Jvec = inv.(Rvec) # uses cholesky. fails if not symmetric positive definite
-    gvec = [-(numt * log2π + LA.logdet(R))/2 for R in Rvec]
+    gvec = [branch_logdet_variance(numt, R) for R in Rvec]
     HeterogeneousBrownianMotion{T, typeof(μ), typeof(v), typeof(Rvec[1])}(
         PaintedParameter(Rvec, colors), PaintedParameter(Jvec, colors), μ, v,
         PaintedParameter(gvec, colors)
@@ -142,7 +142,7 @@ function factor_hybridnode(m::HeterogeneousBrownianMotion{T}, pae::AbstractVecto
         v .+= edge.gamma^2 .* ve
     end
     j = inv(v) # block variance
-    g0 = (- ntraits * log2π + LA.logdet(j))/2
+    g0 = branch_logdet_precision(ntraits, j)
     factor_treeedge(q,j,nparents,ntraits,g0)
 end
 

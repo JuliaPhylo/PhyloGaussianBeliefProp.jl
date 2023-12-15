@@ -99,7 +99,7 @@ end
     branch_displacement(obj::EvolutionaryModel, edge::PN.Edge)
     branch_precision(obj::EvolutionaryModel, edge::PN.Edge)
     branch_variance(obj::EvolutionaryModel, edge::PN.Edge)
-    branch_logdet(obj::EvolutionaryModel, edge::PN.Edge, j)
+    branch_logdet(obj::EvolutionaryModel, edge::PN.Edge, precision::AbstractMatrix)
     branch_transition_qωjg(obj::EvolutionaryModel, edge)
     branch_transition_qωv!(q, obj::EvolutionaryModel, edge)
 
@@ -107,6 +107,8 @@ Under the most general linear Gaussian model, X₀ given X₁ is Gaussian with
 conditional mean q X₁ + ω and conditional variance Σ independent of X₁.
 `branch_precision` and `branch_variance`should return a matrix of symmetric type.
 `branch_variance` defaults to the inverse of `branch_precision`.
+`branch_logdet` defaults to -0.5*log(|2πΣ|), the log normalizing constant of the
+Gaussian density in the traditional (non cannonical) form.
 
 Under a Brownian motion, we have q=I, ω=0, and conditional variance tR
 where R is the model's variance rate.
@@ -131,8 +133,14 @@ end
 function branch_variance(obj::EvolutionaryModel, edge::PN.Edge)
     return inv(branch_precision(obj, edge))
 end
-function branch_logdet(obj::EvolutionaryModel, ::PN.Edge, j)
-    return (- dimension(obj) * log2π + LA.logdet(j))/2
+function branch_logdet(obj::EvolutionaryModel, ::PN.Edge, precision::AbstractMatrix)
+    return branch_logdet_precision(dimension(obj), precision)
+end
+function branch_logdet_precision(dim::Int, precision::AbstractMatrix)
+    return (- dim * log2π + LA.logdet(precision))/2
+end
+function branch_logdet_variance(dim::Int, variance::AbstractMatrix)
+    return - (dim * log2π + LA.logdet(variance))/2
 end
 function branch_transition_qωjg(obj::EvolutionaryModel, edge::PN.Edge)
     j = branch_precision(obj, edge)
@@ -176,34 +184,34 @@ end
 # factor from precision, actualization, displacement
 function factor_treeedge(q::AbstractMatrix{T}, ω::AbstractVector{T}, j::AbstractMatrix{T},
                          nparents::Int, ntraits::Int, g0::T) where T
-    nn = 1 + nparents; ntot = ntraits * nn
-    jq = - j * q
-    qjq = - transpose(q) * jq
-    # J = [j -jq; -q'j q'jq]
-    gen = ((u,tu,v,tv) for u in 0:nparents for tu in 1:ntraits for v in 0:nparents for tv in 1:ntraits)
-    Juv = (u,tu,v,tv) -> (u==0 ? (v==0 ? j[tu,tv] : jq[tu,(v-1)*ntraits+tv]) :
-                                 (v==0 ? jq[tv,(u-1)*ntraits+tu] : qjq[(u-1)*ntraits+tu,(v-1)*ntraits+tv]))
-    J = LA.Symmetric(SMatrix{ntot,ntot,T}(Juv(x...) for x in gen))
+    J, ntot, jq = _factor_treeedge_get_J(q, j, nparents, ntraits)
     qjomega = transpose(jq) * ω
     jomega = j * ω
     gen = ((u,tu) for u in 0:nparents for tu in 1:ntraits)
     huv = (u,tu) -> (u==0 ? jomega[tu] : qjomega[tu])
-    h =  SVector{ntot,T}(huv(x...) for x in gen)
+    h = SVector{ntot,T}(huv(x...) for x in gen)
     g = g0 - LA.dot(ω, jomega) / 2
     return(h,J,g)
 end
 # frequent case when ω=0
 function factor_treeedge(q::AbstractMatrix{T}, j::AbstractMatrix{T},
                          nparents::Int, ntraits::Int, g::T) where T
+    J, ntot, _ = _factor_treeedge_get_J(q, j, nparents, ntraits)
+    h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
+    return(h,J,g)
+end
+# computes only J
+function _factor_treeedge_get_J(q::AbstractMatrix{T}, j::AbstractMatrix{T}, 
+                                nparents::Int, ntraits::Int) where T
     nn = 1 + nparents; ntot = ntraits * nn
     jq = - j * q
     qjq = - transpose(q) * jq
+    # J = [j -jq; -q'j q'jq]
     gen = ((u,tu,v,tv) for u in 0:nparents for tu in 1:ntraits for v in 0:nparents for tv in 1:ntraits)
     Juv = (u,tu,v,tv) -> (u==0 ? (v==0 ? j[tu,tv] : jq[tu,(v-1)*ntraits+tv]) :
                 (v==0 ? jq[tv,(u-1)*ntraits+tu] : qjq[(u-1)*ntraits+tu,(v-1)*ntraits+tv]))
     J = LA.Symmetric(SMatrix{ntot,ntot,T}(Juv(x...) for x in gen))
-    h =  SVector{ntot,T}(zero(T) for _ in 1:ntot)
-    return(h,J,g)
+    return(J, ntot, jq)
 end
 
 ################################################################
@@ -281,7 +289,7 @@ function factor_hybridnode(m::EvolutionaryModel{T}, pae::AbstractVector{PN.Edge}
         ω .+= edge.gamma .* ωe
     end
     j = inv(v) # bloc variance
-    g0 = (- ntraits * log2π + LA.logdet(j))/2
+    g0 = branch_logdet_precision(ntraits, j)
     factor_treeedge(q, ω, j, nparents, ntraits, g0)
 end
 

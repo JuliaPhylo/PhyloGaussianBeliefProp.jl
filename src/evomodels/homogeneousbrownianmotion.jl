@@ -104,7 +104,7 @@ function MvFullBrownianMotion(R, μ, v=nothing)
     LA.issymmetric(R) || error("R should be symmetric")
     R = PDMat(R)
     J = inv(R) # uses cholesky. fails if not symmetric positive definite
-    MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, -(numt * log2π + LA.logdet(R))/2)
+    MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, branch_logdet_variance(numt, R))
 end
 MvFullBrownianMotion(Uvec::AbstractVector, μ, v=nothing) = begin
     # R is specified by its upper cholesky factor that has been vectorized
