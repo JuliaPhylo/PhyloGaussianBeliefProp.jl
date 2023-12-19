@@ -21,6 +21,7 @@ include("utils.jl")
 include("clustergraph.jl")
 include("evomodels/evomodels.jl") # abstract evomodel must be included before all other models
 include("evomodels/homogeneousbrownianmotion.jl")
+include("evomodels/homogeneousornsteinuhlenbeck.jl")
 include("evomodels/heterogeneousmodels.jl")
 include("beliefs.jl")
 include("beliefupdates.jl")

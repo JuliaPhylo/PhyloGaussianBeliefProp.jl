@@ -29,6 +29,8 @@ UnivariateType(::Type) = IsMultivariate()
 modelname(obj::EvolutionaryModel) = string(typeof(obj))
 variancename(obj::EvolutionaryModel) = "variance"
 varianceparam(obj::EvolutionaryModel) = "error: 'varianceparam' not implemented"
+notrootparamnames(obj::EvolutionaryModel) = (variancename(obj), )
+paramnames(obj::EvolutionaryModel) = isrootfixed(obj) ? (notrootparamnames(obj)..., "root mean μ") : (notrootparamnames(obj)..., "root mean μ", "root variance v")
 
 ## Root
 # requires all models to have a field named μ
@@ -82,11 +84,15 @@ dimension(obj::EvolutionaryModel) = length(rootpriormeanvector(obj))
 
 Tuple of parameters, the same that can be used to construct the evolutionary model.
 """
-params(d::EvolutionaryModel) # extends StatsAPI.params
+params(m::EvolutionaryModel) = isrootfixed(m) ? (varianceparam(m), m.μ) : (varianceparam(m), m.μ, m.v)
 
 function Base.show(io::IO, obj::EvolutionaryModel)
-    disp = modelname(obj) * "\n- " * variancename(obj) * ":\n$(varianceparam(obj))"
-    disp *= "\n- root mean: μ = $(obj.μ)\n- root variance: v = $(obj.v)"
+    disp = modelname(obj) * "\n"
+    parnames = paramnames(obj)
+    par = params(obj)
+    for (n,p) in zip(parnames, par)
+        disp *= "\n- " * n * " :\n$(p)"
+    end
     print(io, disp)
 end
 
@@ -227,16 +233,18 @@ Under the most general weighted average Gaussian model, X₀ given its parents X
 is Gaussian with conditional mean the weighted average of the parents
 plus a displacement vecror ω and conditional variance Σ independent of X₁, X₂, ... .
 `hybridnode_variance` and `hybdridnode_precision`should return a matrix of symmetric type.
-`hybdridnode_precision` defaults to the inverse of `hybridnode_variance`
+`hybdridnode_precision` defaults to the inverse of `hybridnode_variance`.
+`hybdridnode_displacement` and `hybridnode_variance` default to a vector or matrix of zeros. 
 """
-function hybdridnode_displacement(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
-    error("hybdridnode_displacement not implemented for type $(typeof(obj)).")
+function hybdridnode_displacement(obj::EvolutionaryModel{T}, ::AbstractVector{PN.Edge}) where T
+    zeros(T, dimension(obj))
 end
 @doc (@doc hybdridnode_displacement) hybridnode_variance
-function hybridnode_variance(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
-    error("`hybridnode_variance` not implemented for type $(typeof(obj)).")
+function hybridnode_variance(obj::EvolutionaryModel{T}, ::AbstractVector{PN.Edge}) where T
+    ntraits = dimension(obj)
+    zeros(T, ntraits, ntraits)
 end
-@doc (@doc hybdridnode_displacement) hybdridnode_precision
+@doc (@doc hybdridnode_displacement) hybdridnode_precision # TODO: this function is never used ?
 function hybdridnode_precision(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
     return inv(hybridnode_variance(obj, parentedges))
 end

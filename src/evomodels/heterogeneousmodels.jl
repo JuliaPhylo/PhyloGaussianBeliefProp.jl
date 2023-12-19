@@ -175,10 +175,3 @@ modelname(m::HeterogeneousShiftedBrownianMotion) = "Heterogeneous Brownian motio
 function branch_displacement(obj::HeterogeneousShiftedBrownianMotion, ::PN.Edge)
     getparameter(obj.shiftmean, edge)
 end
-function hybdridnode_displacement(obj::HeterogeneousShiftedBrownianMotion{T}, parentedges::AbstractVector{PN.Edge}) where T
-    zeros(T, dimension(obj))
-end
-function hybridnode_variance(obj::HeterogeneousShiftedBrownianMotion{T}, parentedges::AbstractVector{PN.Edge}) where T
-    ntraits = dimension(obj)
-    zeros(T, ntraits, ntraits)
-end

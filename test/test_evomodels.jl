@@ -88,6 +88,18 @@ end
         @test tmp ≈ -13.75408386332493
         end
     end
+    @testset "homogeneous univariate OU" begin
+        @testset "Random Root, no missing" begin
+        m = PGBP.UnivariateOrnsteinUhlenbeck(2, 3, -2, 0.0, 0.4)
+        show(devnull, m)
+        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b)
+        PGBP.calibrate!(ctb, [spt])
+        _, tmp = PGBP.integratebelief!(ctb)
+        @test_broken (prinln("Need to compute OU likelihood on a network."); tmp ≈ 0.0)
+        end
+    end
     @testset "Diagonal BM" begin
         @testset "homogeneous, fixed root" begin
         m = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0,0))
