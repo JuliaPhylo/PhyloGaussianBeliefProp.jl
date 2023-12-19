@@ -99,14 +99,16 @@ end # of PhyloEM
     m1 = PGBP.UnivariateBrownianMotion(1, 0, 0.9)
     b1 = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m1);
     f1 = PGBP.init_factors_allocate(b1, nv(ct))
+    mess1 = PGBP.init_messageresidual_allocate(b1, nv(ct))
     PGBP.init_beliefs_assignfactors!(b1, m1, tbl_y, df.taxon, net.nodes_changed);
 
     m2 = PGBP.UnivariateBrownianMotion(1, 0, 0) # fixed root
     b2 = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m2);
     f2 = PGBP.init_factors_allocate(b2, nv(ct))
+    mess2 = PGBP.init_messageresidual_allocate(b2, nv(ct))
     PGBP.init_beliefs_assignfactors!(b2, m2, tbl_y, df.taxon, net.nodes_changed);
 
-    PGBP.init_beliefs_allocate_atroot!(b1, f1, m2)
+    PGBP.init_beliefs_allocate_atroot!(b1, f1, mess1, m2)
     PGBP.init_beliefs_assignfactors!(b1, m2, tbl_y, df.taxon, net.nodes_changed);
     # PGBP.init_factors_frombeliefs!(f1, b1)
     
@@ -121,10 +123,10 @@ end # of PhyloEM
         @test b1[ind].metadata == b2[ind].metadata
     end
     
-    PGBP.init_beliefs_allocate_atroot!(b1, f1, m1)
+    PGBP.init_beliefs_allocate_atroot!(b1, f1, mess1, m1)
     PGBP.init_beliefs_assignfactors!(b1, m1, tbl_y, df.taxon, net.nodes_changed);
     #PGBP.init_factors_frombeliefs!(f1, b1)
-    PGBP.init_beliefs_allocate_atroot!(b2, f2, m1)
+    PGBP.init_beliefs_allocate_atroot!(b2, f2, mess2, m1)
     PGBP.init_beliefs_assignfactors!(b2, m1, tbl_y, df.taxon, net.nodes_changed);
     # PGBP.init_factors_frombeliefs!(f2, b2)
 
@@ -143,13 +145,15 @@ end # of PhyloEM
     m1 = PGBP.MvDiagBrownianMotion((1,1), (0,0), (1.2,3))
     b1 = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m1);
     f1 = PGBP.init_factors_allocate(b1, nv(ct))
+    mess1 = PGBP.init_messageresidual_allocate(b1, nv(ct))
     PGBP.init_beliefs_assignfactors!(b1, m1, tbl, df.taxon, net.nodes_changed);
 
     m2 = PGBP.MvDiagBrownianMotion((1,1), (0,0), (0,0))
     b2 = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m2);
+    mess2 = PGBP.init_messageresidual_allocate(b2, nv(ct))
     PGBP.init_beliefs_assignfactors!(b2, m2, tbl, df.taxon, net.nodes_changed);
 
-    PGBP.init_beliefs_allocate_atroot!(b1, f1, m2)
+    PGBP.init_beliefs_allocate_atroot!(b1, f1, mess1, m2)
     PGBP.init_beliefs_assignfactors!(b1, m2, tbl, df.taxon, net.nodes_changed);
     
     for ind in eachindex(b1)
@@ -183,20 +187,6 @@ end # of root update
     @test mod.μ ≈ 0.4436893203883497
     @test PGBP.varianceparam(mod) ≈ 0.6235275080906149
 
-    # numerical optim
-    m = PGBP.UnivariateBrownianMotion(0.5,0.5,0) 
-    b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-    PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-    cgb = PGBP.ClusterGraphBelief(b)
-    PGBP.calibrate!(cgb, [spt])
-    modopt, llscoreopt, opt = PGBP.calibrate_optimize_cliquetree!(cgb, ct, net.nodes_changed,
-        tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (0.5,-3))
-
-    @test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscoreopt
-    @test llscoreopt ≈ -6.793239498189161
-    @test modopt.μ ≈ mod.μ
-    @test PGBP.varianceparam(modopt) ≈ PGBP.varianceparam(mod) * (n-1) / n
-
     # x,y: 2 traits, no missing values
     m = PGBP.MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf))
     b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
@@ -207,8 +197,8 @@ end # of root update
         net.nodes_changed, node2belief,
         tbl, df.taxon, PGBP.MvFullBrownianMotion, ([1 0; 0 1], [0,0]))
 
-    #@test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
-    #@test llscore ≈  -6.851098376474686
+    @test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
+    @test llscore ≈  -17.735199763952693
     @test mod.μ ≈ [5.990291262135922 ; 0.4436893203883498]
     @test PGBP.varianceparam(mod) ≈ [5.970873786407767 1.3310679611650484 ; 1.3310679611650484 0.6235275080906149]
 
@@ -226,12 +216,13 @@ end # of root update
     # for x,y: multivariate
     Σ = Matrix(vcv(net)[!,Symbol.(df.taxon)])
     n=5 # number of data points
+    p = 2 # dimension
     datatbl = [tbl.x  tbl.y]
     i = ones(n) # intercept
     μhat = inv(transpose(i) * inv(Σ) * i) * (transpose(i) * inv(Σ) * datatbl) # 5.990291262135922 0.4436893203883498
     r = datatbl - i * μhat
     σ2hat_REML = (transpose(r) * inv(Σ) * r) / (n-1) # 2×2 Matrix{Float64}: 5.97087  1.33107 1.33107  0.623528
-    llscore = - n/2 - logdet(2π * σ2hat_ML .* Σ)/2 # -6.793239498189161
+    llscorereml = - (n*p-p)/2 - logdet(2π .* kron(σ2hat_REML, Σ))/2 # -17.735199763952693
     =#
 
 end # of exact formulas

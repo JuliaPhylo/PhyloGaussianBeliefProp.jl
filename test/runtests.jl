@@ -16,4 +16,5 @@ const PGBP = PhyloGaussianBeliefProp
   include("test_canonicalform.jl")
   include("test_calibration.jl")
   include("test_optimization.jl")
+  include("test_exactBM.jl")
 end

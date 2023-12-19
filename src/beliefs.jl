@@ -297,21 +297,27 @@ Assumptions:
 - beliefs were previously initialized with a model that had the same number of
   traits as the current `model`.
 """
-function init_beliefs_allocate_atroot!(beliefs, factors, model::EvolutionaryModel{T}) where T
+function init_beliefs_allocate_atroot!(beliefs, factors, messageresidual, model::EvolutionaryModel{T}) where T
     ## TODO: Should this be called at the begining of "init_beliefs_assignfactors", in case the root status of the model has changed ?
     numtraits = dimension(model)
     fixedroot = isrootfixed(model)
     # root *not* in scope if fixed; else *in* scope bc we assume data below
-    update_inscope!(inscope, root_int) = inscope[:,root_int] .= !fixedroot
+    update_inscope!(inscope, root_ind) = inscope[:,root_ind] .= !fixedroot
     for (i_b, be) in enumerate(beliefs)
-        root_int = findfirst(nl -> 1 == nl, nodelabels(be))
+        root_ind = findfirst(nl -> 1 == nl, nodelabels(be))
         isnothing(root_ind) && continue # skip: root ∉ belief
         iscluster = be.type == bclustertype
         be_insc = be.inscope
-        update_inscope!(be_insc, root_int)
+        update_inscope!(be_insc, root_ind)
         beliefs[i_b] = Belief(be.nodelabel, numtraits, be_insc, be.type, be.metadata, T)
         if iscluster # re-allocate the corresponding factor. if sepset: nothing to do
             factors[i_b] = FamilyFactor(beliefs[i_b])
+        end
+        issepset = beliefs[i_b].type == bsepsettype
+        if issepset # re-allocate the corresponding messages for sepsets
+            (clustlab1, clustlab2) = beliefs[i_b].metadata
+            messageresidual[(clustlab1, clustlab2)] = MessageResidual(beliefs[i_b].J, beliefs[i_b].h)
+            messageresidual[(clustlab2, clustlab1)] = MessageResidual(beliefs[i_b].J, beliefs[i_b].h)
         end
     end
 end

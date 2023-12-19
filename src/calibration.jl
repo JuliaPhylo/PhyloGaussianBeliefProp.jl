@@ -413,13 +413,11 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
     ## Get associated likelihood
     ## TODO: likelihood for the full BM (not implemented)
     loglikscore = NaN
-    if evomodelfun == UnivariateBrownianMotion
-        init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, model) # fixit: should this be bestmodel? why do this anyway?
-        init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
-        init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
-        propagate_1traversal_postorder!(beliefs, spt...)
-        _, loglikscore = integratebelief!(beliefs, rootj)
-    end
+    init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual, bestmodel) # fixit: should this be bestmodel? why do this anyway?
+    init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
+    init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
+    propagate_1traversal_postorder!(beliefs, spt...)
+    _, loglikscore = integratebelief!(beliefs, rootj)
 
     return bestmodel, loglikscore
 end
