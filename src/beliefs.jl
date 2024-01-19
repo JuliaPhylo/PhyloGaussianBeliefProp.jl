@@ -478,7 +478,7 @@ function init_beliefs_assignfactors!(
             # then marginalize variables not in scope, e.g. bc no data below
             var_inscope = view(inscope(be), :, indexin(i_inscope, nodelabels(be)))
             keep_index = LinearIndices(var_inscope)[var_inscope]
-            h,J,g = marginalizebelief(h,J,g, keep_index)
+            h,J,g = marginalizebelief(h,J,g, keep_index, be.metadata)
         end
         view(be.h, factorind) .+= h
         view(be.J, factorind, factorind) .+= J

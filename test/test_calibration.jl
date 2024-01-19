@@ -1,5 +1,13 @@
 @testset "calibration" begin
 
+@testset "miscellaneous" begin
+    ex = PGBP.BPPosDefException("belief 1, integrate 3,4", 1)
+    io = IOBuffer()
+    showerror(io, ex)
+    @test String(take!(io)) == """BPPosDefException: belief 1, integrate 3,4
+    matrix is not positive definite."""
+end
+
 @testset "no optimization" begin
     @testset "Level-1 w/ 4 tips. Univariate. Clique tree" begin
         netstr = "(((A:4.0,((B1:1.0,B2:1.0)i6:0.6)#H5:1.1::0.9)i4:0.5,(#H5:2.0::0.1,C:0.1)i2:1.0)i1:3.0);"

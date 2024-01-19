@@ -1,7 +1,30 @@
 """
+    BPPosDefException
+
+Exception thrown when a belief message cannot be computed, that is, when the
+submatrix of the precision `J`, subsetted to the variables to be integrated out,
+is not [positive definite](https://en.wikipedia.org/wiki/Definiteness_of_a_matrix).
+It has a message `msg` field (string), and an `info` field (integer) inherited
+from `LinearAlgebra.PosDefException`, to indicate the location of (one of)
+the eigenvalue(s) which is (are) less than/equal to 0.
+"""
+struct BPPosDefException <: Exception
+    msg::String
+    info::LA.BlasInt
+end
+function Base.showerror(io::IO, ex::BPPosDefException)
+    print(io, "BPPosDefException: $(ex.msg)\nmatrix is not ")
+    if ex.info == -1
+        print(io, "Hermitian.")
+    else
+        print(io, "positive definite.")
+    end
+end
+
+"""
     marginalizebelief(belief::AbstractBelief, keep_index)
-    marginalizebelief(h,J,g, keep_index)
-    marginalizebelief(h,J,g, keep_index, integrate_index)
+    marginalizebelief(h,J,g, keep_index, beliefmetadata)
+    marginalizebelief(h,J,g, keep_index, integrate_index, beliefmetadata)
 
 Canonical form (h,J,g) of the input belief, after all variables except those at
 indices `keep_index` have been integrated out. If we use `I` and `S` subscripts
@@ -18,18 +41,30 @@ and
 ``g + (\\log|2\\pi J_I^{-1}| + h_I^{T} J_I^{-1} h_I)/2 .``
 
 These operations fail if the Cholesky decomposition of ``J_I`` fails.
+In that case, an error of type [`BPPosDefException`](@ref) is thrown
+with a message about the `beliefmetadata`,
+which can be handled by downstream functions.
 """
 marginalizebelief(b::AbstractBelief, keepind) =
-    marginalizebelief(b.h, b.J, b.g[1], keepind)
-function marginalizebelief(h,J,g::Real, keep_index)
+    marginalizebelief(b.h, b.J, b.g[1], keepind, b.metadata)
+function marginalizebelief(h,J,g::Real, keep_index, metadata)
     # todo: if isempty(keep_index) call different function to avoid work for an empty messageJ
     integrate_index = setdiff(1:length(h), keep_index)
-    marginalizebelief(h,J,g, keep_index, integrate_index)
+    marginalizebelief(h,J,g, keep_index, integrate_index, metadata)
 end
-function marginalizebelief(h,J,g::Real, keep_index, integrate_index)
+function marginalizebelief(h,J,g::Real, keep_index, integrate_index, metadata)
     isempty(integrate_index) && return (h,J,g)
     ni = length(integrate_index)
-    Ji = PDMat(view(J, integrate_index, integrate_index)) # fails if non positive definite, e.g. J=0
+    Ji = try
+        PDMat(view(J, integrate_index, integrate_index)) # fails if non positive definite, e.g. J=0
+    catch pdmat_ex
+        if isa(pdmat_ex, PosDefException)
+            ex = BPPosDefException("belief $metadata, integrating $(integrate_index)", pdmat_ex.info)
+            throw(ex)
+        else
+            rethrow(pdmat_ex)
+        end
+    end
     Jk  = view(J, keep_index, keep_index)
     Jki = view(J, keep_index, integrate_index)
     hi = view(h, integrate_index)
@@ -149,7 +184,7 @@ function absorbleaf!(h,J,g, rowindex, tbl)
     datavalues = [col[rowindex] for col in tbl]
     h,J,g,missingindices = absorbevidence!(h,J,g, 1:length(datavalues), datavalues)
     if !isempty(missingindices)
-        h,J,g = marginalizebelief(h,J,g, setdiff(1:length(h), missingindices), missingindices)
+        h,J,g = marginalizebelief(h,J,g, setdiff(1:length(h), missingindices), missingindices, "leaf row $rowindex")
     end
     return h,J,g
 end
