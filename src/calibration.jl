@@ -107,8 +107,9 @@ end
     propagate_1traversal_postorder!(beliefs::ClusterGraphBelief, spanningtree...)
     propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,  spanningtree...)
 
-Messages are propagated from the tips to the root of the tree by default,
-or from the root to the tips if `postorder` is false.
+Messages are propagated along the spanning tree, from the tips to the root by
+`propagate_1traversal_postorder!` and from the root to the tips by
+`propagate_1traversal_preorder!`.
 
 The "spanning tree" should be a tuple of 4 vectors as output by
 [`spanningtree_clusterlist`](@ref), meant to list edges in preorder.
@@ -117,36 +118,60 @@ Its nodes (resp. edges) should correspond to clusters (resp. sepsets) in
 should correspond to indices in `beliefs`.
 This condition holds if beliefs are produced on a given cluster graph and if the
 tree is produced by [`spanningtree_clusterlist`](@ref) on the same graph.
+
+optional positional arguments (default value):
+- `verbose` (true): log error messages about degenerate messages that failed
+  to be passed.
+- `update_residualnorm` (true): to update each message residual's `iscalibrated_resid`
+- `update_residualkldiv` (false): to update each message residual's field
+  `kldiv`: KL divergence between the new and old sepset beliefs,
+  normalized to be considered as (conditional) distributions.
 """
-function propagate_1traversal_postorder!(beliefs::ClusterGraphBelief,
-                                         pa_lab, ch_lab, pa_j, ch_j)
+function propagate_1traversal_postorder!(
+    beliefs::ClusterGraphBelief,
+    pa_lab, ch_lab, pa_j, ch_j,
+    verbose = true::Bool,
+    update_residualnorm = true::Bool,
+    update_residualkldiv = false::Bool,
+)
     b = beliefs.belief
     mr = beliefs.messageresidual
     # (parent <- sepset <- child) in postorder
     for i in reverse(1:length(pa_lab))
         ss_j = sepsetindex(pa_lab[i], ch_lab[i], beliefs)
-        sepset, residual = propagate_belief!(b[pa_j[i]], b[ss_j], b[ch_j[i]])
+        sepset = b[ss_j]
         mrss = mr[(pa_lab[i], ch_lab[i])]
-        mrss.ΔJ .= residual[1]
-        mrss.Δh .= residual[2]
-        iscalibrated_residnorm!(mrss)
-        approximate_kl!(mrss, sepset) # KL div between new and old sepset belief
+        flag = propagate_belief!(b[pa_j[i]], sepset, b[ch_j[i]], mrss)
+        if isnothing(flag)
+            update_residualnorm && iscalibrated_residnorm!(mrss)
+            update_residualkldiv && approximate_kl!(mrss, sepset)
+        elseif verbose
+            isnothing(flag) || @error flag.msg
+        end
     end
 end
 
-function propagate_1traversal_preorder!(beliefs::ClusterGraphBelief,
-                                        pa_lab, ch_lab, pa_j, ch_j)
+function propagate_1traversal_preorder!(
+    beliefs::ClusterGraphBelief,
+    pa_lab, ch_lab, pa_j, ch_j,
+    verbose = true::Bool,
+    update_residualnorm = true::Bool,
+    update_residualkldiv = false::Bool,
+)
     b = beliefs.belief
     mr = beliefs.messageresidual
     # (child <- sepset <- parent) in preorder
     for i in eachindex(pa_lab)
         ss_j = sepsetindex(pa_lab[i], ch_lab[i], beliefs)
-        sepset, residual = propagate_belief!(b[ch_j[i]], b[ss_j], b[pa_j[i]])
+        sepset = b[ss_j]
         mrss = mr[(ch_lab[i], pa_lab[i])]
-        mrss.ΔJ .= residual[1]
-        mrss.Δh .= residual[2]
-        iscalibrated_residnorm!(mrss)
-        approximate_kl!(mrss, sepset)
+        flag = propagate_belief!(b[ch_j[i]], sepset, b[pa_j[i]], mrss)
+        if isnothing(flag)
+            update_residualnorm && iscalibrated_residnorm!(mrss)
+            update_residualkldiv && approximate_kl!(mrss, sepset)
+        elseif verbose
+            isnothing(flag) || @error flag.msg
+        end
     end
 end
 

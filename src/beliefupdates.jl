@@ -190,65 +190,64 @@ function absorbleaf!(h,J,g, rowindex, tbl)
 end
 
 """
-    propagate_belief!(cluster_to, sepset, cluster_from, withdefault::Bool=true)
-    propagate_belief!(cluster_to, sepset)
+    propagate_belief!(cluster_to, sepset, cluster_from, residual)
 
 Update the canonical parameters of the beliefs in `cluster_to` and in `sepset`,
 by marginalizing the belief in `cluster_from` to the sepset's variable and
 passing that message.
-A tuple, whose first element is `sepset` (after its canonical parameters have
-been updated), and whose second element is a tuple
-(Δh :: AbstractVector{<:Real}, ΔJ :: AbstractMatrix{<:Real}) representing the
-residual between the canonical parameters of the current message from `cluster_to`
-to `cluster_from` and the previous sepset belief (i.e. before updating).
+The change in sepset belief (`Δh` and `ΔJ`: new - old) is stored in `residual`.
 
-The second form sends a default message to `cluster_to`, through `sepset` (it is
-assumed that these are adjacent). While such messages always preserve the cluster
-graph invariant, they can restrict the set of feasible message schedules if
-applied injudiciously. [`regularizebeliefs!`](@ref) should avoid the need for this.
+## Degeneracy
 
-Warning: only the `h`, `J` and `g` parameters are updated, not `μ`.
-Does not check that `cluster_from` and `cluster_to` are of cluster type,
-or that `sepset` is of sepset type, but does check that the labels and scope
-of `sepset` are included in each cluster.
+Propagating a belief requires the `cluster_from` belief to have a
+non-degenerate `J_I`: submatrix of `J` for the indices to be integrated out.
+Problems arise if this submatrix has one or more 0 eigenvalues, or infinite values
+(see [`marginalizebelief`](@ref)).
+If so, a [`BPPosDefException`](@ref) is returned **but not thrown**.
+Downstream functions should try & catch these failures, and decide how to proceed.
+See [`regularizebeliefs!`](@ref) to reduce the prevalence of degeneracies.
+
+## Output
+
+- `nothing` if the message was calculated with success
+- a [`BPPosDefException`](@ref) object if marginalization failed. In this case,
+  *the error is not thrown*: downstream functions should check for failure
+  (and may choose to throw the output error object).
+
+## Warnings
+
+- only the `h`, `J` and `g` parameters are updated, not `μ`.
+- Does not check that `cluster_from` and `cluster_to` are of cluster type,
+  or that `sepset` is of sepset type, but does check that the labels and scope
+  of `sepset` are included in each cluster.
 """
-function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
-        cluster_from::AbstractBelief, withdefault::Bool=false)
-    #= fixit: discuss the `withdefault` option. Should there be an option? If
-    so, then methods that eventually call `propagate_belief!` have to be
-    modified to pass this flag (e.g. `calibrate!`,
-    `propagate_1traversal_postorder!`, `propagate_1traversal_preorder!`) =#
+function propagate_belief!(
+    cluster_to::AbstractBelief,
+    sepset::AbstractBelief,
+    cluster_from::AbstractBelief,
+    residual::AbstractResidual
+)
     # 1. compute message: marginalize cluster_from to variables in sepset
-    #    requires cluster_from.J[keep,keep] to be invertible
+    #    requires cluster_from.J[I,I] to be invertible, I = indices other than `keepind`
+    #    marginalizebelief sends BPPosDefException otherwise.
     # `keepind` can be empty (e.g. if `cluster_from` is entirely "clamped")
     keepind = scopeindex(sepset, cluster_from)
-    # canonical parameters of message received by `cluster_to`
-    # message sent: (h, J, g), message received: (Δh, ΔJ, Δg)
-    Δh, ΔJ, Δg = try
-        h, J, g = marginalizebelief(cluster_from, keepind)
-        # `cluster_from` is nondegenerate wrt the variables to be integrated out
-        (h .- sepset.h, J .- sepset.J, g - sepset.g[1])
+    h,J,g = try marginalizebelief(cluster_from, keepind)
     catch ex
-        isa(ex, LA.PosDefException) && withdefault || throw(ex)
-        # `cluster_from` is degenerate so `cluster_to` receives a default message
-        defaultmessage(cluster_to, length(keepind))
+        isa(ex, BPPosDefException) && return ex # output the exception: not thrown
+        rethrow(ex) # exception thrown if other than BPPosDefException
     end
-    upind = scopeindex(sepset, cluster_to) # indices to be updated
+    # calculate residual
+    residual.Δh .= h .- sepset.h
+    residual.ΔJ .= J .- sepset.J
     # 2. extend message to scope of cluster_to and propagate
-    view(cluster_to.h, upind)        .+= Δh
-    view(cluster_to.J, upind, upind) .+= ΔJ
-    cluster_to.g[1]                   += Δg
+    upind = scopeindex(sepset, cluster_to) # indices to be updated
+    view(cluster_to.h, upind)        .+= residual.Δh
+    view(cluster_to.J, upind, upind) .+= residual.ΔJ
+    cluster_to.g[1]                   += g  - sepset.g[1]
     # 3. update sepset belief
-    sepset.h   .+= Δh
-    sepset.J   .+= ΔJ
-    sepset.g[1] += Δg
-    return sepset, (ΔJ, Δh, Δg)
-end
-function propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief)
-    upind = scopeindex(sepset, cluster_to)
-    isempty(upind) && return
-    _, ΔJ, _ = defaultmessage(cluster_to, length(upind))
-    view(cluster_to.J, upind, upind) .+= ΔJ # update cluster_to belief
-    sepset.J .+= ΔJ # update sepset belief
-    return
+    sepset.h   .= h
+    sepset.J   .= J
+    sepset.g[1] = g
+    return nothing
 end

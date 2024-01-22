@@ -97,12 +97,14 @@ bp = m.J ./[net.edge[6].length, net.edge[9].length]
 @test b[5].h ≈ bp .* [m.μ, m.μ]
 @test b[5].g[1] ≈ - (sum(log.(2π ./ bp) .+  bp .* m.μ^2))/2
 
-PGBP.propagate_belief!(b[1], b[7+1], b[2]) # 7 clusters, so b[7+1] = first sepset
-PGBP.propagate_belief!(b[1], b[7+2], b[3])
-PGBP.propagate_belief!(b[4], b[7+3], b[1])
-PGBP.propagate_belief!(b[4], b[7+5], b[6])
-PGBP.propagate_belief!(b[4], b[7+6], b[7])
-PGBP.propagate_belief!(b[5], b[7+4], b[4]) # tree traversed once to cluster 5 as root
+# 7 clusters, so b[7+1] = first sepset
+s=b[8]; PGBP.propagate_belief!(b[1],s,b[2], PGBP.MessageResidual(s.J,s.h))
+s=b[9]; PGBP.propagate_belief!(b[1],s,b[3], PGBP.MessageResidual(s.J,s.h))
+s=b[10];PGBP.propagate_belief!(b[4],s,b[1], PGBP.MessageResidual(s.J,s.h))
+s=b[12];PGBP.propagate_belief!(b[4],s,b[6], PGBP.MessageResidual(s.J,s.h))
+s=b[13];PGBP.propagate_belief!(b[4],s,b[7], PGBP.MessageResidual(s.J,s.h))
+s=b[11];PGBP.propagate_belief!(b[5],s,b[4], PGBP.MessageResidual(s.J,s.h))
+# tree traversed once to cluster 5 as root
 rootstate, dataloglik = PGBP.integratebelief!(b[5])
 @test dataloglik ≈ -10.732857817537196
 
