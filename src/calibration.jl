@@ -3,104 +3,44 @@
         auto::Bool=false, info::Bool=true)
 
 Propagate messages in postorder then preorder for each tree in the `schedule`
-list, and loop through for `niterations`. Each schedule "tree" should be a tuple
+list, for `niterations`. Each schedule "tree" should be a tuple
 of 4 vectors as output by [`spanningtree_clusterlist`](@ref), where each vector
 provides the parent/child label/index of an edge along which to pass a message,
 and where these edges are listed in preorder. For example, the parent of the
 first edge is taken to be the root of the schedule tree.
 
-Calibration is flagged when after a schedule "tree" is run, it is found that each
-possible message sent in the cluster graph was last equal to its moderating
-sepset belief (within some tolerance). If `info=true`, then prints the
-iteration number and tree index when calibration is flagged, or that `niterations`
-have passed without calibration being flagged.
+Calibration is evaluated after each schedule tree is run, and said to be reached
+if all message residuals have a small norm.
+If `info` is true, information is sent with the iteration number and tree index
+when calibration is reached.
+If `auto` is true, then belief updates are stopped after calibration is found
+to be reached. Otherwise belief updates continue for the full number of iterations.
 
-If `auto=true`, then `true` if calibration is flagged within `niterations`
-(returns upon detection) and `false` otherwise.
-
-The conditions for flagging calibration are sufficient but not necessary (e.g.
-the default of 1 iteration is sufficient for exact calibration if the schedule
-tree is a clique tree for the graphical model, but an additional iteration is
-required to detect that all messages have not changed).
+Output: `true` if calibration is reached, `false` otherwise.
 
 See also: [`iscalibrated_residnorm`](@ref)
+and [`iscalibrated_residnorm!`](@ref) for the tolerance and norm used by default,
+to declare calibration for a given sepset message (in 1 direction).
 """
 function calibrate!(beliefs::ClusterGraphBelief, schedule::AbstractVector,
-    niter::Integer=1; auto::Bool=false, info::Bool=false)
-    # fixit: input checks?
-    i = 0
+    niter::Integer=1; auto::Bool=false, info::Bool=false,
+)
     iscal = false
-    while i < niter
-        i += 1
+    for i in 1:niter
         for (j, spt) in enumerate(schedule)
-            if calibrate!(beliefs, spt) && (iscal = true)
-                info && @info "Calibration detected: iter $i, sch $j"
-                auto && return true # stop if calibration is detected
+            iscal = calibrate!(beliefs, spt)
+            if iscal
+                info && @info "calibration reached: iteration $i, schedule tree $j"
+                auto && return true
             end
         end
     end
-    iscal || info && @info "`niter` reached before calibration detected"
-    # fixit: check calibration properly at the end?
-    auto && return false
+    return iscal
 end
 function calibrate!(beliefs::ClusterGraphBelief, spt::Tuple)
     propagate_1traversal_postorder!(beliefs, spt...)
     propagate_1traversal_preorder!(beliefs, spt...)
     return iscalibrated_residnorm(beliefs)
-end
-
-"""
-    iscalibrated(beliefs::ClusterGraphBelief, edge_labels, rtol::Float64=1e-2)
-    iscalibrated(residual::Tuple, atol::Float64=1e-5)
-
-`true` if each edge belief is *marginally consistent* with the beliefs of the
-pair of clusters that it spans (i.e. their marginal means and variances are
-approximately equal with relative tolerance `rtol`), `false` otherwise.
-
-Mean vectors are compared by their 2-norm and variance matrices are compared by
-the Frobenius norm.
-
-The second form checks if the residual (in terms of canonical parameters: h, J)
-between a new message from a cluster through an edge, and the current edge
-belief is within `atol` of 0, elementwise.
-"""
-function iscalibrated(beliefs::ClusterGraphBelief,
-        edgelabs::Vector{Tuple{Symbol, Symbol}}, rtol=1e-2)
-    # fixit: discuss tolerance for comparison
-    #= fixit: this will probably be moved to `test_calibration.jl` since it is
-    an inefficient way to check if the cluster graph is calibrated on the fly. =#
-    b = beliefs.belief
-    belief2meanvar = Dict{Symbol, Tuple{AbstractVector, AbstractMatrix}}()
-    for (clustlab1, clustlab2) in edgelabs
-        clust1 = b[clusterindex(clustlab1, beliefs)]
-        clust2 = b[clusterindex(clustlab2, beliefs)]
-        if haskey(belief2meanvar, clustlab1)
-            clustmean1, clustvar1 = belief2meanvar[clustlab1]
-        else
-            clustmean1, clustvar1 = integratebelief!(clust1)[1], clust1.J \ LA.I
-            belief2meanvar[clustlab1] = (clustmean1, clustvar1)
-        end
-        if haskey(belief2meanvar, clustlab2)
-            clustmean2, clustvar2 = belief2meanvar[clustlab2]
-        else
-            clustmean2, clustvar2 = integratebelief!(clust2)[1], clust2.J \ LA.I
-            belief2meanvar[clustlab2] = (clustmean2, clustvar2)
-        end
-        sepset = b[sepsetindex(clustlab1, clustlab2, beliefs)]
-        sepsetmean, sepsetvar = integratebelief!(sepset)[1], sepset.J \ LA.I
-        ind1 = scopeindex(sepset, clust1) # indices to be compared
-        sepsetmean .== clustmean1[ind1]
-        sepsetvar .== clustvar1[ind1, ind1]
-        ind2 = scopeindex(sepset, clust2)
-        sepsetmean .== clustmean2[ind2]
-        sepsetvar .== clustvar2[ind2, ind2]
-        # check the agreement between cluster and sepset beliefs
-        isapprox(sepsetmean, clustmean1[ind1], rtol=rtol) &&
-        isapprox(sepsetmean, clustmean2[ind2], rtol=rtol) &&
-        isapprox(sepsetvar, clustvar1[ind1, ind1], rtol=rtol) &&
-        isapprox(sepsetvar, clustvar2[ind2, ind2], rtol=rtol) || return false
-    end
-    return true
 end
 
 """
@@ -130,9 +70,9 @@ optional positional arguments (default value):
 function propagate_1traversal_postorder!(
     beliefs::ClusterGraphBelief,
     pa_lab, ch_lab, pa_j, ch_j,
-    verbose = true::Bool,
-    update_residualnorm = true::Bool,
-    update_residualkldiv = false::Bool,
+    verbose::Bool=true,
+    update_residualnorm::Bool=true,
+    update_residualkldiv::Bool=false,
 )
     b = beliefs.belief
     mr = beliefs.messageresidual
@@ -146,7 +86,7 @@ function propagate_1traversal_postorder!(
             update_residualnorm && iscalibrated_residnorm!(mrss)
             update_residualkldiv && approximate_kl!(mrss, sepset)
         elseif verbose
-            isnothing(flag) || @error flag.msg
+            @error flag.msg
         end
     end
 end
@@ -154,9 +94,9 @@ end
 function propagate_1traversal_preorder!(
     beliefs::ClusterGraphBelief,
     pa_lab, ch_lab, pa_j, ch_j,
-    verbose = true::Bool,
-    update_residualnorm = true::Bool,
-    update_residualkldiv = false::Bool,
+    verbose::Bool=true,
+    update_residualnorm::Bool=true,
+    update_residualkldiv::Bool=false,
 )
     b = beliefs.belief
     mr = beliefs.messageresidual
@@ -170,7 +110,7 @@ function propagate_1traversal_preorder!(
             update_residualnorm && iscalibrated_residnorm!(mrss)
             update_residualkldiv && approximate_kl!(mrss, sepset)
         elseif verbose
-            isnothing(flag) || @error flag.msg
+            @error flag.msg
         end
     end
 end
