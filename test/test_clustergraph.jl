@@ -125,9 +125,9 @@ end
     nclusters = length(clusterlabs)
     edgenotused = Set(map(e -> MetaGraphsNext.arrange(cg, e...),
         edge_labels(cg)))
-    schedule = PGBP.spanningtrees_cover_clusterlist(cg, net.nodes_changed)
+    sched = PGBP.spanningtrees_clusterlist(cg, net.nodes_changed)
     # Check that `schedule` contains spanning trees of `cg`
-    for (i, spt) in enumerate(schedule)
+    for (i, spt) in enumerate(sched)
         spt_nedges = length(spt[1])
         @test spt_nedges == nclusters-1
         spt_edgecodes = [Edge(code_for(cg, spt[1][i]), code_for(cg, spt[2][i]))

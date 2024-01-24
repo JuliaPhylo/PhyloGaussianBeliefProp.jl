@@ -905,63 +905,46 @@ function spanningtree_clusterlist(cgraph::MetaGraph, rootj::Integer)
 end
 
 """
-    spanningtrees_cover_clusterlist(clustergraph, nodevector_preordered)
+    spanningtrees_clusterlist(clustergraph, nodevector_preordered)
 
-A vector of spanning trees of `clustergraph`, where each spanning tree is
-specified as a tuple of four vectors that describes a depth-first search
-traversal of the tree (starting from a cluster that contains the network's root),
-as in [`spanningtree_clusterlist`](@ref).
+Vector of spanning trees for `clustergraph`, that together cover all edges.
+Each spanning tree is specified as a tuple of 4 vectors describing a
+depth-first search traversal of the tree, starting from a cluster that contains
+the network's root, as in [`spanningtree_clusterlist`](@ref).
 
-Together the set of spanning trees covers all edges in `clustergraph`.
+The spanning trees are iteratively obtained using Kruskal's minimum-weight
+spanning tree algorithm, with edge weights defined as the number of previous
+trees coverging the edge.
 """
-function spanningtrees_cover_clusterlist(cgraph::MetaGraph,
-    prenodes::Vector{PN.Node})
-    T = eltype(cgraph)
-    cg = MetaGraph(Graph{T}(0),
-        Symbol, # vertex label type
-        Tuple{Vector{Symbol}, Vector{T}}, # vertex data type
-        T, # edge data type
+function spanningtrees_clusterlist(cgraph::MetaGraph{T}, prenodes::Vector{PN.Node}) where T
+    # graph with same clusters and edges, but different edge data & edge weights
+    cg = MetaGraph(Graph{T}(0), Symbol, Tuple{Vector{Symbol}, Vector{T}},
+        T, # edge data type: edge data = number of spanning trees containing the edge
         :edgeweights, # graph tag: hold edge weights to compute min spanning tree
         edge_data -> edge_data, # edge data holds edge weight
-        zero(T)) # default weight
-    # copy vertices and edges from `cgraph`
-    for clusterlab in labels(cgraph)
-        add_vertex!(cg, clusterlab, getindex(cgraph, clusterlab))
-    end
-    for (clusterlab, clusterlab2) in edge_labels(cgraph)
-        add_edge!(cg, clusterlab, clusterlab2, 0) # initial edge weights are 0
-    end
-    # track edges not used in any spanning tree
-    #= need to call `arrange` on output of `edge_labels`, since the ordering
-    within the tuple is not based on comparing vertex labels.
-    See: https://github.com/JuliaGraphs/MetaGraphsNext.jl/blob/v0.7.0/src/graphs.jl =#
-    edgenotused = Set(map(e -> MetaGraphsNext.arrange(cg, e...),
-        edge_labels(cg)))
-    # schedule/vector of spanning trees that covers all edges of `cgraph`
-    schedule = Tuple{Vector{Symbol}, Vector{Symbol}, Vector{T}, Vector{T}}[]
-    while !isempty(edgenotused) # till each edge is used in ≥1 spanning tree
-        # vector of min spanning tree edges (specified by cluster codes)
-        mst_edges = kruskal_mst(cg)
+        typemax(T)) # default weight for absent edges
+    # copy clusters (same order) and edges from cgraph, but set edge data to 0
+    for l in labels(cgraph) add_vertex!(cg, l, cgraph[l]); end
+    for (l1,l2) in edge_labels(cgraph) add_edge!(cg, l1, l2, 0); end
+    # schedule: initialize vector of spanning trees
+    sched = Tuple{Vector{Symbol}, Vector{Symbol}, Vector{T}, Vector{T}}[]
+    # repeat until every edge has data > 0: used in ≥1 spanning tree
+    while any(cg[l1,l2] == 0 for (l1,l2) in edge_labels(cg))
+        mst_edges = kruskal_mst(cg) # vector of edges in min spanning tree
         sg, vmap = induced_subgraph(cg, mst_edges) # spanning tree as `metagraph`
-        #= spanning tree in terms of preorder traversal of edges (specified by
-        cluster labels and cluster codes) =#
         spt = spanningtree_clusterlist(sg, prenodes)
         spt[3] .= vmap[spt[3]] # code i in `sg` maps to code vmap[i] in `cg`
         spt[4] .= vmap[spt[4]]
-        push!(schedule, spt) # append spanning tree to schedule
+        push!(sched, spt)
+        # update edge data: +1 for each edge in spanning tree, to prioritize
+        # unused (or rarely used) in future spanning trees
         for e in mst_edges
             parentlab = label_for(cg, src(e))
             childlab = label_for(cg, dst(e))
-            #= +1 to spanning tree edge weight, so that next min spanning tree
-            found will prioritize edges not used in any spanning tree =#
-            setindex!(cg, getindex(cg, parentlab, childlab)+1, parentlab, childlab)
-            edgelab = MetaGraphsNext.arrange(cg, parentlab, childlab)
-            if edgelab ∈ edgenotused # edge has been used in ≥1 spanning tree
-                pop!(edgenotused, edgelab)
-            end
+            cg[parentlab, childlab] += 1
         end
     end
-    return schedule
+    return sched
 end
 
 """

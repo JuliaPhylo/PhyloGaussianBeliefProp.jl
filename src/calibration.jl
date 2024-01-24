@@ -224,7 +224,7 @@ When `clustergraph` is a clique tree, the free energy approximation is exactly
 equal to the ELBO and the log-likelihood.
 
 The calibration repeatedly loops through a minimal set of spanning trees (see
-[`spanningtrees_cover_clusterlist`](@ref)) that covers all edges in the cluster
+[`spanningtrees_clusterlist`](@ref)) that covers all edges in the cluster
 graph, and does a postorder-preorder traversal for each tree. The loop runs till
 calibration is detected or till `max_iterations` have passed, whichever occurs
 first.
@@ -234,7 +234,7 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
         tbl::Tables.ColumnTable, taxa::AbstractVector,
         evomodelfun, # constructor function
         evomodelparams, maxiter::Integer=100)
-    sch = spanningtrees_cover_clusterlist(cgraph, prenodes)
+    sch = spanningtrees_clusterlist(cgraph, prenodes)
     mod = evomodelfun(evomodelparams...) # model with starting values
     function score(θ)
         model = evomodelfun(params_original(mod, θ)...)

@@ -63,8 +63,8 @@ end
         PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
         cgb = PGBP.ClusterGraphBelief(b)
         PGBP.regularizebeliefs!(cgb, cg)
-        schedule = PGBP.spanningtrees_cover_clusterlist(cg, net.nodes_changed)
-        @test PGBP.calibrate!(cgb, schedule, 20; auto=true)
+        sched = PGBP.spanningtrees_clusterlist(cg, net.nodes_changed)
+        @test PGBP.calibrate!(cgb, sched, 20; auto=true)
         # [ Info: Calibration detected: iter 5, sch 1
         ind = PGBP.clusterindex(:I3, cgb)
         @test PGBP.integratebelief!(b[ind])[1][end] ≈
