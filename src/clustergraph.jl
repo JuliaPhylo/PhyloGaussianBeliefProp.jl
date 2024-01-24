@@ -191,8 +191,8 @@ Vector of tuples. Each tuple is of the form `(nodelabel, istree)`, where
 `nodelabel::Symbol` is the label of a node in `net` and `istree` is true (false)
 if the node's cluster subgraph is (is not) a tree.
 This "cluster subgraph" for a given node is the subgraph of `clustergraph`
-induced by the clusters containing the node
-and by the edges whose sepset contain the node.
+induced by the clusters containing the node and by the edges whose sepset
+contain the node: see [`nodesubtree`](@ref).
 
 `clustergraph` satisfies the generalized *running-intersection* property if
 `istree` is true for all nodes in `net`.
@@ -205,18 +205,42 @@ function check_runningintersection(clustergraph::MetaGraph, net::HybridNetwork)
     res = Tuple{Symbol, Bool}[]
     for (nod_ind, n) in enumerate(net.nodes_changed)
         nodelab = Symbol(n.name)
-        # indices of clusters containing the node of interest
-        clusters_i = findall(nodelab ∈ clustergraph[clab][1] for clab in labels(clustergraph))
-        sg, _ = induced_subgraph(clustergraph, clusters_i)
-        # in subgraph, delete any edge whose sepset lacks nod_ind, the node's preorder index
-        for e in edge_labels(sg)
-            if nod_ind ∉ sg[e...] # edge data = vector of nodes preorder indices
-                delete!(sg, e...)
-            end
-        end
+        sg, _ = nodesubtree(clustergraph, nodelab, nod_ind)
         push!(res, (nodelab, is_tree(sg)))
     end
     return res
+end
+
+"""
+    nodesubtree(clustergraph::MetaGraph, node_symbol)
+    nodesubtree(clustergraph::MetaGraph, node_symbol, node_preorderindex)
+
+MetaGraph subgraph of `clustergraph` induced by the clusters and sepsets containing
+the node labelled `node_symbol` (of specified preorder index if known, not checked).
+If `clustergraph` satisfies the generalized running-intersection property,
+then this subgraph should be a tree.
+"""
+function nodesubtree(cgraph::MetaGraph, ns::Symbol)
+    # find 1 cluster containing the node of interest
+    clu = findfirst(ns ∈ cgraph[clab][1] for clab in labels(cgraph))
+    isnothing(clu) && error("no cluster with node labelled $ns")
+    # find preorder index of node of interest: stored in cluster data
+    n1data = cgraph[label_for(cgraph,clu)]
+    node_ind = n1data[2][findfirst(isequal(ns), n1data[1])]
+    nodesubtree(cgraph, ns, node_ind)
+end
+function nodesubtree(cgraph::MetaGraph, ns::Symbol, node_ind)
+    # indices of clusters containing the node of interest
+    clusters_i = findall(ns ∈ cgraph[clab][1] for clab in labels(cgraph))
+    isempty(clusters_i) && error("no cluster with node labelled $ns")
+    sg, vmap = induced_subgraph(cgraph, clusters_i)
+    # in subgraph, delete any edge whose sepset lacks node_ind, the node's preorder index
+    for e in edge_labels(sg)
+        if node_ind ∉ sg[e...] # edge data = vector of nodes preorder indices
+            delete!(sg, e...)
+        end
+    end
+    return sg, vmap
 end
 
 """
@@ -941,27 +965,23 @@ function spanningtrees_cover_clusterlist(cgraph::MetaGraph,
 end
 
 """
-    sub_spanningtree_clusterlist(clustergraph, nodesymbol)
+    nodesubtree_clusterlist(clustergraph::MetaGraph, nodesymbol)
 
-A spanning tree of the subgraph of `clustergraph` induced by the clusters that
-contain the node labelled `nodesymbol`. The spanning tree is specified as a
-tuple of four vectors that describes a depth-first search traversal (starting
-from an arbitrary cluster) of the tree, as in [`spanningtree_clusterlist`](@ref).
+Spanning tree of the subgraph of `clustergraph` induced by the clusters and
+sepsets that contain the node labelled `nodesymbol`, see [`nodesubtree`](@ref).
+If `clustergraph` satisfies the generalized running-intersection property,
+then this subgraph should be a tree anyway, but this is not assumed
+(via extracting a spanning tree).
 
-Each edge of `clustergraph` is contained in ≥1 subgraph spanning trees, so
-iterating over all nodes produces a sequence of subgraph spanning trees that
-together covers all edges of `clustergraph`.
+Output: tuple of 4 vectors describing a depth-first search traversal of the tree,
+starting from a cluster containing the node of smallest preorder index, as
+determined by [`default_rootcluster`](@ref).
+Each element in this tuple is a vector: see [`spanningtree_clusterlist`](@ref).
 """
-function sub_spanningtree_clusterlist(cgraph::MetaGraph, ns::Symbol)
-    cluster_properties = cgraph.vertex_properties
-    # labels for clusters that contain node `ns`
-    clusters_s = filter(cl -> ns ∈ cgraph[cl][1], collect(labels(cgraph)))
-    # indices for clusters that contain node `ns`
-    clusters_i = [code_for(cgraph, cl) for cl in clusters_s]
-    sg, vmap = induced_subgraph(cgraph, clusters_i)
-    # pick any node to be the root: rootj can be any value between 1 and
-    # length(cg.vertex_labels)
-    rootj = 1 # fixit: fix to 1 for now
+function nodesubtree_clusterlist(cgraph::MetaGraph, ns::Symbol)
+    sg, vmap = nodesubtree(cgraph, ns)
+    # to root sg: pick a cluster containing a node with smallest preorder index
+    rootj = default_rootcluster(sg)
     spt = spanningtree_clusterlist(sg, rootj)
     # map cluster indices back to those for `cgraph`
     spt[3] .= vmap[spt[3]]
@@ -1033,5 +1053,28 @@ function default_rootcluster(cgraph::MetaGraph, prenodes::Vector{PN.Node})
         (1 ∈ nodelabs ? sum(prenodes[i].leaf for i in nodelabs) : Inf)
     end
     rootj = argmin(hasroot(lab) for lab in labels(cgraph))
+    return rootj
+end
+"""
+    default_rootcluster(clustergraph)
+
+Index of a cluster that contains the node with the smallest preorder index.
+If multiple clusters contain that node, then one is chosen that *only* has
+that node. If all clusters containing that node have more than 1 node,
+then a cluster is chosen containing a node with the second-smallest-preorder index.
+
+For cluster with label `:lab`, its property `clustergraph[:lab][2]`
+should list the nodes in the cluster by their preorder index,
+sorted in decreasingly order (so the smallest is at the end).
+"""
+function default_rootcluster(cgraph::MetaGraph)
+    i0 = minimum(cgraph[lab][2][end] for lab in labels(cgraph)) # smallest preorder index
+    rootscore = lab -> begin   # Inf if the cluster does not contain i0
+        nodelabs = cgraph[lab][2]  # second smallest index otherwise
+        (i0 ∈ nodelabs ?
+            (length(nodelabs)==1 ? 0 : nodelabs[end-1]) :
+            Inf)
+    end
+    rootj = argmin(rootscore(lab) for lab in labels(cgraph))
     return rootj
 end

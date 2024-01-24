@@ -85,7 +85,7 @@ end
         sch = [] # schedule based on 1 subtree per variable
         for n in net.nodes_changed
             ns = Symbol(n.name)
-            subtree = PGBP.sub_spanningtree_clusterlist(cg, ns)
+            subtree = PGBP.nodesubtree_clusterlist(cg, ns)
             isempty(subtree[1]) && continue
             push!(sch, subtree)
         end
