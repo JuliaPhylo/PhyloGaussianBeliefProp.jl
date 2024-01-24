@@ -62,7 +62,7 @@ end
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
         cgb = PGBP.ClusterGraphBelief(b)
-        PGBP.regularizebeliefs!(cgb, cg)
+        PGBP.regularizebeliefs_bycluster!(cgb, cg)
         sched = PGBP.spanningtrees_clusterlist(cg, net.nodes_changed)
         @test PGBP.calibrate!(cgb, sched, 20; auto=true)
         # [ Info: Calibration detected: iter 5, sch 1
@@ -81,7 +81,7 @@ end
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
         cgb = PGBP.ClusterGraphBelief(b)
-        PGBP.regularizebeliefs!(cgb, cg)
+        PGBP.regularizebeliefs_bycluster!(cgb, cg)
         sch = [] # schedule based on 1 subtree per variable
         for n in net.nodes_changed
             ns = Symbol(n.name)

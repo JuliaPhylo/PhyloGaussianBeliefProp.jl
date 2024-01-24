@@ -167,7 +167,7 @@ Problems arise if this submatrix has one or more 0 eigenvalues, or infinite valu
 (see [`marginalizebelief`](@ref)).
 If so, a [`BPPosDefException`](@ref) is returned **but not thrown**.
 Downstream functions should try & catch these failures, and decide how to proceed.
-See [`regularizebeliefs!`](@ref) to reduce the prevalence of degeneracies.
+See [`regularizebeliefs_bycluster!`](@ref) to reduce the prevalence of degeneracies.
 
 ## Output
 

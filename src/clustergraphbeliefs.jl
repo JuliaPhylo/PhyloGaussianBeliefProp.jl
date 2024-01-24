@@ -177,24 +177,25 @@ function default_sepset1(beliefs::AbstractVector, n::Integer)
 end
 
 """
-    regularizebeliefs!(beliefs::ClusterGraphBelief, clustergraph)
+    regularizebeliefs_bycluster!(beliefs::ClusterGraphBelief, clustergraph)
+    regularizebeliefs_bycluster!(beliefs::ClusterGraphBelief, clustergraph, cluster_label)
 
-Modify beliefs of cluster graph, after initialization with [`init_beliefs_assignfactors!`](@ref))
-for example, while preserving the full graphical model (product of cluster
-beliefs over product of sepset beliefs, invariant during belief propagation)
-so that all beliefs are non-degenerate.
+Modify beliefs of cluster graph by adding positive values to some diagonal
+elements of precision matrices `J`, while preserving the full graphical model
+(product of cluster beliefs over product of sepset beliefs,
+invariant during belief propagation) so that all beliefs are non-degenerate.
+
+This regularization could be done after initialization with
+[`init_beliefs_assignfactors!`](@ref) for example.
 
 The goal is that at each later step of belief propagation, the sending cluster
-has a non-degenerate (positive definite) precision matrix for the variables
-to be integrated, so that the message to be sent is well defined and
-positive semidefinite.
-
-This modification is a regularization in the sense that a non-negative diagonal
-matrix is added to the precision matrix of each belief.
+has a non-degenerate (positive definite) precision matrix for the variables to be
+integrated, so that the message to be sent is well-defined (i.e. can be computed)
+and positive semidefinite.
 
 ## Algorithm
 
-For each cluster Ci:
+For each cluster Ci (or for only for 1 cluster, labeled `cluster_label`):
 1. Find a regularization parameter adaptively for that cluster:
    ϵ = maximum absolute value of all entries in Ci's precision matrix J, and
    of the machine epsilon.  
@@ -202,9 +203,6 @@ For each cluster Ci:
 2. For each neighbor cluster Cj and associated sepset Sij,
    add ϵ > 0 to the diagonal entries of Ci's precision matrix `J`
    corresponding to the traits in Sij.
-   fixit: why not this instead: ...
-   corresponding to the traits to be integrated out to pass a message to Cj,
-   that is, the diagonal entries for: scope(Ci) ∖ scope(Sij).
 3. To preserve the graphical model's joint distribution for the full set of
    variables (invariant during BP), the same ϵ is added to each diagonal entry
    of Sij's precision matrix.
@@ -225,17 +223,80 @@ so that messages to be sent are well-defined.
 Todo (Ben): formalize the explanation of this. I think that a
 sufficient condition for this may be the absence of deterministic factors.
 """
-function regularizebeliefs!(beliefs::ClusterGraphBelief{B}, cgraph::MetaGraph) where B<:Belief{T} where T
-    b = beliefs.belief
-    for clusterlab in labels(cgraph)
-        cluster_to = b[clusterindex(clusterlab, beliefs)] # receiving-cluster
-        ϵ = max(eps(T), maximum(abs, cluster_to.J)) # regularization constant
-        for nblab in neighbor_labels(cgraph, clusterlab)
-            sepset = b[sepsetindex(clusterlab, nblab, beliefs)]
-            upind = scopeindex(sepset, cluster_to) # indices to be updated
-            d = length(upind)
-            view(cluster_to.J, upind, upind) .+= ϵ*LA.I(d) # regularize cluster precision
-            sepset.J .+= ϵ*LA.I(d) # preserve cluster graph invariant
-        end
+function regularizebeliefs_bycluster!(beliefs::ClusterGraphBelief, cgraph::MetaGraph)
+    for lab in labels(cgraph)
+        regularizebeliefs_bycluster!(beliefs, cgraph, lab)
     end
+end
+function regularizebeliefs_bycluster!(beliefs::ClusterGraphBelief{B},
+        cgraph::MetaGraph, clusterlab) where B<:Belief{T} where T
+    b = beliefs.belief
+    cluster_to = b[clusterindex(clusterlab, beliefs)] # receiving-cluster
+    ϵ = max(eps(T), maximum(abs, cluster_to.J)) # regularization constant
+    for nblab in neighbor_labels(cgraph, clusterlab)
+        sepset = b[sepsetindex(clusterlab, nblab, beliefs)]
+        upind = scopeindex(sepset, cluster_to) # indices to be updated
+        d = length(upind)
+        view(cluster_to.J, upind, upind) .+= ϵ*LA.I(d) # regularize cluster precision
+        sepset.J .+= ϵ*LA.I(d) # preserve cluster graph invariant
+    end
+end
+
+"""
+    regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief, clustergraph)
+
+Modify beliefs of cluster graph by adding positive values to some diagonal
+elements of precision matrices `J`, while preserving the full graphical model
+(product of cluster beliefs over product of sepset beliefs,
+invariant during belief propagation) so that all beliefs are non-degenerate.
+
+The goal is the same as [`regularizebeliefs_bycluster!`](@ref),
+but the algorithm is different.
+
+
+## Algorithm
+
+For each node (or variable) v:
+1. Consider the subgraph T of clusters & edges that have v. If `clustergraph`
+   has the generalized running-intersection property, this subgraph is a tree.
+2. Root T at a cluster containing a node with the largest postorder index.
+3. Find a regularization parameter adaptively for that node:
+   ϵ = maximum absolute value of all entries in Ci's precision matrix J, and
+   of the machine epsilon, over clusters Ci in T.
+4. For each trait j, find the subtree Tj of clusters and sepsets that
+   have trait j of node v in their scope.
+5. For each cluster and sepset in Tj, except at its cluster root:
+   add ϵ on the diagonal of their belief precision matrix `J` corresponding to
+   trait j of node v.
+6. Check that graphical model invariant is preserved, that is: for each trait j,
+   ϵ was added to the same number of clusters as number of sepsets.
+"""
+function regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief, cgraph::MetaGraph)
+    for (node_symbol, node_ind) in get_nodesymbols2index(cgraph)
+        regularizebeliefs_bynodesubtree!(beliefs, cgraph, node_symbol, node_ind)
+    end
+end
+function regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief{B},
+        cgraph::MetaGraph, node_symbol, node_ind) where B<:Belief{T} where T
+    b = beliefs.belief
+    sv, vmap = nodesubtree(cgraph, node_symbol, node_ind)
+    ϵ = eps(T)
+    for l in label(sv)
+        ϵ = max(ϵ, maximum(abs, b[clusterindex(l, beliefs)].J))
+    end
+    #= todo
+    1. find leaf cluster with largest preorder index
+    2. traverse sv starting from that leaf
+    3. add ϵ on the diagonal of J for each cluster and sepset, except for leaf
+       for each trait, for variable node_symbol
+    challenge: check whether the node is in fact in scope, which could
+    differ across traits. each trait should have a separate subtree within sg.
+    for nblab in neighbor_labels(cgraph, clusterlab)
+        sepset = b[sepsetindex(clusterlab, nblab, beliefs)]
+        upind = scopeindex(sepset, cluster_to) # indices to be updated
+        d = length(upind)
+        view(cluster_to.J, upind, upind) .+= ϵ*LA.I(d) # regularize cluster precision
+        sepset.J .+= ϵ*LA.I(d) # preserve cluster graph invariant
+    end
+    =#
 end

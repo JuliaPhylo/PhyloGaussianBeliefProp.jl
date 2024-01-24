@@ -214,7 +214,7 @@ end
     calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief, clustergraph,
         nodevector_preordered, tbl::Tables.ColumnTable, taxa::AbstractVector,
         evolutionarymodel_name, evolutionarymodel_startingparameters,
-        max_iterations)
+        max_iterations=100)
 
 Same as [`calibrate_optimize_cliquetree!`](@ref) above, except that the user can
 supply an arbitrary `clustergraph` (including a clique tree) for the input
@@ -241,7 +241,7 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
         init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
         init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
         # fixit: raise warning if calibration is not attained within `maxiter`?
-        regularizebeliefs!(beliefs, cgraph)
+        regularizebeliefs_bycluster!(beliefs, cgraph)
         calibrate!(beliefs, sch, maxiter, auto=true)
         return free_energy(beliefs)[3] # minimize Bethe free energy
     end

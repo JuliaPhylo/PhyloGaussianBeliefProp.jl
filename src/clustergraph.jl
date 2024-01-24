@@ -869,6 +869,11 @@ function init_clustergraph(T::Type{<:Integer}, method::Symbol)
         zero(T)) # default weight
     return clustergraph
 end
+function get_nodesymbols2index(clustergraph::MetaGraph)
+    Dict(ns => ni
+        for l in labels(clustergraph)
+        for (ns, ni) in zip(clustergraph[l][1], clustergraph[l][2]) )
+end
 
 """
     spanningtree_clusterlist(clustergraph, root_index)

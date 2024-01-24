@@ -122,24 +122,19 @@ end
     net = readTopology(netstr)
     cg = PGBP.clustergraph!(net, PGBP.Bethe())
     clusterlabs = Set(labels(cg))
-    nclusters = length(clusterlabs)
-    edgenotused = Set(map(e -> MetaGraphsNext.arrange(cg, e...),
-        edge_labels(cg)))
+    n = length(clusterlabs) - 1 # number of edges in each spanning tree
+    c_edges = Set(MetaGraphsNext.arrange(cg, e...) for e in edge_labels(cg))
+    s_edges = Set{eltype(c_edges)}() # edges covered by schedule
     sched = PGBP.spanningtrees_clusterlist(cg, net.nodes_changed)
-    # Check that `schedule` contains spanning trees of `cg`
-    for (i, spt) in enumerate(sched)
-        spt_nedges = length(spt[1])
-        @test spt_nedges == nclusters-1
-        spt_edgecodes = [Edge(code_for(cg, spt[1][i]), code_for(cg, spt[2][i]))
-            for i in 1:spt_nedges]
+    for spt in sched # check: spt is a tree spanning all clusters
+        @test length(spt[1]) == n
+        spt_edgecodes = [Edge(code_for(cg, spt[1][i]), code_for(cg, spt[2][i])) for i in 1:n]
         sg, _ = induced_subgraph(cg, spt_edgecodes)
-        # (1) `spt` spans the clusters of `cg`, (2) `spt` is a tree
-        @test isequal(Set(labels(sg)), clusterlabs) && is_tree(sg)
-        setdiff!(edgenotused,
-            MetaGraphsNext.arrange(cg, spt[1][i], spt[2][i]) for i in 1:length(spt[1]))
+        @test Set(labels(sg)) == clusterlabs
+        @test is_tree(sg)
+        for i in 1:n push!(s_edges, MetaGraphsNext.arrange(cg, spt[1][i], spt[2][i])); end
     end
-    # (3) Set of spanning trees covers all cluster graph edges
-    @test isempty(edgenotused)
+    @test c_edges == s_edges # check: `sched` covers all edges
 end
 
 end
