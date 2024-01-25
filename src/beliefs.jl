@@ -85,8 +85,6 @@ ntraits(b::Belief) = b.ntraits
 inscope(b::Belief) = b.inscope
 nodedimensions(b::Belief) = map(sum, eachslice(inscope(b), dims=2))
 dimension(b::Belief)  = sum(inscope(b))
-# commented out because not used:
-# mvnormcanon(b::Belief) = MvNormalCanon(b.μ, b.h, PDMat(LA.Symmetric(b.J)))
 
 function Base.show(io::IO, b::Belief)
     disp = "belief for " * (b.type == bclustertype ? "Cluster" : "SepSet") * " $(b.metadata),"
@@ -117,6 +115,17 @@ function Belief(nl::AbstractVector{Tlabel}, numtraits::Integer,
     g = MVector{1,T}(0)
     Belief{T,typeof(nodelabels),typeof(J),typeof(h),typeof(metadata)}(
         nodelabels,numtraits,inscope,μ,h,J,g,belief,metadata)
+end
+
+"""
+    inscope_onenode(node_label, b:Belief)
+
+AbstractVector: view of the row vector in `b`'s inscope matrix corresponding to
+node `node_label`, indicating whether a trait at that node is in scope or not.
+"""
+function inscope_onenode(node_label, belief:Belief)
+    node_j = findfirst(isequal(node_label), nodelabels(belief))
+    return view(inscope(belief), :, node_j)
 end
 
 """

@@ -279,24 +279,26 @@ end
 function regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief{B},
         cgraph::MetaGraph, node_symbol, node_ind) where B<:Belief{T} where T
     b = beliefs.belief
-    sv, vmap = nodesubtree(cgraph, node_symbol, node_ind)
+    sg, vmap = nodesubtree(cgraph, node_symbol, node_ind)
+    is_tree(sg) || error("running intersection violated for node / variable $node_symbol")
+    rootj = argmax(sg[l][2][1] for l in labels(sg)) # cluster with largest preorder index
+    degree(sg, rootj) == 1 || @warn "cluster $(label_for(sg, rootj)) is not a leaf is node subtree, I had hoped so."
+    spt = spanningtree_clusterlist(sg, rootj) # ! cluster indices refer to those in sg, not cgraph
     ϵ = eps(T)
-    for l in label(sv)
+    for l in label(sg)
         ϵ = max(ϵ, maximum(abs, b[clusterindex(l, beliefs)].J))
     end
-    #= todo
-    1. find leaf cluster with largest preorder index
-    2. traverse sv starting from that leaf
-    3. add ϵ on the diagonal of J for each cluster and sepset, except for leaf
-       for each trait, for variable node_symbol
-    challenge: check whether the node is in fact in scope, which could
-    differ across traits. each trait should have a separate subtree within sg.
-    for nblab in neighbor_labels(cgraph, clusterlab)
-        sepset = b[sepsetindex(clusterlab, nblab, beliefs)]
-        upind = scopeindex(sepset, cluster_to) # indices to be updated
-        d = length(upind)
-        view(cluster_to.J, upind, upind) .+= ϵ*LA.I(d) # regularize cluster precision
-        sepset.J .+= ϵ*LA.I(d) # preserve cluster graph invariant
+    for (par_l, chi_l, par_i, chi_i) in zip(spt...) # traverse node subtree
+        childbelief = b[clusterindex(chi_l, beliefs)]
+        sepsetbelief = b[sepsetindex(par_l, chi_l, beliefs)]
+        s_insc = inscope_onenode(node_ind, sepsetbelief)
+        c_insc = inscope_onenode(node_ind, childbelief)
+        all(s_insc .& c_insc .== s_insc) ||
+            error("some traits are in sepset scope but not in cluster scope")
+        # todo: write new scopeindex method to find traits in scope of both child & sepset beliefs
+        # s_ind, c_ind = scopeindex(node_ind, sepsetbelief, childbelief)
+        d = length(s_ind)
+        view(childbelief.J,  c_ind, c_ind) .+= ϵ*LA.I(d)
+        view(sepsetbelief.J, s_ind, s_ind) .+= ϵ*LA.I(d)
     end
-    =#
 end
