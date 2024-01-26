@@ -279,16 +279,17 @@ end
 function regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief{B},
         cgraph::MetaGraph, node_symbol, node_ind) where B<:Belief{T} where T
     b = beliefs.belief
-    sg, vmap = nodesubtree(cgraph, node_symbol, node_ind)
+    sg, _ = nodesubtree(cgraph, node_symbol, node_ind)
+    nv(sg) <= 1 && return nothing
     is_tree(sg) || error("running intersection violated for node / variable $node_symbol")
     rootj = argmax(sg[l][2][1] for l in labels(sg)) # cluster with largest preorder index
-    degree(sg, rootj) == 1 || @warn "cluster $(label_for(sg, rootj)) is not a leaf is node subtree, I had hoped so."
+    degree(sg, rootj) == 1 || @warn "cluster $(label_for(sg, rootj)) not a leaf in subtree for $node_symbol, I had hoped so."
     spt = spanningtree_clusterlist(sg, rootj) # ! cluster indices refer to those in sg, not cgraph
     ϵ = eps(T)
-    for l in label(sg)
+    for l in labels(sg)
         ϵ = max(ϵ, maximum(abs, b[clusterindex(l, beliefs)].J))
     end
-    for (par_l, chi_l, par_i, chi_i) in zip(spt...) # traverse node subtree
+    for (par_l, chi_l, _, _) in zip(spt...) # traverse node subtree
         childbelief = b[clusterindex(chi_l, beliefs)]
         sepsetbelief = b[sepsetindex(par_l, chi_l, beliefs)]
         s_ind, c_ind = scopeindex(node_ind, sepsetbelief, childbelief)
@@ -296,4 +297,5 @@ function regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief{B},
         view(childbelief.J,  c_ind, c_ind) .+= ϵ*LA.I(d)
         view(sepsetbelief.J, s_ind, s_ind) .+= ϵ*LA.I(d)
     end
+    return nothing
 end
