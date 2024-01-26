@@ -492,6 +492,7 @@ function init_beliefs_assignfactors!(
             h,J,g = factor_treeedge(model, e)
             if node.leaf
                 i_datarow = findfirst(isequal(nodelab), taxa)
+                # @info "will absorb leaf $(node.name) with data row $i_datarow, cluster $i_b. before: J=$J"
                 h,J,g = absorbleaf!(h,J,g, i_datarow, tbl)
                 i_inscope = (i_parent,)
             else

@@ -58,7 +58,7 @@ function marginalizebelief(h,J,g::Real, keep_index, integrate_index, metadata)
     Ji = try
         PDMat(view(J, integrate_index, integrate_index)) # fails if non positive definite, e.g. J=0
     catch pdmat_ex
-        if isa(pdmat_ex, PosDefException)
+        if isa(pdmat_ex, LA.PosDefException)
             ex = BPPosDefException("belief $metadata, integrating $(integrate_index)", pdmat_ex.info)
             throw(ex)
         else
@@ -117,6 +117,7 @@ function absorbevidence!(h,J,g, dataindex, datavalues)
     nvar = length(h)
     keep_ind = setdiff(1:nvar, absorb_ind)
     # index of variables with missing data, after removing variables with data:
+    # fixit: bug in line below?
     missingdata_indices = indexin(dataindex[.!hasdata], keep_ind)
     data_nm = view(datavalues, hasdata) # non-missing data values
     length(absorb_ind) + length(keep_ind) == nvar ||
@@ -146,6 +147,7 @@ function absorbleaf!(h,J,g, rowindex, tbl)
     datavalues = [col[rowindex] for col in tbl]
     h,J,g,missingindices = absorbevidence!(h,J,g, 1:length(datavalues), datavalues)
     if !isempty(missingindices)
+        # @info "missing data at leaf, J=$J, data value: $datavalues, need to integrate $(join(missingindices,','))"
         h,J,g = marginalizebelief(h,J,g, setdiff(1:length(h), missingindices), missingindices, "leaf row $rowindex")
     end
     return h,J,g
