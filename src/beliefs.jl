@@ -492,7 +492,6 @@ function init_beliefs_assignfactors!(
             h,J,g = factor_treeedge(model, e)
             if node.leaf
                 i_datarow = findfirst(isequal(nodelab), taxa)
-                # @info "will absorb leaf $(node.name) with data row $i_datarow, cluster $i_b. before: J=$J"
                 h,J,g = absorbleaf!(h,J,g, i_datarow, tbl)
                 i_inscope = (i_parent,)
             else
@@ -513,12 +512,15 @@ function init_beliefs_assignfactors!(
         factor for node $(node.name), nodes in scope have preorder $i_inscope,
         cluster $i_b with labels $(nodelabels(be)), inscope: $(inscope(be)),
         their variable belief indices $factorind.
-        before marginalizing: h=$h, J=$J, g=$g
+        before marginalizing: h=$(round.(h, digits=2)), J=$(round.(J, digits=2)), g=$g
         """ 
         if length(factorind) != numtraits * length(i_inscope)
             # then marginalize variables not in scope, e.g. bc no data below
             var_inscope = view(inscope(be), :, indexin(i_inscope, nodelabels(be)))
             keep_index = LinearIndices(var_inscope)[var_inscope]
+            @debug """factor for node $(node.name), cluster $i_b with labels $(nodelabels(be)),
+            need to marginalize, keep index $keep_index.
+            h=$(round.(h, digits=2)), J=$(round.(J, digits=2)), g=$g"""
             h,J,g = marginalizebelief(h,J,g, keep_index, be.metadata)
         end
         view(be.h, factorind) .+= h

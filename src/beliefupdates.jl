@@ -55,8 +55,18 @@ end
 function marginalizebelief(h,J,g::Real, keep_index, integrate_index, metadata)
     isempty(integrate_index) && return (h,J,g)
     ni = length(integrate_index)
-    Ji = try
-        PDMat(view(J, integrate_index, integrate_index)) # fails if non positive definite, e.g. J=0
+    Ji = view(J, integrate_index, integrate_index)
+    Jk  = view(J, keep_index, keep_index)
+    Jki = view(J, keep_index, integrate_index)
+    hi = view(h, integrate_index)
+    hk = view(h, keep_index)
+    # Ji = Jki = hi = 0 if missing data: fake issue
+    ϵ = eps(eltype(J))
+    if all(isapprox.(Ji, 0, atol=ϵ)) && all(isapprox.(hi, 0, atol=ϵ)) && all(isapprox.(Jki, 0, atol=ϵ))
+        return (hk, Jk, g)
+    end
+    Ji = try # re-binds Ji
+        PDMat(Ji) # fails if non positive definite, e.g. Ji=0
     catch pdmat_ex
         if isa(pdmat_ex, LA.PosDefException)
             ex = BPPosDefException("belief $metadata, integrating $(integrate_index)", pdmat_ex.info)
@@ -65,10 +75,6 @@ function marginalizebelief(h,J,g::Real, keep_index, integrate_index, metadata)
             rethrow(pdmat_ex)
         end
     end
-    Jk  = view(J, keep_index, keep_index)
-    Jki = view(J, keep_index, integrate_index)
-    hi = view(h, integrate_index)
-    hk = view(h, keep_index)
     messageJ = Jk - X_invA_Xt(Ji, Jki) # Jk - Jki Ji^{-1} Jki' without inv(Ji)
     μi = Ji \ hi
     messageh = hk - Jki * μi
@@ -117,7 +123,6 @@ function absorbevidence!(h,J,g, dataindex, datavalues)
     nvar = length(h)
     keep_ind = setdiff(1:nvar, absorb_ind)
     # index of variables with missing data, after removing variables with data:
-    # fixit: bug in line below?
     missingdata_indices = indexin(dataindex[.!hasdata], keep_ind)
     data_nm = view(datavalues, hasdata) # non-missing data values
     length(absorb_ind) + length(keep_ind) == nvar ||
@@ -147,7 +152,7 @@ function absorbleaf!(h,J,g, rowindex, tbl)
     datavalues = [col[rowindex] for col in tbl]
     h,J,g,missingindices = absorbevidence!(h,J,g, 1:length(datavalues), datavalues)
     if !isempty(missingindices)
-        # @info "missing data at leaf, J=$J, data value: $datavalues, need to integrate $(join(missingindices,','))"
+        @debug "leaf data $(join(datavalues,',')), J=$(round.(J, digits=2)), will integrate at index $(join(missingindices,','))"
         h,J,g = marginalizebelief(h,J,g, setdiff(1:length(h), missingindices), missingindices, "leaf row $rowindex")
     end
     return h,J,g
