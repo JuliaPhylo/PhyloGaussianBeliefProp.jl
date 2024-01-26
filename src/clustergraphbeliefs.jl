@@ -291,12 +291,7 @@ function regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief{B},
     for (par_l, chi_l, par_i, chi_i) in zip(spt...) # traverse node subtree
         childbelief = b[clusterindex(chi_l, beliefs)]
         sepsetbelief = b[sepsetindex(par_l, chi_l, beliefs)]
-        s_insc = inscope_onenode(node_ind, sepsetbelief)
-        c_insc = inscope_onenode(node_ind, childbelief)
-        all(s_insc .& c_insc .== s_insc) ||
-            error("some traits are in sepset scope but not in cluster scope")
-        # todo: write new scopeindex method to find traits in scope of both child & sepset beliefs
-        # s_ind, c_ind = scopeindex(node_ind, sepsetbelief, childbelief)
+        s_ind, c_ind = scopeindex(node_ind, sepsetbelief, childbelief)
         d = length(s_ind)
         view(childbelief.J,  c_ind, c_ind) .+= ϵ*LA.I(d)
         view(sepsetbelief.J, s_ind, s_ind) .+= ϵ*LA.I(d)

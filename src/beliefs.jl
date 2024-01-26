@@ -123,7 +123,7 @@ end
 AbstractVector: view of the row vector in `b`'s inscope matrix corresponding to
 node `node_label`, indicating whether a trait at that node is in scope or not.
 """
-function inscope_onenode(node_label, belief:Belief)
+function inscope_onenode(node_label, belief::Belief)
     node_j = findfirst(isequal(node_label), nodelabels(belief))
     return view(inscope(belief), :, node_j)
 end
@@ -182,6 +182,37 @@ function scopeindex(subset_labels::AbstractVector, subset_inscope::BitArray,
     subset_inclusterscope = falses(size(belief_inscope))
     subset_inclusterscope[:,node_index] .= subset_inscope
     return findall(subset_inclusterscope[belief_inscope])
+end
+
+"""
+    scopeindex(node_label, sepset::AbstractBelief, cluster::AbstractBelief)
+
+Tuple of 2 index vectors `(ind_in_sepset, ind_in_cluster)` in the sepset and in the
+cluster in-scope variables (that is, in the cluster's μ,h,J vectors and matrices)
+of the *shared* in-scope traits for node `node_label`, such that
+`sepset.μ[ind_in_sepset]` correspond to all the node's traits in the sepset scope
+and `cluster.μ[ind_in_cluster]` correspond to the same traits in the cluster scope,
+which may be a subset of all the node's traits in scope for that cluster.
+If not, an error is thrown.
+"""
+function scopeindex(node_lab, sep::AbstractBelief, clu::AbstractBelief)
+    s_j = findfirst(isequal(node_lab), nodelabels(sep))
+    isnothing(s_j) && error("$node_lab not in sepset")
+    sep_inscope = inscope(sep)
+    s_insc_node = view(sep_inscope, :,s_j) # column for node in sepset inscope
+    c_j = findfirst(isequal(node_lab), nodelabels(clu))
+    isnothing(c_j) && error("$node_lab not in cluster")
+    clu_inscope = inscope(clu)
+    c_insc_node = view(clu_inscope, :,c_j) # column for node in cluster inscope
+    any(s_insc_node .& .!c_insc_node) &&
+        error("some traits are in sepset's but not in cluster's scope for node $node_lab")
+    s_insc = falses(size(sep_inscope))
+    s_insc[:,s_j] .= s_insc_node
+    ind_sep = findall(s_insc[sep_inscope])
+    c_insc = falses(size(clu_inscope))
+    c_insc[:,c_j] .= s_insc_node # !! not c_insc_node: to get *shared* traits
+    ind_clu = findall(c_insc[clu_inscope])
+    return (ind_sep, ind_clu)
 end
 
 # todo perhaps: add option to turn off checks, and
