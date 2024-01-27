@@ -70,56 +70,61 @@ end
         @test PGBP.integratebelief!(b[ind])[1][end] ≈
             0.21511454631828986 rtol=1e-5 # posterior root mean
     end
-    @testset "Level-3 w/ 2 tips. Univariate. Join-graph" begin
+    @testset "level-3, 2 tips, 2 traits, 1 missing unscoped in 2 nodes. Join-graph, regularize by node subtree" begin
         netstr = "((#H1:0.1::0.4,#H2:0.1::0.4)I1:1.0,(((A:1.0)#H1:0.1::0.6,#H3:0.1::0.4)#H2:0.1::0.6,(B:1.0)#H3:0.1::0.6)I2:1.0)I3;"
         net = readTopology(netstr)
-        # tip data simulated from ParamsBM(2,0.1)
-        df = DataFrame(taxon=["A","B"], y=[2.11,2.15])
-        tbl_y = columntable(select(df, :y))
-        m = PGBP.UnivariateBrownianMotion(1, 0, 100) # 𝒩(0, 100) prior on root mean
+        # y1 simulated from ParamsBM(2,0.1)
+        df = DataFrame(taxon=["A","B"], y1=[2.11,2.15], y2=[30.0,missing])
+        tbl_y = columntable(select(df, :y1, :y2))
+        m = PGBP.MvFullBrownianMotion([1 0.5; 0.5 1], [0,0], [Inf 0; 0 Inf]) # improper root
         cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3))
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
         cgb = PGBP.ClusterGraphBelief(b)
-        PGBP.regularizebeliefs_bycluster!(cgb, cg)
+        PGBP.regularizebeliefs_bynodesubtree!(cgb, cg)
         sch = [] # schedule based on 1 subtree per variable
         for n in net.nodes_changed
-            ns = Symbol(n.name)
-            subtree = PGBP.nodesubtree_clusterlist(cg, ns)
+            subtree = PGBP.nodesubtree_clusterlist(cg, Symbol(n.name))
             isempty(subtree[1]) && continue
             push!(sch, subtree)
         end
-        @test PGBP.calibrate!(cgb, sch, 20; auto=true)
-        # [ Info: Calibration detected: iter 4, sch 1
-        root_ind = findfirst(be -> 1 ∈ PGBP.nodelabels(be), b) # 6
+        @test (@test_logs (:info, "calibration reached: iteration 4, schedule tree 1") PGBP.calibrate!(cgb, sch, 10; auto=true, info=true))
         #= Compare posterior means against clique tree estimates:
         ct = PGBP.clustergraph!(net, PGBP.Cliquetree());
-        spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed);
-        m = PGBP.UnivariateBrownianMotion(1, 0, 100)
-        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
+        b_ct = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
+        PGBP.init_beliefs_assignfactors!(b_ct, m, tbl_y, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b_ct);
+        PGBP.calibrate!(ctb, [PGBP.spanningtree_clusterlist(ct, net.nodes_changed)]);
+        PGBP.integratebelief!(b_ct[6]) # cluster I1I2I3: PGBP.clusterindex(:I1I2I3, ctb)
+        # ([2.121105154896223, 30.005552577448075, 2.1360649504455984, 30.013032475222563, 2.128585052670908, 30.00929252633532], -1.39059577242449)
+        PGBP.integratebelief!(b_ct[2]) # cluster H1H2I1
+        # ([2.125583120364, 30.007791560181964, 2.129918967774073, 30.009959483886966, 2.121105154896214, 30.00555257744811], -1.390595772423012)
+        =#
+        tmp = PGBP.integratebelief!(b[6]) # 6: PGBP.clusterindex(:I1I2I3, cgb)
+        @test tmp[2] ≈ -1.390595772423
+        @test all(tmp[1] .≈ [2.121105154896223, 30.005552577448075, 2.1360649504455984, 30.013032475222563, 2.128585052670943, 30.00929252633547])
+        tmp = PGBP.integratebelief!(b[2]) # cluster 2: H1H2I1
+        @test tmp[2] ≈ -1.390595772423
+        @test all(tmp[1] .≈ [2.125583120364, 30.007791560181964, 2.129918967774073, 30.009959483886966, 2.121105154896214, 30.00555257744811])
+        #= likelihood using PN.vcv and matrix inversion
+        Σnet = kron(Matrix(vcv(net)[!,[:A,:B]]), [1 0.5; 0.5 1])
+        Σnet_y2Bmissing = Σnet[1:3,1:3]; invΣ = inv(Σnet_y2Bmissing)
+        yvec = [df[1,:y1], df[1,:y2], df[2,:y1]]
+        X = [1 0; 0 1; 1 0]; Xt = transpose(X)
+        μ = X * inv(Xt * invΣ * X) * Xt * invΣ * yvec
+        # [2.128585052670943, 30.00929252633547, 2.128585052670943] # great: same as posterior at I3 = root
+        loglikelihood(MvNormal(μ, Σnet_y2Bmissing), yvec) # -3.3498677834866997 but not same model: fixed root here
+        =#
+        m = PGBP.MvFullBrownianMotion([1 0.5; 0.5 1], [2.128585052670943,30.00929252633547]) # fixed root
+        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b);
-        PGBP.calibrate!(ctb, [spt]);
-
-        I1I2I3_ind = PGBP.clusterindex(:I1I2I3, ctb) # 6
-        H1H2I1_ind = PGBP.clusterindex(:H1H2I1, ctb) # 2
-        PGBP.integratebelief!(b[I1I2I3_ind])[1]
-        # [2.107649630183119, 2.1261068300836565, 2.1063464976451622]
-        PGBP.integratebelief!(b[H1H2I1_ind])[1]
-        (b[root_ind].J \ I)[end,end] # 1.0447576430122802
-        # [2.1143062955380847, 2.119117284721359, 2.107649630183123] =#
-        I1I2I3_ind = PGBP.clusterindex(:I1I2I3, cgb) # 6
-        H1H2I1_ind = PGBP.clusterindex(:H1H2I1, cgb) # 2
-        @test all(PGBP.integratebelief!(b[I1I2I3_ind])[1] .≈
-            [2.107649630183119, 2.1261068300836565, 2.1063464976451622])
-        @test all(PGBP.integratebelief!(b[H1H2I1_ind])[1] .≈
-            [2.1143062955380847, 2.119117284721359, 2.107649630183123])
+        cgb = PGBP.ClusterGraphBelief(b)
+        PGBP.regularizebeliefs_bynodesubtree!(cgb, cg)
+        @test (@test_logs PGBP.calibrate!(cgb, sch, 10; auto=true, info=false))
+        tmp = PGBP.integratebelief!(b[6]) # I3 un-scoped bc fixed root, same posterior mean for I1 and I2
+        @test tmp[2] ≈ -3.3498677834866997
+        @test all(tmp[1] .≈ [2.121105154896223, 30.005552577448075, 2.1360649504455984, 30.013032475222563])
     end
-    #= likelihood using PN.vcv and matrix inversion, different params
-    σ2tmp = 1; μtmp = -2
-    Σnet = σ2tmp .* Matrix(vcv(net)[!,Symbol.(df.taxon)])
-    loglikelihood(MvNormal(repeat([μtmp],4), Σnet), tbl.y) # -8.091436736475565
-    =#
 end
 @testset "with optimization" begin
     @testset "Level-1 w/ 4 tips. Univariate. Bethe + Optim." begin

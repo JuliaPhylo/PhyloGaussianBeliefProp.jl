@@ -1,6 +1,6 @@
 """
     calibrate!(beliefs::ClusterGraphBelief, schedule, niterations=1;
-        auto::Bool=false, info::Bool=true)
+        auto::Bool=false, info::Bool=false)
 
 Propagate messages in postorder then preorder for each tree in the `schedule`
 list, for `niterations`. Each schedule "tree" should be a tuple
