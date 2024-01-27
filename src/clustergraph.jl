@@ -684,21 +684,6 @@ function joingraph(net::HybridNetwork, method::JoinGraphStructuring)
                         add_edge!(cg, lab1, labn, cg[lab2, labn])
                     end
                     delete!(cg, lab2) # delete mb2 from cg
-                    #= MetaGraphsNext bug here: see
-                    issue #69 https://github.com/JuliaGraphs/MetaGraphsNext.jl/issues/69
-                    fixit: delete work-around below after MetaGraphsNext has new version with the fix
-                    =#
-                    #= Commented out code below is no longer needed after the
-                    recent MetaGraphsNext update (v0.7.0) since cg.edge_data
-                    keys are now tuples ordered by a comparison of vertex labels
-                    instead of vertex codes. =#
-                    # for (l1,l2) in edge_labels(cg)
-                    #     haskey(cg.edge_data, (l1,l2)) && continue
-                    #     haskey(cg.edge_data, (l2,l1)) || error("edge_data is lacking an edge")
-                    #     @warn "metagraphsnext still not deleting node correctly!!!"
-                    #     cg.edge_data[(l1,l2)] = cg.edge_data[(l2,l1)]
-                    #     delete!(cg.edge_data, (l2,l1))
-                    # end
                 end
             end
         end
