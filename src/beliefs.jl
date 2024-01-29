@@ -644,22 +644,28 @@ function iscalibrated_kl!(res::AbstractResidual{T}, atol=T(1e-5)) where T
 end
 
 """
-    approximate_kl!(residual::AbstractResidual, sepset::AbstractBelief,
+    residual_kldiv!(residual::AbstractResidual, sepset::AbstractBelief,
         canonicalparams::Tuple)
 
-Update `residual.kldiv` with an approximation to the KL divergence between
+Update `residual.kldiv` with the
+[Kullback-Leibler](https://en.wikipedia.org/wiki/Kullback-Leibler_divergence#Multivariate_normal_distributions)
+divergence between
 a message sent through a sepset (normalized to a probability distribution),
 and the sepset belief before the belief propagation (also normalized).
 `sepset` should contain the updated belief, and `residual` the difference
-in the `J` and `h` parameters due to the belief update (after - before).
+in the `J` and `h` parameters due to the belief update (after - before),
+such that the previous belief is: `sepset` belief - `residual`.
 As a side product, `sepset.μ` is updated.
 
-Output: true if the approximated KL divergence is close to 0, false otherwise.
+Output: `true` if the KL divergence is close to 0, `false` otherwise.
+See [`iscalibrated_kl!`](@ref) for the tolerance.
 
-If the `sepset` belief is degenerate, in the sense that its precision matrix is
-not positive definite and the belief cannot be normalized to a proper distribution,
-then a warning is sent, `residual` and `sepset` are not updated, and
-`false` is returned.
+If the current or previous `sepset` belief is degenerate,
+in the sense that its precision matrix is not positive definite and the
+belief cannot be normalized to a proper distribution, then
+`residual` and `sepset` are not updated, and `false` is returned.
+No warning and no error is sent, because sepset beliefs are initialized at 0
+and this case is expected to be frequent before enough messages are sent.
 
 ## Calculation:
 
@@ -667,54 +673,36 @@ This approximation computes the negative average energy of the residual canonica
 parameters, with the `g` parameter set to 0, with respect to the message
 canonical parameters.
 
-message sent: f(x) = C(x | Jₘ, hₘ, _) ≡ x ~ 𝒩(μ=Jₘ⁻¹hₘ, Σ=Jₘ⁻¹)  
+message sent: f(x) = C(x | Jₘ, hₘ, _) density for X ~ 𝒩(μ=Jₘ⁻¹hₘ, Σ=Jₘ⁻¹)  
 sepset (before belief-update): C(.| Jₛ, hₛ, gₛ)  
 sepset (after belief-update): C(.| Jₘ, hₘ, gₘ)  
 residual: ΔJ = Jₘ - Jₛ, Δh = hₘ - hₛ  
+p: dimension of X (number of variables: number of nodes * number of traits).
 Below, we use the nodation Δg for the change in constants to normalize each
 message, which is *not* gₘ-gₛ because the stored beliefs are not normalized.
 
     KL(C(Jₘ, hₘ, _) || C(Jₛ, hₛ, _))
-    = E[log C(x | Jₘ,hₘ,_)/C(x | Jₛ,hₛ,_)] where x ∼ C(Jₘ,hₘ,_)
-    = E[-(1/2) x'ΔJx + Δh'x + Δg)]
-    ≈ E[-(1/2) x'ΔJx + Δh'x], Δg dropped
-    = -average_energy(C(Jₘ, hₘ, _), C(ΔJ, Δh, 0))
+    = Eₘ[log C(x | Jₘ,hₘ,_)/C(x | Jₛ,hₛ,_)] where x ∼ C(Jₘ,hₘ,_)
+    = Eₘ[-(1/2) x'ΔJx + Δh'x + Δg)]
+    = (  tr(JₛJₘ⁻¹) - p + (μₛ-μₘ)'Jₛ(μₛ-μₘ) + log(det(Jₘ)/det(Jₛ))  ) /2
 
-See also: [`average_energy!`](@ref)
-
-## Note:
-E[Δg] = Δg
-      = +(1/2) log|Jₘ Jₛ⁻¹|
-      = +(1/2) log|I - (I - Jₘ Jₛ⁻¹)|
-      = +(1/2) log|I - P(I-D)P⁻¹|, where JₘJₛ⁻¹ = PDP⁻¹ is the eigendecomposition
-      ≈ +(1/2) (1 + tr(P(I-D)P⁻¹)) + O(‖vec(I-D)‖²), where ‖⋅‖ is the 1-norm
-      = +(1/2) (1 + tr(I-D)), first-order approx wrt ‖vec(I-D)‖
-      = +(1/2) (1 + k - tr(D)), where k = dim(I)
-*todo: Discuss if above should be added to current output of approximate_kl!
+See also: [`average_energy!`](@ref), which only requires the sepset belief
+to be positive definite.
 """
-function approximate_kl!(res::AbstractResidual{T}, sepset::AbstractBelief{T}) where {T <: Real}
-    #= Check if empty because `isposdef` returns true for empty matrices, e.g.
-    both `Real[;;] |> isposdef` and `MMatrix{0,0}(Real[;;]) |> isposdef` return
-    `true`. =#
+function residual_kldiv!(res::AbstractResidual{T}, sepset::AbstractBelief{T}) where {T <: Real}
+    # isposdef returns true for empty matrices e.g. isposdef(Real[;;]) and isposdef(MMatrix{0,0}(Real[;;]))
     isempty(sepset.J) && return true
     # fixit: should an "empty" sepset have it iscalibrated_* fields initialized to true?
-    (Jchol, μ) = try getcholesky_μ!(sepset)
+    (J0, μ0) = try getcholesky_μ!(sepset) # current (m): message that was passed
     catch
-        # @warn "cannot approximate KL divergence between messages: degenerate sepset belief"
-        # TODO 
         return false
     end
-    #=  Check that diagonal entries of lower factor are positive, to make sure
-        that J is psd. This is needed because the more generic cholesky method,
-        which is applied for example to matrices of Dual numbers, or Float64
-        matrices that are wrapped within another type (e.g. MMatrix) currently
-        does not throw an error for psd matrices.
-        This bug has been fixed here: https://github.com/JuliaLang/julia/pull/49417/commits,
-        though it has not been incorporated into the lastest stable release (1.9.3).
-        But: this bug does not seem to affect PDMat as used by getcholesky_μ!
-    =#
-    # if !LA.issuccess(Jchol) || any(Jchol.L[i,i] <= 0 for i in 1:dimension(sepset))
-    # then: warn and return false?
-    res.kldiv[1] = - average_energy(Jchol, μ, res.ΔJ, res.Δh, zero(T))
+    (J1, μ1) = try getcholesky_μ(sepset.J .- res.ΔJ, sepset.h .- res.Δh) # before (s)
+    catch
+        return false
+    end
+    res.kldiv[1] = ( - LA.tr(J0 \ res.ΔJ) + # tr(JₛJₘ⁻¹-I) = tr((Jₛ-Jₘ)Jₘ⁻¹) = tr(-ΔJ Jₘ⁻¹)
+        quad(J1, μ1-μ0) + # (μ1-μ0)' J1 (μ1-μ0)
+        LA.logdet(J0) - LA.logdet(J1) )/2
     iscalibrated_kl!(res)
 end

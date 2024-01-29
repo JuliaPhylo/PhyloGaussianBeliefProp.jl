@@ -18,17 +18,25 @@ to be reached. Otherwise belief updates continue for the full number of iteratio
 
 Output: `true` if calibration is reached, `false` otherwise.
 
+optional positional arguments (default value):
+- `verbose` (true): log error messages about degenerate messages
+- `update_residualnorm` (true)
+- `update_residualkldiv` (false)
+
 See also: [`iscalibrated_residnorm`](@ref)
 and [`iscalibrated_residnorm!`](@ref) for the tolerance and norm used by default,
 to declare calibration for a given sepset message (in 1 direction).
 """
 function calibrate!(beliefs::ClusterGraphBelief, schedule::AbstractVector,
     niter::Integer=1; auto::Bool=false, info::Bool=false,
+    verbose::Bool=true,
+    update_residualnorm::Bool=true,
+    update_residualkldiv::Bool=false,
 )
     iscal = false
     for i in 1:niter
         for (j, spt) in enumerate(schedule)
-            iscal = calibrate!(beliefs, spt)
+            iscal = calibrate!(beliefs, spt, verbose, update_residualnorm, update_residualkldiv)
             if iscal
                 info && @info "calibration reached: iteration $i, schedule tree $j"
                 auto && return true
@@ -37,9 +45,13 @@ function calibrate!(beliefs::ClusterGraphBelief, schedule::AbstractVector,
     end
     return iscal
 end
-function calibrate!(beliefs::ClusterGraphBelief, spt::Tuple)
-    propagate_1traversal_postorder!(beliefs, spt...)
-    propagate_1traversal_preorder!(beliefs, spt...)
+function calibrate!(beliefs::ClusterGraphBelief, spt::Tuple,
+    verbose::Bool=true,
+    up_resnorm::Bool=true,
+    up_reskldiv::Bool=false,
+)
+    propagate_1traversal_postorder!(beliefs, spt..., verbose, up_resnorm, up_reskldiv)
+    propagate_1traversal_preorder!(beliefs, spt..., verbose, up_resnorm, up_reskldiv)
     return iscalibrated_residnorm(beliefs)
 end
 
@@ -59,7 +71,7 @@ should correspond to indices in `beliefs`.
 This condition holds if beliefs are produced on a given cluster graph and if the
 tree is produced by [`spanningtree_clusterlist`](@ref) on the same graph.
 
-optional positional arguments (default value):
+optional positional arguments after spanning tree, in this order (default value):
 - `verbose` (true): log error messages about degenerate messages that failed
   to be passed.
 - `update_residualnorm` (true): to update each message residual's `iscalibrated_resid`
@@ -84,7 +96,7 @@ function propagate_1traversal_postorder!(
         flag = propagate_belief!(b[pa_j[i]], sepset, b[ch_j[i]], mrss)
         if isnothing(flag)
             update_residualnorm && iscalibrated_residnorm!(mrss)
-            update_residualkldiv && approximate_kl!(mrss, sepset)
+            update_residualkldiv && residual_kldiv!(mrss, sepset)
         elseif verbose
             @error flag.msg
         end
@@ -108,7 +120,7 @@ function propagate_1traversal_preorder!(
         flag = propagate_belief!(b[ch_j[i]], sepset, b[pa_j[i]], mrss)
         if isnothing(flag)
             update_residualnorm && iscalibrated_residnorm!(mrss)
-            update_residualkldiv && approximate_kl!(mrss, sepset)
+            update_residualkldiv && residual_kldiv!(mrss, sepset)
         elseif verbose
             @error flag.msg
         end
