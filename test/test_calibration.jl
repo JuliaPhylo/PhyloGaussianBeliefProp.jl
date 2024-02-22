@@ -7,7 +7,29 @@
     @test String(take!(io)) == """BPPosDefException: belief 1, integrate 3,4
     matrix is not positive definite."""
 end
-
+@testset "residual_kldiv!" begin
+    """
+    ref distr (new belief): μ=[0, 1], Σ=[1 0; 0 1], J=[1 0; 0 1], h=[0, 1]
+    approx distr (prev belief): μ=[1, 0], Σ=[2 1; 1 2], J=(1/3)[2 -1; -1 2],
+        h=(1/3)[2, -1]
+    resid distr (ref-approx): ΔJ=(1/3)[1 1; 1 1], Δh=(1/3)[-2, 4]
+    ---
+    Using R to compute KL divergence:
+    > library(rags2ridges)
+    > KLdiv(c(1,0),c(0,1),matrix(c(2,1,1,2),nrow=2),matrix(c(1,0,0,1),nrow=2))
+    [1] 1.215973
+    """
+    # allocate memory for ::MessageResidual object (resid distr)
+    res = PGBP.MessageResidual(zeros(2,2), zeros(2,))
+    res.ΔJ .= ones(2,2)/3
+    res.Δh .= [-2,4]/3
+    # allocate memory for ::Belief object (ref distr)
+    sepset = PGBP.Belief([1, 2], 1, BitArray([1 1]), PGBP.bsepsettype, (:A,:B))
+    sepset.J .= [1 0; 0 1]
+    sepset.h .= [0, 1]
+    PGBP.residual_kldiv!(res, sepset)
+    @test res.kldiv[1] ≈ 1.215973 rtol=1e-6
+end
 @testset "no optimization" begin
     @testset "Level-1 w/ 4 tips. Univariate. Clique tree" begin
         netstr = "(((A:4.0,((B1:1.0,B2:1.0)i6:0.6)#H5:1.1::0.9)i4:0.5,(#H5:2.0::0.1,C:0.1)i2:1.0)i1:3.0);"
@@ -125,6 +147,23 @@ end
         @test tmp[2] ≈ -3.3498677834866997
         @test all(tmp[1] .≈ [2.121105154896223, 30.005552577448075, 2.1360649504455984, 30.013032475222563])
     end
+    # @testset "Lipson 2020b: 12 tips, 11 hybrids. Univariate. Join-graph" begin
+    #     net = readTopology(joinpath(examplenetdir, "lipson_2020b.phy"));
+    #     df = DataFrame(x=[-2.196, -0.2, -1.538, -0.67, 0.833, 0.055, 0.495,
+    #         0.479, 0.229, 0.195, -0.148, -0.205], taxon=["Altai", "South_Africa_HG",
+    #         "French", "Agaw", "Mota", "Cameroon_SMA", "Biaka", "Lemande", "Yoruba",
+    #         "Mende", "Mbuti", "Chimp"]);
+    #     tbl_x = columntable(select(df, :x));
+    #     cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3));
+    #     m = PGBP.UnivariateBrownianMotion(1, 0, Inf);
+    #     b = PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, cg, m);
+    #     PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed);
+    #     cgb = PGBP.ClusterGraphBelief(b);
+    #     PGBP.regularizebeliefs!(cgb, cg);
+    #     sch = PGBP.spanningtrees_cover_clusterlist(cg, net.nodes_changed);
+    #     @test PGBP.calibrate!(cgb, sch, 20; auto=true)
+    #     @test PGBP.free_energy(cgb)[3] ≈ 9.920154167413642 rtol=1e-5
+    # end
 end
 @testset "with optimization" begin
     @testset "Level-1 w/ 4 tips. Univariate. Bethe + Optim." begin

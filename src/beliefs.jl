@@ -651,7 +651,7 @@ Update `residual.kldiv` with the
 [Kullback-Leibler](https://en.wikipedia.org/wiki/Kullback-Leibler_divergence#Multivariate_normal_distributions)
 divergence between
 a message sent through a sepset (normalized to a probability distribution),
-and the sepset belief before the belief propagation (also normalized).
+and the sepset belief before the belief update (also normalized).
 `sepset` should contain the updated belief, and `residual` the difference
 in the `J` and `h` parameters due to the belief update (after - before),
 such that the previous belief is: `sepset` belief - `residual`.
@@ -669,16 +669,12 @@ and this case is expected to be frequent before enough messages are sent.
 
 ## Calculation:
 
-This approximation computes the negative average energy of the residual canonical
-parameters, with the `g` parameter set to 0, with respect to the message
-canonical parameters.
-
-message sent: f(x) = C(x | Jₘ, hₘ, _) density for X ~ 𝒩(μ=Jₘ⁻¹hₘ, Σ=Jₘ⁻¹)  
-sepset (before belief-update): C(.| Jₛ, hₛ, gₛ)  
-sepset (after belief-update): C(.| Jₘ, hₘ, gₘ)  
+sepset after belief-update (i.e. message sent): C(x | Jₘ, hₘ, gₘ) ∝ density for
+    X ~ 𝒩(μ=Jₘ⁻¹hₘ, Σ=Jₘ⁻¹)  
+sepset before belief-update: C(x | Jₛ, hₛ, gₛ)  
 residual: ΔJ = Jₘ - Jₛ, Δh = hₘ - hₛ  
 p: dimension of X (number of variables: number of nodes * number of traits).
-Below, we use the nodation Δg for the change in constants to normalize each
+Below, we use the notation Δg for the change in constants to normalize each
 message, which is *not* gₘ-gₛ because the stored beliefs are not normalized.
 
     KL(C(Jₘ, hₘ, _) || C(Jₛ, hₛ, _))
