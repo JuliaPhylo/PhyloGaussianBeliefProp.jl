@@ -103,24 +103,28 @@ function average_energy(Jᵣ::Union{LA.Cholesky,PDMat}, μᵣ, Jₜ, hₜ, gₜ)
     (LA.tr(Jᵣ \ Jₜ) + LA.dot(μᵣ, Jₜ, μᵣ)) / 2 - LA.dot(hₜ, μᵣ) - gₜ
 end
 
-
 """
-    free_energy(beliefs::ClusterGraphBelief)
+    factored_energy(beliefs::ClusterGraphBelief)
 
-Approximation of the Gibbs free energy from `beliefs`, called Bethe free energy
-in the context of factor graphs, or (negative) factored energy functional
-for general cluster graphs (Koller & Friedman 2009).
+Factored energy functional for general cluster graphs (Koller & Friedman 2009),
+which approximates the evidence lower bound (ELBO), a lower bound for the
+log-likelihood. It is
+also called the (negative) Bethe free energy in the context of factor graphs
 It is the sum of the cluster average energies and entropies,
 minus the sepset entropies.
 It is assumed but not checked that `beliefs` are calibrated
 (neighbor clusters and sepset beliefs are consistent, used as local marginals).
 
-For a calibrated clique tree, the Bethe free energy is equal to the negative
-log-likelihood. For a calibrated cluster graph, minimizing the Bethe free energy
-maximizes an approximation of the evidence lower bound (ELBO), a lower bound for
-the log-likelihood.
+For a calibrated clique tree, the factored energy is equal to the
+log-likelihood. For a calibrated cluster graph, it can serve as as approximation.
 
-See also: [`entropy`](@ref), [`average_energy!`](@ref), [`iscalibrated`](@ref)
+output: tuple of 3 values, the 3rd being the factored energy:
+(average energy, approximate entropy, factored energy = -energy + entropy).
+
+See also: [`free_energy`](@ref),
+[`entropy`](@ref),
+[`average_energy!`](@ref),
+[`iscalibrated`](@ref)
 
 ## References
 
@@ -131,6 +135,17 @@ MIT Press, 2009. ISBN 9780262013192.
 D. M. Blei, A. Kucukelbir, and J. D. McAuliffe. Variational inference: A Review
 for Statisticians, Journal of the American statistical Association, 112:518,
 859-877, 2017, doi: [10.1080/01621459.2017.1285773](https://doi.org/10.1080/01621459.2017.1285773).
+"""
+function factored_energy(b::ClusterGraphBelief)
+    res = free_energy(b)
+    return (res[1], res[2], -res[3])
+end
+
+"""
+    free_energy(beliefs::ClusterGraphBelief)
+
+negative [`factored_energy`](@ref) to approximate the negative log-likelihood.
+The approximation is exact on a clique tree after calibration.
 """
 function free_energy(beliefs::ClusterGraphBelief{B}) where B<:Belief{T} where T<:Real
     b = beliefs.belief

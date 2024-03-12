@@ -230,9 +230,10 @@ end
 
 Same as [`calibrate_optimize_cliquetree!`](@ref) above, except that the user can
 supply an arbitrary `clustergraph` (including a clique tree) for the input
-network. Optimization aims to maximize a free energy approximation (the negative
-Bethe [`free_energy`](@ref)) to the ELBO for the log-likelihood of the data.
-When `clustergraph` is a clique tree, the free energy approximation is exactly
+network. Optimization aims to maximize the [`factored_energy`](@ref) approximation
+to the ELBO for the log-likelihood of the data
+(which is also the negative Bethe [`free_energy`](@ref)).
+When `clustergraph` is a clique tree, the factored energy approximation is exactly
 equal to the ELBO and the log-likelihood.
 
 The calibration repeatedly loops through a minimal set of spanning trees (see
@@ -255,7 +256,7 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
         # fixit: raise warning if calibration is not attained within `maxiter`?
         regularizebeliefs_bycluster!(beliefs, cgraph)
         calibrate!(beliefs, sch, maxiter, auto=true)
-        return free_energy(beliefs)[3] # minimize Bethe free energy
+        return free_energy(beliefs)[3] # to be minimized
     end
     opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS())
     fenergy = Optim.minimum(opt) 

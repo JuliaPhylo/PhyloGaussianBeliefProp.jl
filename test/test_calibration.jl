@@ -56,7 +56,7 @@ end
             _, tmp = PGBP.integratebelief!(ctb, i) # llscore from norm. constant
             @test tmp ≈ llscore
         end
-        @test -PGBP.free_energy(ctb)[3] ≈ llscore
+        @test PGBP.factored_energy(ctb)[3] ≈ llscore
         root_ind = findfirst(be -> 1 ∈ PGBP.nodelabels(be), b) # 5
         @test PGBP.integratebelief!(b[root_ind])[1][end] ≈
             -0.26000871507162693 rtol=1e-5 # posterior root mean
@@ -162,7 +162,7 @@ end
     #     PGBP.regularizebeliefs!(cgb, cg);
     #     sch = PGBP.spanningtrees_cover_clusterlist(cg, net.nodes_changed);
     #     @test PGBP.calibrate!(cgb, sch, 20; auto=true)
-    #     @test PGBP.free_energy(cgb)[3] ≈ 9.920154167413642 rtol=1e-5
+    #     @test PGBP.factored_energy(cgb)[3] ≈ - 9.920154167413642 rtol=1e-5
     # end
 end
 @testset "with optimization" begin
