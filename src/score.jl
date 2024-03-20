@@ -58,7 +58,7 @@ end
 entropy(cluster::AbstractBelief) = entropy(cluster.J)
 
 """
-    average_energy!(ref::Belief, target::AbstractBelief, dropg::Bool=false)
+    average_energy!(ref::Belief, target::AbstractBelief)
     average_energy!(ref::Belief, Jₜ, hₜ, gₜ)
     average_energy(Jᵣ::Union{LA.Cholesky,PDMat}, μᵣ, Jₜ, hₜ, gₜ)
 
@@ -71,7 +71,6 @@ this is equal to their cross-entropy:
 
     H(fᵣ, fₜ) = - Eᵣ(log fₜ) = - ∫ fᵣ log fₜ .
 
-If `dropg=true`, then average energy is computed assuming that `gₜ=0`.
 `ref` is assumed to be non-degenerate, that is, `Jᵣ` should be positive definite.
 
 `average_energy!` modifies the reference belief by updating `ref.μ` to J⁻¹h.
@@ -81,7 +80,7 @@ stored in `Jᵣ`: see [`getcholesky_μ!`](@ref).
 ## Calculation:
 
 ref: f(x) = C(x | Jᵣ, hᵣ, _) is the density of 𝒩(μ=Jᵣ⁻¹hᵣ, Σ=Jᵣ⁻¹)  
-target: C(x | Jₜ, hₜ, gₜ) = exp( - (1/2)x'Jₜx - hₜ'x - gₜ )
+target: C(x | Jₜ, hₜ, gₜ) = exp( - (1/2)x'Jₜx + hₜ'x + gₜ )
 
     E[-log C(X | Jₜ, hₜ, gₜ)] where X ∼ C(Jᵣ, hᵣ, _)
     = 0.5 (μᵣ'Jₜ μᵣ + tr(Jᵣ⁻¹Jₜ)) - hₜ'μᵣ - gₜ
@@ -89,9 +88,8 @@ target: C(x | Jₜ, hₜ, gₜ) = exp( - (1/2)x'Jₜx - hₜ'x - gₜ )
 With empty vectors and matrices (J's of dimension 0×0 and h's of length 0),
 the result is simply: - gₜ.
 """
-function average_energy!(ref::Belief, target::AbstractBelief, dropg::Bool=false)
-    gₜ = (dropg ? zero(target.g[1]) : target.g[1])
-    average_energy!(ref, target.J, target.h, gₜ)
+function average_energy!(ref::Belief, target::AbstractBelief)
+    average_energy!(ref, target.J, target.h, target.g[1])
 end
 function average_energy!(ref::Belief, Jₜ, hₜ, gₜ)
     (Jᵣ, μᵣ) = getcholesky_μ!(ref)
