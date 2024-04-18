@@ -206,22 +206,6 @@ For each cluster Ci (or for only for 1 cluster, labeled `cluster_label`):
 3. To preserve the graphical model's joint distribution for the full set of
    variables (invariant during BP), the same ϵ is added to each diagonal entry
    of Sij's precision matrix.
-
-## notes to be removed
-
-We would like:
-1. cluster/sepset beliefs stay non-degenerate (i.e. positive definite)
-2. all messages sent are well-defined (i.e. can be computed) and are positive semidefinite
-
-These guarantees are different from those described in
-Du et al. (2018) "Convergence analysis of distributed inference with
-vector-valued Gaussian belief propagation", Lemma 2. They show that
-all messages after a specific initialization are positive definite.
-In contrast, we want that cluster beliefs remain positive definite
-so that messages to be sent are well-defined.
-
-Todo (Ben): formalize the explanation of this. I think that a
-sufficient condition for this may be the absence of deterministic factors.
 """
 function regularizebeliefs_bycluster!(beliefs::ClusterGraphBelief, cgraph::MetaGraph)
     for lab in labels(cgraph)
@@ -250,8 +234,8 @@ elements of precision matrices `J`, while preserving the full graphical model
 (product of cluster beliefs over product of sepset beliefs,
 invariant during belief propagation) so that all beliefs are non-degenerate.
 
-The goal is the same as [`regularizebeliefs_bycluster!`](@ref),
-but the algorithm is different.
+The goal is the same as [`regularizebeliefs_bycluster!`,
+`regularizebeliefs_onschedule!`](@ref), but the algorithm is different.
 
 
 ## Algorithm
@@ -298,4 +282,69 @@ function regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief{B},
         view(sepsetbelief.J, s_ind, s_ind) .+= ϵ*LA.I(d)
     end
     return nothing
+end
+
+"""
+    regularizebeliefs_onschedule!(beliefs::ClusterGraphBelief, clustergraph)
+
+Modify beliefs of the cluster graph so that all beliefs are non-degenerate, by
+both (1) adding positive values to some diagonal elements of precision matrices
+`J`, while preserving the full graphical model, and (2) propagating messages by
+marginalizing cluster beliefs.
+
+The goal is the same as [`regularizebeliefs_bycluster!`,
+`regularizebeliefs_bynodesubtree!`](@ref), but the algorithm is different.
+
+## Algorithm
+
+For each cluster Ci:
+1. For each neighbor cluster Cj of Ci, if Cj has not sent a message to Ci, then
+add ϵ to the diagonal entries of Ci's precision matrix Ji and sepset Sij's
+precision matrix Jij that correspond to the inscope variables of Sij.
+- ϵ = maximum absolute value of all entries in Ji, and the square root of machine
+epsilon.
+- This is equivalent to sending a default message, that is not computed
+from Cj's belief, with diagonal precision matrix J=ϵ⋅I and other canonical
+parameters h=0, g=0.
+- Note that the graphical model invariant is preserved.
+2. For each neighbor cluster Cj of Ci, if Ci has not sent a message to Cj, then
+send a message from Ci to Cj, by marginalizing Ci's belief, and mark that this
+message has been sent.
+"""
+function regularizebeliefs_onschedule!(beliefs::ClusterGraphBelief, cgraph::MetaGraph)
+    # (cluster1, cluster2) ∈ messagesent if cluster1 has sent a message to cluster2
+    messagesent = Set{NTuple{2,Symbol}}()
+    b = beliefs.belief
+    mr = beliefs.messageresidual
+    for clusterlab in labels(cgraph)
+        tosend = Tuple{Tuple{Symbol,Int},Int}[] # messages to send after regularizing cluster
+        ci = clusterindex(clusterlab, beliefs) # cluster index
+        for nblab in neighbor_labels(cgraph, clusterlab)
+            nb_i = clusterindex(nblab, beliefs) # neighbor cluster index
+            ss_i = sepsetindex(clusterlab, nblab, beliefs) # sepset index
+            if (nblab, clusterlab) ∉ messagesent
+                # regularize cluster and sepset precisions
+                regularizebeliefs_onschedule!(b[ci], b[ss_i])
+                push!(messagesent, (nblab, clusterlab))
+            end
+            if (clusterlab, nblab) ∉ messagesent
+                # cluster to send regular message to neighbor
+                push!(tosend, ((nblab, nb_i), ss_i))
+                push!(messagesent, (clusterlab, nblab))
+            end
+        end
+        # send regular messages from cluster to its neighbors
+        for ((nblab, nb_i), ss_i) in tosend
+            propagate_belief!(b[nb_i], b[ss_i], b[ci], mr[(nblab, clusterlab)])
+        end
+    end
+end
+function regularizebeliefs_onschedule!(cluster::AbstractBelief, sepset::AbstractBelief)
+    upind = scopeindex(sepset, cluster)
+    isempty(upind) && return
+    ϵ = max(maximum(abs, cluster.J), sqrt(eps(Float64))) # regularization parameter
+    ΔJ = ϵ*LA.I(length(upind))
+    view(cluster.J, upind, upind) .+= ΔJ # update cluster belief
+    sepset.J .+= ΔJ # update sepset belief to preserve the graph invariant
+    return
 end
