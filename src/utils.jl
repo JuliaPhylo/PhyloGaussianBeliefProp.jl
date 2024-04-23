@@ -2,7 +2,7 @@
     isdegenerate(node)
 
 `true` if *all* parent edges of `node` have length 0, `false` otherwise.
-Intented for hybrid nodes, as tree edges of length 0 should be suppressed
+Intended for hybrid nodes, as tree edges of length 0 should be suppressed
 before trait evolution analysis.
 """
 function isdegenerate(node::PN.Node)

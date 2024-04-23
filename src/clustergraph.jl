@@ -904,7 +904,7 @@ the network's root, as in [`spanningtree_clusterlist`](@ref).
 
 The spanning trees are iteratively obtained using Kruskal's minimum-weight
 spanning tree algorithm, with edge weights defined as the number of previous
-trees coverging the edge.
+trees covering the edge.
 """
 function spanningtrees_clusterlist(cgraph::MetaGraph{T}, prenodes::Vector{PN.Node}) where T
     # graph with same clusters and edges, but different edge data & edge weights

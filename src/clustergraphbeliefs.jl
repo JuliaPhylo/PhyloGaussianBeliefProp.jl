@@ -32,7 +32,7 @@ struct ClusterGraphBelief{B<:Belief, F<:FamilyFactor, M<:MessageResidual}
     Each such density is assigned to 1 cluster.
     A cluster belief can be assigned 0, 1 or more such density.
     Cluster beliefs are modified during belief propagation, but factors are not.
-    They are useful to aproximate the likelihood by the factored energy."""
+    They are useful to approximate the likelihood by the factored energy."""
     factor::Vector{F}
     "number of clusters"
     nclusters::Int

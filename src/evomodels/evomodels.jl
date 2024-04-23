@@ -225,18 +225,18 @@ end
 ################################################################
 
 """
-    hybdridnode_displacement(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
-    hybdridnode_precision(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
+    hybridnode_displacement(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
+    hybridnode_precision(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
     hybridnode_variance(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
 
 Under the most general weighted average Gaussian model, X₀ given its parents X₁, X₂, ...
 is Gaussian with conditional mean the weighted average of the parents
-plus a displacement vecror ω and conditional variance Σ independent of X₁, X₂, ... .
-`hybridnode_variance` and `hybdridnode_precision`should return a matrix of symmetric type.
-`hybdridnode_precision` defaults to the inverse of `hybridnode_variance`.
-`hybdridnode_displacement` and `hybridnode_variance` default to a vector or matrix of zeros. 
+plus a displacement vector ω and conditional variance Σ independent of X₁, X₂, ... .
+`hybridnode_variance` and `hybridnode_precision`should return a matrix of symmetric type.
+`hybridnode_precision` defaults to the inverse of `hybridnode_variance`.
+`hybridnode_displacement` and `hybridnode_variance` default to a vector or matrix of zeros. 
 """
-function hybdridnode_displacement(obj::EvolutionaryModel{T}, ::AbstractVector{PN.Edge}) where T
+function hybridnode_displacement(obj::EvolutionaryModel{T}, ::AbstractVector{PN.Edge}) where T
     zeros(T, dimension(obj))
 end
 @doc (@doc hybdridnode_displacement) hybridnode_variance
@@ -245,7 +245,7 @@ function hybridnode_variance(obj::EvolutionaryModel{T}, ::AbstractVector{PN.Edge
     zeros(T, ntraits, ntraits)
 end
 @doc (@doc hybdridnode_displacement) hybdridnode_precision # TODO: this function is never used ?
-function hybdridnode_precision(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
+function hybridnode_precision(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
     return inv(hybridnode_variance(obj, parentedges))
 end
 
@@ -287,7 +287,7 @@ function factor_hybridnode(m::EvolutionaryModel{T}, pae::AbstractVector{PN.Edge}
     ntraits = dimension(m)
     nparents = length(pae)
     v = hybridnode_variance(m, pae) # extra node variance
-    ω = hybdridnode_displacement(m, pae) # extra node displacement
+    ω = hybridnode_displacement(m, pae) # extra node displacement
     q = Matrix{T}(undef, ntraits, nparents * ntraits) # init actualisation
     for (k, edge) in enumerate(pae)
         qe = view(q, :, ((k-1) * ntraits + 1):(k*ntraits))
@@ -311,7 +311,7 @@ function factor_tree_degeneratehybrid(m::EvolutionaryModel{T}, pae::AbstractVect
     # hybridnode_variance(m, pae) is zero if degenerate, as well as branch_variance(m, edge) for all edge in pae
     j = branch_precision(m, che)
     # hybrid displacement and actualisation
-    ωh = hybdridnode_displacement(m, pae)
+    ωh = hybridnode_displacement(m, pae)
     qh = Matrix{T}(undef, ntraits, nparents * ntraits)
     for (k, edge) in enumerate(pae)
         ωh .+= edge.gamma .* qche * branch_displacement(m, edge)

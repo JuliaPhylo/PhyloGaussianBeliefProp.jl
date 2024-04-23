@@ -17,7 +17,7 @@ end
 """
     FamilyFactor(belief::AbstractBelief{T}) where T
 
-Constructor to allocate memory for one familty factor, with canonical parameters
+Constructor to allocate memory for one family factor, with canonical parameters
 and metadata initialized to be a copy of those in `belief`.
 `FamilyFactor`s metadata are supposed to be symbols, so this constructor should
 fail if its input is a sepset belief, whose `metadata` is a Tuple of Symbols.
@@ -101,7 +101,7 @@ end
     Belief(nodelabels, numtraits, inscope, belieftype, metadata, T=Float64)
 
 Constructor to allocate memory for one cluster, and initialize objects with 0s
-to initilize the belief with the constant function exp(0)=1.
+to initialize the belief with the constant function exp(0)=1.
 """
 function Belief(nl::AbstractVector{Tlabel}, numtraits::Integer,
                 inscope::BitArray, belief, metadata, T::Type=Float64) where Tlabel<:Integer
@@ -133,7 +133,7 @@ end
 
 Indices in the belief's μ,h,J vectors and matrices of the variables
 for nodes labelled `node_labels`. The belief's `inscope` matrix of
-booleans says which node (row) and trait (column) is in the belief's scope.
+booleans says which node (column) and trait (row) is in the belief's scope.
 These variables are vectorized by stacking up columns, that is,
 listing all in-scope traits of the first node, then all in-scope traits of
 the second node etc.

@@ -404,7 +404,7 @@ end
     findClusterIndex(node::PN.Node, belief_vector)
 
 In the belief in the vector that contains both the node and all its parents.
-Throws an error if this cluster does not ex
+Throws an error if this cluster does not exist.
 
 fixit: delete, function not used, and prone to error because it uses
 the belief's metadata instead of the belief's node labels.
