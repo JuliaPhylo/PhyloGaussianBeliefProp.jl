@@ -1,7 +1,7 @@
 name = "PhyloGaussianBeliefProp"
 uuid = "e3084505-90a0-4799-8167-4168d9f39f7c"
 authors = ["Cecile Ane <cecileane@users.noreply.github.com>", "Benjamin Teo <bstkj@users.noreply.github.com>", "and contributors"]
-version = "0.1.0"
+version = "0.0.1"
 
 [deps]
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"

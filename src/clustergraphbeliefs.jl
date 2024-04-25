@@ -234,8 +234,8 @@ elements of precision matrices `J`, while preserving the full graphical model
 (product of cluster beliefs over product of sepset beliefs,
 invariant during belief propagation) so that all beliefs are non-degenerate.
 
-The goal is the same as [`regularizebeliefs_bycluster!`,
-`regularizebeliefs_onschedule!`](@ref), but the algorithm is different.
+The goal is the same as [`regularizebeliefs_bycluster!`](@ref) and
+[`regularizebeliefs_onschedule!`](@ref), but the algorithm is different.
 
 
 ## Algorithm
@@ -288,43 +288,52 @@ end
     regularizebeliefs_onschedule!(beliefs::ClusterGraphBelief, clustergraph)
 
 Modify beliefs of the cluster graph so that all beliefs are non-degenerate, by
-both (1) adding positive values to some diagonal elements of precision matrices
-`J`, while preserving the full graphical model, and (2) propagating messages by
-marginalizing cluster beliefs.
+(1) adding positive values to some diagonal elements of precision matrices `J`
+while preserving the full graphical model, and
+(2) propagating messages by marginalizing cluster beliefs.
 
-The goal is the same as [`regularizebeliefs_bycluster!`,
-`regularizebeliefs_bynodesubtree!`](@ref), but the algorithm is different.
+The goal is the same as [`regularizebeliefs_bycluster!`](@ref) and
+[`regularizebeliefs_bynodesubtree!`](@ref), but the algorithm is different.
 
 ## Algorithm
 
-For each cluster Ci:
-1. For each neighbor cluster Cj of Ci, if Cj has not sent a message to Ci, then
-add ϵ to the diagonal entries of Ci's precision matrix Ji and sepset Sij's
-precision matrix Jij that correspond to the inscope variables of Sij.
-- ϵ = maximum absolute value of all entries in Ji, and the square root of machine
-epsilon.
-- This is equivalent to sending a default message, that is not computed
-from Cj's belief, with diagonal precision matrix J=ϵ⋅I and other canonical
-parameters h=0, g=0.
-- Note that the graphical model invariant is preserved.
+The outcomes depends on a "schedule", that is, on an order in which clusters
+are considered. Here, the method simply takes the order given by `labels(clustergraph)`.
+Mark all messages Ci → Cj as un-sent.
+For each cluster Ci in order:
+
+1. For each neighbor cluster Cj of Ci, if the message Cj → Ci has not been sent,
+   then:
+   - add ϵ_i to the diagonal entries of sepset Sij's precision matrix Jij
+   - add ϵ_i to the diagonal entries of Ci's precision matrix Ji that correspond to
+     the inscope variables of Sij
+   - mark Cj → Ci as sent.
+   Notes:
+   + ϵ_i is taken as the maximum of all absolute values of entries in Ji,
+     and of the square root of machine epsilon.
+   + This is equivalent to "sending" a default message, that is not computed
+     from Cj's belief, with diagonal precision matrix ϵ⋅I and other canonical
+     parameters h=0, g=0.
 2. For each neighbor cluster Cj of Ci, if Ci has not sent a message to Cj, then
-send a message from Ci to Cj, by marginalizing Ci's belief, and mark that this
-message has been sent.
+   - send a message from Ci to Cj by marginalizing Ci's belief (that is, using belief propagation).
+   - mark the message Ci → Cj as sent.
 """
 function regularizebeliefs_onschedule!(beliefs::ClusterGraphBelief, cgraph::MetaGraph)
     # (cluster1, cluster2) ∈ messagesent if cluster1 has sent a message to cluster2
     messagesent = Set{NTuple{2,Symbol}}()
+    ϵ0 = sqrt(eps(Float64))
     b = beliefs.belief
     mr = beliefs.messageresidual
     for clusterlab in labels(cgraph)
         tosend = Tuple{Tuple{Symbol,Int},Int}[] # messages to send after regularizing cluster
         ci = clusterindex(clusterlab, beliefs) # cluster index
+        ϵ = max(maximum(abs, b[ci].J), ϵ0)     # regularization parameter
         for nblab in neighbor_labels(cgraph, clusterlab)
             nb_i = clusterindex(nblab, beliefs) # neighbor cluster index
             ss_i = sepsetindex(clusterlab, nblab, beliefs) # sepset index
             if (nblab, clusterlab) ∉ messagesent
                 # regularize cluster and sepset precisions
-                regularizebeliefs_onschedule!(b[ci], b[ss_i])
+                regularizebeliefs_onschedule!(b[ci], b[ss_i], ϵ)
                 push!(messagesent, (nblab, clusterlab))
             end
             if (clusterlab, nblab) ∉ messagesent
@@ -339,10 +348,9 @@ function regularizebeliefs_onschedule!(beliefs::ClusterGraphBelief, cgraph::Meta
         end
     end
 end
-function regularizebeliefs_onschedule!(cluster::AbstractBelief, sepset::AbstractBelief)
+function regularizebeliefs_onschedule!(cluster::AbstractBelief, sepset::AbstractBelief, ϵ)
     upind = scopeindex(sepset, cluster)
     isempty(upind) && return
-    ϵ = max(maximum(abs, cluster.J), sqrt(eps(Float64))) # regularization parameter
     ΔJ = ϵ*LA.I(length(upind))
     view(cluster.J, upind, upind) .+= ΔJ # update cluster belief
     sepset.J .+= ΔJ # update sepset belief to preserve the graph invariant
