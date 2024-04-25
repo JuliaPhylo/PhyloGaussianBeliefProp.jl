@@ -62,8 +62,20 @@ end
             -0.26000871507162693 rtol=1e-5 # posterior root mean
         @test (b[root_ind].J \ I)[end,end] ≈
             0.33501871740664146 rtol=1e-5 # posterior root variance
+        @testset "Regularization preserves graph invariant" begin
+            PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+            PGBP.regularizebeliefs_bynodesubtree!(ctb, ct);
+            PGBP.calibrate!(ctb, [spt]);
+            _, tmp = PGBP.integratebelief!(ctb, 1)
+            @test tmp ≈ llscore
+            PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+            PGBP.regularizebeliefs_onschedule!(ctb, ct);
+            PGBP.calibrate!(ctb, [spt]);
+            _, tmp = PGBP.integratebelief!(ctb, 1)
+            @test tmp ≈ llscore
+        end
     end
-    @testset "Level-1 w/ 4 tips. Univariate. Bethe" begin
+    @testset "Level-1 w/ 4 tips. Univariate. Bethe, regularize on a schedule" begin
         netstr = "(A:2.5,((B:1,#H1:0.5::0.1):1,(C:1,(D:0.5)#H1:0.5::0.9):1):0.5);"
         net = readTopology(netstr)
         # tip data simulated from ParamsBM(0,1)
@@ -84,7 +96,7 @@ end
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
         cgb = PGBP.ClusterGraphBelief(b)
-        PGBP.regularizebeliefs_bycluster!(cgb, cg)
+        PGBP.regularizebeliefs_onschedule!(cgb, cg)
         sched = PGBP.spanningtrees_clusterlist(cg, net.nodes_changed)
         @test PGBP.calibrate!(cgb, sched, 20; auto=true)
         # [ Info: Calibration detected: iter 5, sch 1
@@ -147,23 +159,6 @@ end
         @test tmp[2] ≈ -3.3498677834866997
         @test all(tmp[1] .≈ [2.121105154896223, 30.005552577448075, 2.1360649504455984, 30.013032475222563])
     end
-    # @testset "Lipson 2020b: 12 tips, 11 hybrids. Univariate. Join-graph" begin
-    #     net = readTopology(joinpath(examplenetdir, "lipson_2020b.phy"));
-    #     df = DataFrame(x=[-2.196, -0.2, -1.538, -0.67, 0.833, 0.055, 0.495,
-    #         0.479, 0.229, 0.195, -0.148, -0.205], taxon=["Altai", "South_Africa_HG",
-    #         "French", "Agaw", "Mota", "Cameroon_SMA", "Biaka", "Lemande", "Yoruba",
-    #         "Mende", "Mbuti", "Chimp"]);
-    #     tbl_x = columntable(select(df, :x));
-    #     cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3));
-    #     m = PGBP.UnivariateBrownianMotion(1, 0, Inf);
-    #     b = PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, cg, m);
-    #     PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed);
-    #     cgb = PGBP.ClusterGraphBelief(b);
-    #     PGBP.regularizebeliefs!(cgb, cg);
-    #     sch = PGBP.spanningtrees_cover_clusterlist(cg, net.nodes_changed);
-    #     @test PGBP.calibrate!(cgb, sch, 20; auto=true)
-    #     @test PGBP.factored_energy(cgb)[3] ≈ - 9.920154167413642 rtol=1e-5
-    # end
 end
 @testset "with optimization" begin
     @testset "Level-1 w/ 4 tips. Univariate. Bethe + Optim." begin
