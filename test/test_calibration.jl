@@ -62,17 +62,17 @@ end
             -0.26000871507162693 rtol=1e-5 # posterior root mean
         @test (b[root_ind].J \ I)[end,end] ≈
             0.33501871740664146 rtol=1e-5 # posterior root variance
-        @testset "Regularization preserves graph invariant" begin
+        @testset "regularization by cluster" begin
             PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
             PGBP.regularizebeliefs_bynodesubtree!(ctb, ct);
             PGBP.calibrate!(ctb, [spt]);
             _, tmp = PGBP.integratebelief!(ctb, 1)
             @test tmp ≈ llscore
             PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-            PGBP.regularizebeliefs_onschedule!(ctb, ct);
+            PGBP.regularizebeliefs_bycluster!(ctb, ct);
             PGBP.calibrate!(ctb, [spt]);
             _, tmp = PGBP.integratebelief!(ctb, 1)
-            @test tmp ≈ llscore
+            @test tmp ≈ llscore # graph invariant was preserved
         end
     end
     @testset "Level-1 w/ 4 tips. Univariate. Bethe, regularize on a schedule" begin

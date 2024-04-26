@@ -224,6 +224,28 @@ function regularizebeliefs_bycluster!(beliefs::ClusterGraphBelief{B},
 end
 
 """
+    regularizebeliefs_1clustersepset!(cluster::AbstractBelief, sepset::AbstractBelief, ϵ)
+
+Modify beliefs of 1 cluster and 1 of sepset, assumed to be neighbors in a
+cluster graph (such that the sepset's scope is a subset of the cluster's scope)
+by adding ϵ to all diagonal elements of the sepset precision matrice `J`
+and to the corresponding diagonal elements of the cluster precision,
+so as to preserve the full graphical model.
+
+Used by
+[`regularizebeliefs_bycluster!`](@ref) and
+[`regularizebeliefs_onschedule!`](@ref).
+"""
+function regularizebeliefs_1clustersepset!(cluster::AbstractBelief, sepset::AbstractBelief, ϵ)
+    upind = scopeindex(sepset, cluster)  # indices to be updated
+    isempty(upind) && return
+    ΔJ = ϵ*LA.I(length(upind))
+    view(cluster.J, upind, upind) .+= ΔJ # regularize cluster precision
+    sepset.J .+= ΔJ                      # preserve the graph invariant
+    return
+end
+
+"""
     regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief, clustergraph)
 
 Modify beliefs of cluster graph by adding positive values to some diagonal
@@ -264,7 +286,7 @@ function regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief{B},
     nv(sg) <= 1 && return nothing
     is_tree(sg) || error("running intersection violated for node / variable $node_symbol")
     rootj = argmax(sg[l][2][1] for l in labels(sg)) # cluster with largest preorder index
-    degree(sg, rootj) == 1 || @warn "cluster $(label_for(sg, rootj)) not a leaf in subtree for $node_symbol, I had hoped so."
+    # degree(sg, rootj) == 1 || @warn "cluster $(label_for(sg, rootj)) not a leaf in subtree for $node_symbol, I had hoped so."
     spt = spanningtree_clusterlist(sg, rootj) # ! cluster indices refer to those in sg, not cgraph
     ϵ = eps(T)
     for l in labels(sg)
@@ -342,12 +364,4 @@ function regularizebeliefs_onschedule!(beliefs::ClusterGraphBelief, cgraph::Meta
             propagate_belief!(b[nb_i], b[ss_i], b[ci], mr[(nblab, clusterlab)])
         end
     end
-end
-function regularizebeliefs_1clustersepset!(cluster::AbstractBelief, sepset::AbstractBelief, ϵ)
-    upind = scopeindex(sepset, cluster)  # indices to be updated
-    isempty(upind) && return
-    ΔJ = ϵ*LA.I(length(upind))
-    view(cluster.J, upind, upind) .+= ΔJ # regularize cluster precision
-    sepset.J .+= ΔJ                      # preserve the graph invariant
-    return
 end
