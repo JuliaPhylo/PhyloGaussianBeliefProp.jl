@@ -219,10 +219,7 @@ function regularizebeliefs_bycluster!(beliefs::ClusterGraphBelief{B},
     ϵ = max(eps(T), maximum(abs, cluster_to.J)) # regularization constant
     for nblab in neighbor_labels(cgraph, clusterlab)
         sepset = b[sepsetindex(clusterlab, nblab, beliefs)]
-        upind = scopeindex(sepset, cluster_to) # indices to be updated
-        d = length(upind)
-        view(cluster_to.J, upind, upind) .+= ϵ*LA.I(d) # regularize cluster precision
-        sepset.J .+= ϵ*LA.I(d) # preserve cluster graph invariant
+        regularizebeliefs_1clustersepset!(cluster_to, sepset, ϵ)
     end
 end
 
@@ -314,45 +311,43 @@ For each cluster Ci in order:
    + This is equivalent to "sending" a default message, that is not computed
      from Cj's belief, with diagonal precision matrix ϵ⋅I and other canonical
      parameters h=0, g=0.
-2. For each neighbor cluster Cj of Ci, if Ci has not sent a message to Cj, then
+2. For each neighbor cluster Cj of Ci, if Ci → Cj has not been sent then
    - send a message from Ci to Cj by marginalizing Ci's belief (that is, using belief propagation).
    - mark the message Ci → Cj as sent.
 """
 function regularizebeliefs_onschedule!(beliefs::ClusterGraphBelief, cgraph::MetaGraph)
     # (cluster1, cluster2) ∈ messagesent if cluster1 has sent a message to cluster2
     messagesent = Set{NTuple{2,Symbol}}()
+    tosend = Tuple{Tuple{Symbol,Int},Int}[] # indices for step 2, reset at each cluster
     ϵ0 = sqrt(eps(Float64))
     b = beliefs.belief
     mr = beliefs.messageresidual
     for clusterlab in labels(cgraph)
-        tosend = Tuple{Tuple{Symbol,Int},Int}[] # messages to send after regularizing cluster
+        empty!(tosend)
         ci = clusterindex(clusterlab, beliefs) # cluster index
         ϵ = max(maximum(abs, b[ci].J), ϵ0)     # regularization parameter
         for nblab in neighbor_labels(cgraph, clusterlab)
             nb_i = clusterindex(nblab, beliefs) # neighbor cluster index
             ss_i = sepsetindex(clusterlab, nblab, beliefs) # sepset index
-            if (nblab, clusterlab) ∉ messagesent
-                # regularize cluster and sepset precisions
-                regularizebeliefs_onschedule!(b[ci], b[ss_i], ϵ)
+            if (nblab, clusterlab) ∉ messagesent # step 1: regularize precisions
+                regularizebeliefs_1clustersepset!(b[ci], b[ss_i], ϵ)
                 push!(messagesent, (nblab, clusterlab))
             end
-            if (clusterlab, nblab) ∉ messagesent
-                # cluster to send regular message to neighbor
+            if (clusterlab, nblab) ∉ messagesent # store indices for step 2 later
                 push!(tosend, ((nblab, nb_i), ss_i))
                 push!(messagesent, (clusterlab, nblab))
             end
         end
-        # send regular messages from cluster to its neighbors
-        for ((nblab, nb_i), ss_i) in tosend
+        for ((nblab, nb_i), ss_i) in tosend # step 2: pass message with BP
             propagate_belief!(b[nb_i], b[ss_i], b[ci], mr[(nblab, clusterlab)])
         end
     end
 end
-function regularizebeliefs_onschedule!(cluster::AbstractBelief, sepset::AbstractBelief, ϵ)
-    upind = scopeindex(sepset, cluster)
+function regularizebeliefs_1clustersepset!(cluster::AbstractBelief, sepset::AbstractBelief, ϵ)
+    upind = scopeindex(sepset, cluster)  # indices to be updated
     isempty(upind) && return
     ΔJ = ϵ*LA.I(length(upind))
-    view(cluster.J, upind, upind) .+= ΔJ # update cluster belief
-    sepset.J .+= ΔJ # update sepset belief to preserve the graph invariant
+    view(cluster.J, upind, upind) .+= ΔJ # regularize cluster precision
+    sepset.J .+= ΔJ                      # preserve the graph invariant
     return
 end
