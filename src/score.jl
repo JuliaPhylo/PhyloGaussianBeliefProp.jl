@@ -121,8 +121,7 @@ output: tuple of 3 values, the 3rd being the factored energy:
 
 See also: [`free_energy`](@ref),
 [`entropy`](@ref),
-[`average_energy!`](@ref),
-[`iscalibrated`](@ref)
+[`average_energy!`](@ref)
 
 ## References
 

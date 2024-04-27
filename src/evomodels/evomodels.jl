@@ -239,12 +239,12 @@ plus a displacement vector ω and conditional variance Σ independent of X₁, X
 function hybridnode_displacement(obj::EvolutionaryModel{T}, ::AbstractVector{PN.Edge}) where T
     zeros(T, dimension(obj))
 end
-@doc (@doc hybdridnode_displacement) hybridnode_variance
+@doc (@doc hybridnode_displacement) hybridnode_variance
 function hybridnode_variance(obj::EvolutionaryModel{T}, ::AbstractVector{PN.Edge}) where T
     ntraits = dimension(obj)
     zeros(T, ntraits, ntraits)
 end
-@doc (@doc hybdridnode_displacement) hybdridnode_precision # TODO: this function is never used ?
+@doc (@doc hybridnode_displacement) hybridnode_precision # TODO: this function is never used ?
 function hybridnode_precision(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
     return inv(hybridnode_variance(obj, parentedges))
 end
