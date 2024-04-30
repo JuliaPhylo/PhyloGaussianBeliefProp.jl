@@ -304,23 +304,24 @@ so it this docstring obsolete?
 fixit: as this function is not supposed to perform the calibration, should it
 be renamed to avoid `calibrate_*`? perhaps to: `fit_homogeneous!()`
 or `fit_analytical!()` ??
-It seems that a clique tree is required to get the true ML/REML estimates,
-but the function should still work if the cluster graph was not a clique tree
-(would get the associated approximation to the ML/REML estimates).
+It seems that the function could be extended to handle cluster graphs (not just
+clique trees) if one of its argument was a "routine" to calibrate the
+cluster graph the very end, to get the estimated log-likelihood.
 If so, deleting "cliquetree" from the name and from the docstring would be good.
+Sticking to a clique tree, the function could take the calibration schedule as input.
 
 Warning: there is *no* check that the cluster graph is in fact a clique tree,
 or that calibration has been reached.
 """
 # TODO deal with missing values (only completelly missing tips)
 # TODO network case
-function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
+function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
     cgraph, prenodes::Vector{PN.Node},
     node2belief::AbstractVector{<:Integer},
     tbl::Tables.ColumnTable, taxa::AbstractVector,
     evomodelfun, # constructor function
     evomodelparams
-)
+) where B<:Belief{T} where T
     evomodelfun ∈ (UnivariateBrownianMotion, MvFullBrownianMotion) ||
         error("Exact optimization is only implemented for the univariate or full Brownian Motion.")
     model = evomodelfun(evomodelparams...)
@@ -331,20 +332,20 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
 
     ## Compute mu_hat from root belief
     ## Root is the last node of the root cluster
-    #= fixit: alternatively, pass `rootj` as an argument to this function,
-       since calibration would have to be done prior to using this function.
-       Or: if calibration is full (postorder + preorder), then find *any* cluster
-       containing the root node, with pre-index 1.
+    #= fixit: alternatively, pass `spt` as an argument to this function,
+       since calibration has to be done prior to using this function.
+       If we didn't need to use `spt` at the very end, we could get rootj directly with:
+       rootj = default_rootcluster(cgraph, prenodes)
     =#
     spt = spanningtree_clusterlist(cgraph, prenodes)
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     exp_root, _ = integratebelief!(beliefs, rootj)
     mu_hat = exp_root[(end-p+1):end]
-    # fixit: use scopeindex((root_node_label), root_belief) instead?
+    # fixit: use scopeindex((prenodes[1].name), beliefs.belief[rootj]) instead?
 
     ## Compute sigma2_hat from conditional moments
-    tmp_num = zeros(p, p)
-    tmp_den = 0
+    tmp_num = zeros(T, p, p)
+    tmp_den = zero(T)
     # loop over all nodes
     for i in eachindex(prenodes)
         # TODO: is it the correct way to iterate over the graph ?
@@ -416,7 +417,7 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
     ## TODO: This is the REML estimate. Should we get ML instead ?
 
     ## Get optimal paramters
-    bestθ = (sigma2_hat, mu_hat, zeros(p, p)) # zero variance at the root: fixed
+    bestθ = (sigma2_hat, mu_hat, zeros(T, p, p)) # zero variance at the root: fixed
     bestmodel = evomodelfun(bestθ...)
     ## Get associated likelihood
     ## TODO: likelihood for the full BM (not implemented)
