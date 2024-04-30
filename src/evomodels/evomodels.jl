@@ -114,7 +114,7 @@ conditional mean q X₁ + ω and conditional variance Σ independent of X₁.
 `branch_precision` and `branch_variance`should return a matrix of symmetric type.
 `branch_variance` defaults to the inverse of `branch_precision`.
 `branch_logdet` defaults to -0.5*log(|2πΣ|), the log normalizing constant of the
-Gaussian density in the traditional (non cannonical) form.
+Gaussian density in the traditional form.
 
 Under a Brownian motion, we have q=I, ω=0, and conditional variance tR
 where R is the model's variance rate.
@@ -124,15 +124,15 @@ function branch_actualization(obj::EvolutionaryModel{T}, edge::PN.Edge) where T
     M = Matrix{T}(undef, p, p)
     branch_actualization!(M, obj, edge)
 end
-function branch_actualization!(M::AbstractMatrix, obj::EvolutionaryModel, edge::PN.Edge)
+function branch_actualization!(::AbstractMatrix, obj::EvolutionaryModel, ::PN.Edge)
     error("branch_actualization! not implemented for type $(typeof(obj)).")
 end
 @doc (@doc branch_actualization) branch_displacement
-function branch_displacement(obj::EvolutionaryModel, edge::PN.Edge)
+function branch_displacement(obj::EvolutionaryModel, ::PN.Edge)
     error("`branch_displacement` not implemented for type $(typeof(obj)).")
 end
 @doc (@doc branch_actualization) branch_precision
-function branch_precision(obj::EvolutionaryModel, edge::PN.Edge)
+function branch_precision(obj::EvolutionaryModel, ::PN.Edge)
     error("`branch_precision` not implemented for type $(typeof(obj)).")
 end
 @doc (@doc branch_actualization) branch_variance

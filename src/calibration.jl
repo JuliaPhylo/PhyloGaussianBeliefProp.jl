@@ -269,11 +269,23 @@ end
     calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief, clustergraph,
         nodevector_preordered, node2belief,
         tbl::Tables.ColumnTable, taxa::AbstractVector,
-        evolutionarymodel_name)
+        evolutionarymodel_name, evomodelparams)
 
-For a Brownian Motion with a fixed root, compute the exact maximum likelihood
-parameters using closed form formulas relying on belief propagation.
-The  `clustergraph` is assumed to be a clique tree for the input tree,
+For a Brownian Motion with a fixed root, compute the maximum likelihood
+(for the mean) and restricted maximum likelihood (REML, for the variance rate)
+parameter estimates using analytical formulas relying on belief propagation.
+
+fixit: why have argument `evomodelparams` if it's only use to estimate the mean,
+and required to have infinite prior variance at the root?
+Could we make evolutionarymodel_name be able to construct a default model
+with variance 1, mean 0, infinite prior (if we don't have any default yet)
+so that we don't need argument `evomodelparams`?
+
+output: `(bestmodel, loglikelihood_score)`
+where `bestmodel` is an evolutionary model created by `evolutionarymodel_name`,
+containing the estimated model parameters.
+
+The `clustergraph` is assumed to be a clique tree for the input tree,
 whose nodes in preorder are `nodevector_preordered`.
 Optimization aims to maximize the likelihood
 of the data in `tbl` at leaves in the network.
@@ -281,12 +293,24 @@ The taxon names in `taxa` should appear in the same order as they come in `tbl`.
 The parameters being optimized are the variance rate(s) and prior mean(s)
 at the root. The prior variance at the root is fixed to zero.
 
-The calibration does a postorder of the clique tree only, using the optimal parameters,
-to get the likelihood
+The calibration does a postorder of the clique tree only,
+using the optimal parameters, to get the likelihood
 at the root *without* the conditional distribution at all nodes, modifying
 `beliefs` in place. Therefore, if the distribution of ancestral states is sought,
 an extra preorder calibration would be required.
-Warning: there is *no* check that the cluster graph is in fact a clique tree.
+
+fixit: the variance estimator requires the conditional distribution at all nodes,
+so it this docstring obsolete?
+fixit: as this function is not supposed to perform the calibration, should it
+be renamed to avoid `calibrate_*`? perhaps to: `fit_homogeneous!()`
+or `fit_analytical!()` ??
+It seems that a clique tree is required to get the true ML/REML estimates,
+but the function should still work if the cluster graph was not a clique tree
+(would get the associated approximation to the ML/REML estimates).
+If so, deleting "cliquetree" from the name and from the docstring would be good.
+
+Warning: there is *no* check that the cluster graph is in fact a clique tree,
+or that calibration has been reached.
 """
 # TODO deal with missing values (only completelly missing tips)
 # TODO network case
@@ -307,10 +331,16 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
 
     ## Compute mu_hat from root belief
     ## Root is the last node of the root cluster
+    #= fixit: alternatively, pass `rootj` as an argument to this function,
+       since calibration would have to be done prior to using this function.
+       Or: if calibration is full (postorder + preorder), then find *any* cluster
+       containing the root node, with pre-index 1.
+    =#
     spt = spanningtree_clusterlist(cgraph, prenodes)
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     exp_root, _ = integratebelief!(beliefs, rootj)
     mu_hat = exp_root[(end-p+1):end]
+    # fixit: use scopeindex((root_node_label), root_belief) instead?
 
     ## Compute sigma2_hat from conditional moments
     tmp_num = zeros(p, p)
@@ -398,30 +428,4 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
     _, loglikscore = integratebelief!(beliefs, rootj)
 
     return bestmodel, loglikscore
-end
-
-"""
-    findClusterIndex(node::PN.Node, belief_vector)
-
-In the belief in the vector that contains both the node and all its parents.
-Throws an error if this cluster does not exist.
-
-fixit: delete, function not used, and prone to error because it uses
-the belief's metadata instead of the belief's node labels.
-"""
-function findClusterIndex(node::PN.Node, belief_vector)
-    nodelab = node.name
-    for i in eachindex(belief_vector)
-        b = belief_vector[i]
-        # only cluster beliefs
-        b.type == bclustertype || continue
-        # label should match
-        occursin(nodelab, String(b.metadata)) || continue
-        # node should be in a cluster with all its parents
-        parentlabels = [nn.name for nn in PN.getparents(node)]
-        all([occursin(ll, String(b.metadata)) for ll in parentlabels]) || continue
-        # if still here, we found the cluster
-        return i
-    end
-    error("Could not find a cluster with the node and all its parents.")
 end
