@@ -267,13 +267,28 @@ end
 
 """
     calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief, clustergraph,
-        nodevector_preordered, node2belief,
+        nodevector_preordered,
+        clusterlist, 
+        node2belief,
         tbl::Tables.ColumnTable, taxa::AbstractVector,
-        evolutionarymodel_name, evomodelparams)
+        evolutionarymodel_name)
 
 For a Brownian Motion with a fixed root, compute the maximum likelihood
 (for the mean) and restricted maximum likelihood (REML, for the variance rate)
-parameter estimates using analytical formulas relying on belief propagation.
+parameter estimates using analytical formulas relying on belief propagation,
+using the data in `tbl` at leaves in the network.
+The taxon names in `taxa` should appear in the same order as they come in `tbl`.
+
+The function takes uncalibrated `beliefs`, and a `clustergraph`,
+assumed to be a clique tree for the input network, whose nodes in preorder are
+`nodevector_preordered`, with spanning tree `clusterlist`,
+and calibrates them in place using the estimated parameters.
+
+output: `(bestmodel, loglikelihood_score)`
+where `bestmodel` is an evolutionary model created by `evolutionarymodel_name`,
+containing the estimated model parameters.
+
+--
 
 fixit: why have argument `evomodelparams` if it's only use to estimate the mean,
 and required to have infinite prior variance at the root?
@@ -281,18 +296,6 @@ Could we make evolutionarymodel_name be able to construct a default model
 with variance 1, mean 0, infinite prior (if we don't have any default yet)
 so that we don't need argument `evomodelparams`?
 PB: removed evomodelparams entirelly
-
-output: `(bestmodel, loglikelihood_score)`
-where `bestmodel` is an evolutionary model created by `evolutionarymodel_name`,
-containing the estimated model parameters.
-
-The `clustergraph` is assumed to be a clique tree for the input tree,
-whose nodes in preorder are `nodevector_preordered`.
-Optimization aims to maximize the likelihood
-of the data in `tbl` at leaves in the network.
-The taxon names in `taxa` should appear in the same order as they come in `tbl`.
-The parameters being optimized are the variance rate(s) and prior mean(s)
-at the root. The prior variance at the root is fixed to zero.
 
 The calibration does a postorder of the clique tree only,
 using the optimal parameters, to get the likelihood
@@ -309,6 +312,12 @@ PB: this was taken from `calibrate_optimize_cliquetree!`, and refers to the
 last calibration at the end, with the optimal parameters. The function
 does need a fully calibrated entry, but returns a post-order only calbration
 to get the likelihood.
+PB: updated so that the function takes uncalibrated beliefs, and does the
+full calibration.
+
+fixit: since this function only works for the homogeneous BM, it could
+be renamed something like `calibrate_exact_homogeneous_BrownianMotion!`,
+and then get rid of the `evolutionarymodel_name` argument.
 
 fixit: It seems that the function could be extended to handle cluster graphs (not just
 clique trees) if one of its argument was a "routine" to calibrate the
@@ -319,18 +328,23 @@ Sticking to a clique tree, the function could take the calibration schedule as i
 Warning: there is *no* check that the cluster graph is in fact a clique tree,
 or that calibration has been reached.
 """
-# TODO deal with missing values (only completelly missing tips)
 function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
-    cgraph, prenodes::Vector{PN.Node},
-    node2belief::AbstractVector{<:Integer},
+    cgraph,
+    spt,
+    prenodes::Vector{PN.Node},
     tbl::Tables.ColumnTable, taxa::AbstractVector,
     evomodelfun # constructor function
 ) where B<:Belief{T} where T
     evomodelfun ∈ (UnivariateBrownianMotion, MvFullBrownianMotion) ||
         error("Exact optimization is only implemented for the univariate or full Brownian Motion.")
-    ## TODO: check that the tree was calibrated with the right model MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf)) ?
-    ## TODO: or do this first calibration directly in the function ? (API change)
     p = length(tbl)
+
+    ## calibrate beliefs using infinite root and identity rate variance
+    calibrationparams = evomodelfun(LA.diagm(ones(p)), zeros(p), LA.diagm(repeat([Inf], p)))
+    init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual, calibrationparams) # in case root status changed
+    node2belief = init_beliefs_assignfactors!(beliefs.belief, calibrationparams, tbl, taxa, prenodes)
+    init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
+    calibrate!(beliefs, [spt])
 
     ## Compute mu_hat from root belief
     ## Root is the last node of the root cluster
@@ -338,8 +352,8 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
        since calibration has to be done prior to using this function.
        If we didn't need to use `spt` at the very end, we could get rootj directly with:
        rootj = default_rootcluster(cgraph, prenodes)
+       PB: passed spt as an argument, calibrated inside the function
     =#
-    spt = spanningtree_clusterlist(cgraph, prenodes)
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     exp_root, _ = integratebelief!(beliefs, rootj)
     mu_hat = exp_root[(end-p+1):end]
@@ -377,7 +391,7 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
         vv = inv(b.J)
         # tip node
         if nodechild.leaf # tip node
-            # TODO: deal with missing data
+            # TODO: deal with missing data (completely missing tips)
             # TODO: is there a more simple way to do that ? Record of data in belief object ?
             size(vv, 1) == p || error("A leaf node should have only on non-degenerate factor.")
             # find tip data
@@ -426,9 +440,8 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
     init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual, bestmodel)
     init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
     init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
-    propagate_1traversal_postorder!(beliefs, spt...)
+    calibrate!(beliefs, [spt])
     _, loglikscore = integratebelief!(beliefs, rootj)
-    ## fixit: we could do the full calibration here if we needed / wanted.
 
     return bestmodel, loglikscore
 end
