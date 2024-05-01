@@ -266,71 +266,50 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
 end
 
 """
-    calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief, clustergraph,
+    calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
+        schedule,
         nodevector_preordered,
-        clusterlist, 
-        node2belief,
         tbl::Tables.ColumnTable, taxa::AbstractVector,
         evolutionarymodel_name)
 
-For a Brownian Motion with a fixed root, compute the maximum likelihood
-(for the mean) and restricted maximum likelihood (REML, for the variance rate)
-parameter estimates using analytical formulas relying on belief propagation,
+For a Brownian Motion with a fixed root, compute the maximum likelihood estimate
+of the prior mean at the root and the restricted maximum likelihood (REML)
+estimate of the variance/covariance rate matrix
+using analytical formulas relying on belief propagation,
 using the data in `tbl` at leaves in the network.
-The taxon names in `taxa` should appear in the same order as they come in `tbl`.
-
-The function takes uncalibrated `beliefs`, and a `clustergraph`,
-assumed to be a clique tree for the input network, whose nodes in preorder are
-`nodevector_preordered`, with spanning tree `clusterlist`,
-and calibrates them in place using the estimated parameters.
+These estimates are for the model with a prior variance of 0 at the root,
+that is, a root state equal to the prior mean.
 
 output: `(bestmodel, loglikelihood_score)`
 where `bestmodel` is an evolutionary model created by `evolutionarymodel_name`,
 containing the estimated model parameters.
 
---
+assumptions:
+- `taxa` should list the taxon names in the same order in which they come in the
+  rows of `tbl`.
+- `schedule` should provide a schedule to transmit messages between beliefs
+  in `beliefs` (containing clusters first then sepsets). This schedule is
+  assumed to traverse a clique tree for the input phylogeny,
+  with the root cluster containing the root of the phylogeny in its scope.
+- `nodevector_preordered` should list the nodes in this phylogeny, in preorder.
+- `beliefs` should be of size and scope consistent with `evolutionarymodel_name`
+  and data in `tbl`.
+- a leaf should either have complete data, or be missing data for all traits.
 
-fixit: why have argument `evomodelparams` if it's only use to estimate the mean,
-and required to have infinite prior variance at the root?
-Could we make evolutionarymodel_name be able to construct a default model
-with variance 1, mean 0, infinite prior (if we don't have any default yet)
-so that we don't need argument `evomodelparams`?
-PB: removed evomodelparams entirelly
+Steps:
+1. Calibrate `beliefs` in place according to the `schedule`, under a model
+   with an infinite prior variance at the root.
+2. Estimate parameters analytically.
+3. Re-calibrate `beliefs`, to calculate the maximum log-likelihood of the
+   fixed-root model at the estimated optimal parameters, again modifying
+   `beliefs` in place. (Except that beliefs with the root node in scope are
+   re-assigned to change their scoping dimension.)
 
-The calibration does a postorder of the clique tree only,
-using the optimal parameters, to get the likelihood
-at the root *without* the conditional distribution at all nodes, modifying
-`beliefs` in place. Therefore, if the distribution of ancestral states is sought,
-an extra preorder calibration would be required.
-
-fixit: the variance estimator requires the conditional distribution at all nodes,
-so it this docstring obsolete?
-fixit: as this function is not supposed to perform the calibration, should it
-be renamed to avoid `calibrate_*`? perhaps to: `fit_homogeneous!()`
-or `fit_analytical!()` ??
-PB: this was taken from `calibrate_optimize_cliquetree!`, and refers to the
-last calibration at the end, with the optimal parameters. The function
-does need a fully calibrated entry, but returns a post-order only calbration
-to get the likelihood.
-PB: updated so that the function takes uncalibrated beliefs, and does the
-full calibration.
-
-fixit: since this function only works for the homogeneous BM, it could
-be renamed something like `calibrate_exact_homogeneous_BrownianMotion!`,
-and then get rid of the `evolutionarymodel_name` argument.
-
-fixit: It seems that the function could be extended to handle cluster graphs (not just
-clique trees) if one of its argument was a "routine" to calibrate the
-cluster graph the very end, to get the estimated log-likelihood.
-If so, deleting "cliquetree" from the name and from the docstring would be good.
-Sticking to a clique tree, the function could take the calibration schedule as input.
-
-Warning: there is *no* check that the cluster graph is in fact a clique tree,
-or that calibration has been reached.
+Warning: there is *no* check that the beliefs and schedule are consistent
+with each other.
 """
 function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
-    cgraph,
-    spt,
+    spt, # node2belief may be needed if pre & post calibrations are moved outside
     prenodes::Vector{PN.Node},
     tbl::Tables.ColumnTable, taxa::AbstractVector,
     evomodelfun # constructor function
@@ -346,14 +325,7 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
     init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
     calibrate!(beliefs, [spt])
 
-    ## Compute mu_hat from root belief
-    ## Root is the last node of the root cluster
-    #= fixit: alternatively, pass `spt` as an argument to this function,
-       since calibration has to be done prior to using this function.
-       If we didn't need to use `spt` at the very end, we could get rootj directly with:
-       rootj = default_rootcluster(cgraph, prenodes)
-       PB: passed spt as an argument, calibrated inside the function
-    =#
+    ## Compute mu_hat from root belief, last node of the root cluster
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     exp_root, _ = integratebelief!(beliefs, rootj)
     mu_hat = exp_root[(end-p+1):end]
@@ -372,17 +344,18 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
         clusterindex = node2belief[i]
         b = beliefs.belief[clusterindex]
         dimclus = length(b.nodelabel)
-        # child ind in the cluster
-        childind = findfirst(b.nodelabel .== i)
-        # find parents: should be in the cluster, if node2belief is valid
-        # fixit: why not use PN.getparents and PN.getparentedges below?
-        parind = findall([PN.isconnected(prenodes[nl], nodechild) && nl != i for nl in b.nodelabel])
-        all_parent_edges = [PN.getConnectingEdge(prenodes[b.nodelabel[d]], nodechild) for d in parind]
-        all_gammas = zeros(dimclus)
-        all_gammas[parind] = [ee.gamma for ee in all_parent_edges]
-        # parent(s) edge length
-        edge_length = 0.0
-        for ee in all_parent_edges
+        childind = findfirst(lab == i for lab in b.nodelabel) # child index in cluster
+        # parents should all be in the cluster, if node2belief is valid
+        all_parent_edges = PN.Edge[]; parind = Int[] # parent(s) indices in cluster
+        edge_length = zero(T) # parent edge length if 1 parent; sum of γ² t over all parent edges
+        all_gammas = zeros(T, dimclus)
+        for ee in nodechild.edge
+            getchild(ee) === nodechild || continue # skip below if child edge
+            push!(all_parent_edges, ee)
+            pn = getparent(ee) # parent node
+            pi = findfirst(prenodes[j].name == pn.name for j in b.nodelabel)
+            push!(parind, pi)
+            all_gammas[pi] = ee.gamma
             edge_length += ee.gamma * ee.gamma * ee.length
         end
         edge_length == 0.0 && continue # if edge has length zero, then the parameter R does not occur in the factor

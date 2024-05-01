@@ -195,7 +195,7 @@ end
         m = PGBP.UnivariateBrownianMotion(1, 0, Inf) # infinite root variance
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
         cgb = PGBP.ClusterGraphBelief(b)
-        mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct, spt,
+        mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, spt,
             net.nodes_changed,
             tbl_y, df.taxon, PGBP.UnivariateBrownianMotion)
 
@@ -222,7 +222,7 @@ end
         m = PGBP.MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf))
         b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
         cgb = PGBP.ClusterGraphBelief(b)
-        mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct, spt,
+        mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, spt,
            net.nodes_changed,
            tbl, df.taxon, PGBP.MvFullBrownianMotion)
 
