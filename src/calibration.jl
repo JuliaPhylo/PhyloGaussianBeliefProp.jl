@@ -280,6 +280,7 @@ and required to have infinite prior variance at the root?
 Could we make evolutionarymodel_name be able to construct a default model
 with variance 1, mean 0, infinite prior (if we don't have any default yet)
 so that we don't need argument `evomodelparams`?
+PB: removed evomodelparams entirelly
 
 output: `(bestmodel, loglikelihood_score)`
 where `bestmodel` is an evolutionary model created by `evolutionarymodel_name`,
@@ -304,7 +305,12 @@ so it this docstring obsolete?
 fixit: as this function is not supposed to perform the calibration, should it
 be renamed to avoid `calibrate_*`? perhaps to: `fit_homogeneous!()`
 or `fit_analytical!()` ??
-It seems that the function could be extended to handle cluster graphs (not just
+PB: this was taken from `calibrate_optimize_cliquetree!`, and refers to the
+last calibration at the end, with the optimal parameters. The function
+does need a fully calibrated entry, but returns a post-order only calbration
+to get the likelihood.
+
+fixit: It seems that the function could be extended to handle cluster graphs (not just
 clique trees) if one of its argument was a "routine" to calibrate the
 cluster graph the very end, to get the estimated log-likelihood.
 If so, deleting "cliquetree" from the name and from the docstring would be good.
@@ -314,21 +320,17 @@ Warning: there is *no* check that the cluster graph is in fact a clique tree,
 or that calibration has been reached.
 """
 # TODO deal with missing values (only completelly missing tips)
-# TODO network case
 function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
     cgraph, prenodes::Vector{PN.Node},
     node2belief::AbstractVector{<:Integer},
     tbl::Tables.ColumnTable, taxa::AbstractVector,
-    evomodelfun, # constructor function
-    evomodelparams
+    evomodelfun # constructor function
 ) where B<:Belief{T} where T
     evomodelfun ∈ (UnivariateBrownianMotion, MvFullBrownianMotion) ||
         error("Exact optimization is only implemented for the univariate or full Brownian Motion.")
-    model = evomodelfun(evomodelparams...)
-    isrootfixed(model) || error("Exact optimization is only implemented for the BM with fixed root.")
     ## TODO: check that the tree was calibrated with the right model MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf)) ?
     ## TODO: or do this first calibration directly in the function ? (API change)
-    p = dimension(model)
+    p = length(tbl)
 
     ## Compute mu_hat from root belief
     ## Root is the last node of the root cluster
@@ -420,13 +422,13 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
     bestθ = (sigma2_hat, mu_hat, zeros(T, p, p)) # zero variance at the root: fixed
     bestmodel = evomodelfun(bestθ...)
     ## Get associated likelihood
-    ## TODO: likelihood for the full BM (not implemented)
     loglikscore = NaN
-    init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual, bestmodel) # fixit: should this be bestmodel? why do this anyway?
+    init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual, bestmodel)
     init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
     init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
     propagate_1traversal_postorder!(beliefs, spt...)
     _, loglikscore = integratebelief!(beliefs, rootj)
+    ## fixit: we could do the full calibration here if we needed / wanted.
 
     return bestmodel, loglikscore
 end
