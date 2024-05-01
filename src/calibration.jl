@@ -171,7 +171,6 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     # https://juliadiff.org/ForwardDiff.jl/dev/user/limitations/
     # See PreallocationTools.jl package (below)
     opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS())
-    # fixit: if BM and fixed root, avoid optimization bc there exists an exact alternative
     loglikscore = -Optim.minimum(opt)
     bestθ = Optim.minimizer(opt)
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
@@ -215,7 +214,6 @@ function calibrate_optimize_cliquetree_autodiff!(bufferbeliefs::GeneralLazyBuffe
     # optim using autodiff
     od = OnceDifferentiable(score, params_optimize(mod); autodiff = :forward);
     opt = Optim.optimize(od, params_optimize(mod), Optim.LBFGS())
-    # fixit: if BM and fixed root, avoid optimization bc there exists an exact alternative
     loglikscore = -Optim.minimum(opt)
     bestθ = Optim.minimizer(opt)
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
