@@ -363,7 +363,7 @@ function init_beliefs_allocate_atroot!(beliefs, factors, messageresidual, model:
 end
 
 """
-    init_beliefs_reset!(beliefs)
+    init_beliefs_reset!(beliefs::Vector{<:Belief})
 
 Reset all beliefs (which may be cluster & sepset beliefs or factors, which are
 initial cluster beliefs) to h=0, J=0, g=0 (μ unchanged).
@@ -433,7 +433,7 @@ was assigned to.
 Output: `beliefs` vector. Each belief & factor is modified in place.
 """
 function init_beliefs_assignfactors!(
-        beliefs,
+        beliefs::Vector{<:Belief},
         model::EvolutionaryModel,
         tbl::Tables.ColumnTable, taxa::AbstractVector, prenodes::Vector{PN.Node})
     init_beliefs_reset!(beliefs)
@@ -576,7 +576,9 @@ end
 Constructor to allocate memory for a `MessageResidual` with canonical parameters
 `(ΔJ, Δh)` of the same dimension and type as `J` and `h`, initialized to zeros.
 `kldiv` is initalized to `[-1.0]` and the flags `iscalibrated_{resid,kl}`
-are initialized to `false`.
+are initialized to `false` if the message is of positive dimension.
+If the message is empty (ΔJ and Δh of dimension 0) then the message is initialized
+as being calibrated: `kldiv` is set to 0 and `iscalibrated` flags set to true.
 
 `(ΔJ, Δh)` of zero suggest calibration, but the flags `iscalibrated_{resid,kl}`
 being false indicate otherwise.
@@ -584,7 +586,11 @@ being false indicate otherwise.
 function MessageResidual(J::AbstractMatrix{T}, h::AbstractVector{T}) where {T <: Real}
     Δh = zero(h)
     ΔJ = zero(J)
-    MessageResidual{T,typeof(ΔJ),typeof(Δh)}(Δh, ΔJ, MVector(-1.0), MVector(false), MVector(false))
+    kldiv, iscal_res, iscal_kl = (isempty(h) ?
+        (MVector(zero(T)), MVector(true),  MVector(true) ) :
+        (MVector(-one(T)), MVector(false), MVector(false))
+    )
+    MessageResidual{T,typeof(ΔJ),typeof(Δh)}(Δh, ΔJ, kldiv, iscal_res, iscal_kl)
 end
 
 """
@@ -688,7 +694,6 @@ to be positive definite.
 function residual_kldiv!(res::AbstractResidual{T}, sepset::AbstractBelief{T}) where {T <: Real}
     # isposdef returns true for empty matrices e.g. isposdef(Real[;;]) and isposdef(MMatrix{0,0}(Real[;;]))
     isempty(sepset.J) && return true
-    # fixit: should an "empty" sepset have it iscalibrated_* fields initialized to true?
     (J0, μ0) = try getcholesky_μ!(sepset) # current (m): message that was passed
     catch
         return false
