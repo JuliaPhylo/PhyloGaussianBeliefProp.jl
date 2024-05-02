@@ -175,7 +175,7 @@ end
             net.nodes_changed, tbl_y, df.taxon,
             PGBP.UnivariateBrownianMotion, (1,0))
         # Compare with RxInfer + Optim
-        @test fenergy ≈ 3.4312133894974126 rtol=1e-4
+        @test fenergy ≈ -3.4312133894974126 rtol=1e-4
         @test mod.μ ≈ 10.931640613828181 rtol=1e-4
         @test mod.σ2 ≈ 0.15239159696122745 rtol=1e-4
     end

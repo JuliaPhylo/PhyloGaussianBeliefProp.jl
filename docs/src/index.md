@@ -16,7 +16,8 @@ phylogenetic networks using belief propagation (aka message passing).
 Pages = [
     "man/installation.md",
     "man/background.md",
-    "man/getting_started.md"
+    "man/getting_started.md",
+    "man/evolutionary_models.md"
 ]
 Depth = 3
 ```

@@ -19,7 +19,11 @@ makedocs(;
         "Manual" => [
             "Installation" => "man/installation.md",
             "Background" => "man/background.md",
-            "Getting started" => "man/getting_started.md"
+            "Getting started" => "man/getting_started.md",
+            "Evolutionary models" => "man/evolutionary_models.md",
+            "Cluster graphs" => "man/clustergraphs.md",
+            "Message passing" => "man/message_passing.md",
+            "Message schedules" => "man/message_schedules.md"
         ]
     ]
 )

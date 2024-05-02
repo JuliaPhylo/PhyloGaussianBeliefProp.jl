@@ -142,7 +142,7 @@ belief from a calibrated loopy cluster graph cannot be similarly interpreted.
 
 We see that both approaches return the same value, modulo rounding error.
 
-## Parameter inference
+## Exact inference
 In the section above, we computed the log-likelihood for ``\mu=0``, ``\sigma^2=1``.
 
 Now we find ``\mu=\widehat{\mu}`` and ``\sigma^2=\widehat{\sigma}^2`` that
@@ -150,15 +150,16 @@ maximize the log-likelihood. There are two options:
 - iterative optimization
 - exact computation using belief propagation
 ```@repl getting_started
-mod, _, _ = PGBP.calibrate_optimize_cliquetree!( # iterative optimization
+mod, ll, _ = PGBP.calibrate_optimize_cliquetree!( # iterative optimization
         ctb, # beliefs
         ct, # clique tree
-        net.nodes_changed,
+        net.nodes_changed, # network nodes in preorder
         tbl_x, # trait data
         df.taxon, # tip labels
         PGBP.UnivariateBrownianMotion, # type of evolutionary model
         (1.0, 0)); # starting parameters: σ2 = 1.0, μ = 0.0
 mod # ML estimates
+ll # log-likelihood for ML estimates
 
 mod, _ = PGBP.calibrate_exact_cliquetree!( # exact computation
         ctb,
@@ -176,3 +177,24 @@ the latter returns the restricted maximum-likelihood (REML) estimate for
 Strictly speaking, the estimates from the latter option do not jointly maximize
 the log-likelihood. However, the REML estimate for ``\sigma^2`` is generally
 less biased than its ML counterpart.
+
+## Approximate inference
+Suppose now that we use a loopy cluster graph instead. We choose `Bethe` to
+construct a Bethe cluster graph (also known as factor graph) `fg`.
+
+As before, we set up a data structure `fgb` to track the beliefs of the factor
+graph during message passing. Then we call `calibrate_optimize_clustergraph!`,
+the analog of `calibrate_optimize_cliquetree!` from earlier:
+```@repl getting_started
+fg = PGBP.clustergraph!(net, PGBP.Bethe()) # factor graph
+b_fg = PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, fg, m); # allocate memory for beliefs
+fgb = PGBP.ClusterGraphBelief(b_fg); # wrap beliefs to facilitate message passing
+
+mod, fe, _ = PGBP.calibrate_optimize_clustergraph!(fgb, fg, net.nodes_changed, tbl_x,
+        df.taxon, PGBP.UnivariateBrownianMotion, (1.0, 0));
+mod # parameter estimates
+fe # factored energy approximation to the log-likelihood
+```
+We see that both parameter estimates are very close to their maximum-likelihood
+counterparts (within 10⁻⁴ percent), and the factored energy slightly
+overestimates the log-likelihood for these values (within 1 percent). 

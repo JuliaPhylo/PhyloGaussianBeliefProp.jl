@@ -260,7 +260,7 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
     fenergy = Optim.minimum(opt) 
     bestθ = Optim.minimizer(opt)
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
-    return bestmodel, fenergy, opt
+    return bestmodel, -fenergy, opt
 end
 
 """

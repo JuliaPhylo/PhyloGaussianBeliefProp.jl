@@ -43,7 +43,7 @@ examplenetdir = joinpath(dirname(Base.find_package("PhyloGaussianBeliefProp")),
                 (1.0,0.0))
         @test mod.μ ≈ refμ rtol=2e-5
         @test mod.σ2 ≈ refσ2 rtol=2e-6
-        @test fenergy ≈ -refll rtol=3e-2
+        @test fenergy ≈ refll rtol=3e-2
     end
     # norm(mod.μ-refμ)/max(norm(mod.μ),norm(refμ))
     # norm(mod.σ2-refσ2)/max(norm(mod.σ2),norm(refσ2))
