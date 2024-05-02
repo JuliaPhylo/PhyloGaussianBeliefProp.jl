@@ -169,65 +169,6 @@ end # of PhyloEM
 
 end # of root update
 
-@testset "exact formulas" begin
-
-    # y: 1 trait, no missing values
-    # exact REML
-    m = PGBP.UnivariateBrownianMotion(1, 0, Inf) # infinite root variance
-    b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-    node2belief = PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-    cgb = PGBP.ClusterGraphBelief(b)
-    PGBP.calibrate!(cgb, [spt])
-    mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct,
-        net.nodes_changed, node2belief,
-        tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (1,0,0))
-
-    @test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
-    @test llscore ≈ -6.851098376474686
-    @test mod.μ ≈ 0.4436893203883497
-    @test PGBP.varianceparam(mod) ≈ 0.6235275080906149
-
-    # x,y: 2 traits, no missing values
-    m = PGBP.MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf))
-    b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-    node2belief = PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
-    cgb = PGBP.ClusterGraphBelief(b)
-    PGBP.calibrate!(cgb, [spt])
-    mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct,
-        net.nodes_changed, node2belief,
-        tbl, df.taxon, PGBP.MvFullBrownianMotion, ([1 0; 0 1], [0,0]))
-
-    @test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
-    @test llscore ≈  -17.735199763952693
-    @test mod.μ ≈ [5.990291262135922 ; 0.4436893203883498]
-    @test PGBP.varianceparam(mod) ≈ [5.970873786407767 1.3310679611650484 ; 1.3310679611650484 0.6235275080906149]
-
-    #= ML solution the matrix-way, analytical for BM:
-    # for y: univariate
-    Σ = Matrix(vcv(net)[!,Symbol.(df.taxon)])
-    n=5 # number of data points
-    i = ones(n) # intercept
-    μhat = inv(transpose(i) * inv(Σ) * i) * (transpose(i) * inv(Σ) * tbl.y) # 0.4436893203883497
-    r = tbl.y .- μhat
-    σ2hat_REML = (transpose(r) * inv(Σ) * r) / (n-1) # 0.6235275080906149
-    σ2hat_ML = (transpose(r) * inv(Σ) * r) / n # 0.49882200647249186
-    llscorereml = - (n-1)/2 - logdet(2π * σ2hat_REML .* Σ)/2 # -6.851098376474686
-    llscore = - n/2 - logdet(2π * σ2hat_ML .* Σ)/2 # -6.79323949818916
-    # for x,y: multivariate
-    Σ = Matrix(vcv(net)[!,Symbol.(df.taxon)])
-    n=5 # number of data points
-    p = 2 # dimension
-    datatbl = [tbl.x  tbl.y]
-    i = ones(n) # intercept
-    μhat = inv(transpose(i) * inv(Σ) * i) * (transpose(i) * inv(Σ) * datatbl) # 5.990291262135922 0.4436893203883498
-    r = datatbl - i * μhat
-    σ2hat_REML = (transpose(r) * inv(Σ) * r) / (n-1) # 2×2 Matrix{Float64}: 5.97087  1.33107 1.33107  0.623528
-    llscorereml = - (n*p-p)/2 - logdet(2π .* kron(σ2hat_REML, Σ))/2 # -17.735199763952693
-    =#
-
-end # of exact formulas
-    
-
 end
 
 @testset "exact network calibration for the BM" begin
@@ -253,12 +194,10 @@ end
         # exact REML
         m = PGBP.UnivariateBrownianMotion(1, 0, Inf) # infinite root variance
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-        node2belief = PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
         cgb = PGBP.ClusterGraphBelief(b)
-        PGBP.calibrate!(cgb, [spt])
-        mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct,
-            net.nodes_changed, node2belief,
-            tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (1,0,0))
+        mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, spt,
+            net.nodes_changed,
+            tbl_y, df.taxon, PGBP.UnivariateBrownianMotion)
 
         @test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
         @test llscore ≈ -5.250084678427689
@@ -282,12 +221,10 @@ end
         # x,y: 2 traits, no missing values
         m = PGBP.MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf))
         b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-        node2belief = PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
         cgb = PGBP.ClusterGraphBelief(b)
-        PGBP.calibrate!(cgb, [spt])
-        mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, ct,
-           net.nodes_changed, node2belief,
-           tbl, df.taxon, PGBP.MvFullBrownianMotion, ([1 0; 0 1], [0,0]))
+        mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, spt,
+           net.nodes_changed,
+           tbl, df.taxon, PGBP.MvFullBrownianMotion)
 
         #@test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
         #@test llscore ≈  -6.851098376474686

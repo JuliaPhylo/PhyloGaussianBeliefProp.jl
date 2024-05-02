@@ -171,7 +171,6 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     # https://juliadiff.org/ForwardDiff.jl/dev/user/limitations/
     # See PreallocationTools.jl package (below)
     opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS())
-    # fixit: if BM and fixed root, avoid optimization bc there exists an exact alternative
     loglikscore = -Optim.minimum(opt)
     bestθ = Optim.minimizer(opt)
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
@@ -215,7 +214,6 @@ function calibrate_optimize_cliquetree_autodiff!(bufferbeliefs::GeneralLazyBuffe
     # optim using autodiff
     od = OnceDifferentiable(score, params_optimize(mod); autodiff = :forward);
     opt = Optim.optimize(od, params_optimize(mod), Optim.LBFGS())
-    # fixit: if BM and fixed root, avoid optimization bc there exists an exact alternative
     loglikscore = -Optim.minimum(opt)
     bestθ = Optim.minimizer(opt)
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
@@ -266,55 +264,74 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
 end
 
 """
-    calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief, clustergraph,
-        nodevector_preordered, node2belief,
+    calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
+        schedule,
+        nodevector_preordered,
         tbl::Tables.ColumnTable, taxa::AbstractVector,
         evolutionarymodel_name)
 
-For a Brownian Motion with a fixed root, compute the exact maximum likelihood
-parameters using closed form formulas relying on belief propagation.
-The  `clustergraph` is assumed to be a clique tree for the input tree,
-whose nodes in preorder are `nodevector_preordered`.
-Optimization aims to maximize the likelihood
-of the data in `tbl` at leaves in the network.
-The taxon names in `taxa` should appear in the same order as they come in `tbl`.
-The parameters being optimized are the variance rate(s) and prior mean(s)
-at the root. The prior variance at the root is fixed to zero.
+For a Brownian Motion with a fixed root, compute the maximum likelihood estimate
+of the prior mean at the root and the restricted maximum likelihood (REML)
+estimate of the variance/covariance rate matrix
+using analytical formulas relying on belief propagation,
+using the data in `tbl` at leaves in the network.
+These estimates are for the model with a prior variance of 0 at the root,
+that is, a root state equal to the prior mean.
 
-The calibration does a postorder of the clique tree only, using the optimal parameters,
-to get the likelihood
-at the root *without* the conditional distribution at all nodes, modifying
-`beliefs` in place. Therefore, if the distribution of ancestral states is sought,
-an extra preorder calibration would be required.
-Warning: there is *no* check that the cluster graph is in fact a clique tree.
+output: `(bestmodel, loglikelihood_score)`
+where `bestmodel` is an evolutionary model created by `evolutionarymodel_name`,
+containing the estimated model parameters.
+
+assumptions:
+- `taxa` should list the taxon names in the same order in which they come in the
+  rows of `tbl`.
+- `schedule` should provide a schedule to transmit messages between beliefs
+  in `beliefs` (containing clusters first then sepsets). This schedule is
+  assumed to traverse a clique tree for the input phylogeny,
+  with the root cluster containing the root of the phylogeny in its scope.
+- `nodevector_preordered` should list the nodes in this phylogeny, in preorder.
+- `beliefs` should be of size and scope consistent with `evolutionarymodel_name`
+  and data in `tbl`.
+- a leaf should either have complete data, or be missing data for all traits.
+
+Steps:
+1. Calibrate `beliefs` in place according to the `schedule`, under a model
+   with an infinite prior variance at the root.
+2. Estimate parameters analytically.
+3. Re-calibrate `beliefs`, to calculate the maximum log-likelihood of the
+   fixed-root model at the estimated optimal parameters, again modifying
+   `beliefs` in place. (Except that beliefs with the root node in scope are
+   re-assigned to change their scoping dimension.)
+
+Warning: there is *no* check that the beliefs and schedule are consistent
+with each other.
 """
-# TODO deal with missing values (only completelly missing tips)
-# TODO network case
-function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
-    cgraph, prenodes::Vector{PN.Node},
-    node2belief::AbstractVector{<:Integer},
+function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
+    spt, # node2belief may be needed if pre & post calibrations are moved outside
+    prenodes::Vector{PN.Node},
     tbl::Tables.ColumnTable, taxa::AbstractVector,
-    evomodelfun, # constructor function
-    evomodelparams
-)
+    evomodelfun # constructor function
+) where B<:Belief{T} where T
     evomodelfun ∈ (UnivariateBrownianMotion, MvFullBrownianMotion) ||
         error("Exact optimization is only implemented for the univariate or full Brownian Motion.")
-    model = evomodelfun(evomodelparams...)
-    isrootfixed(model) || error("Exact optimization is only implemented for the BM with fixed root.")
-    ## TODO: check that the tree was calibrated with the right model MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf)) ?
-    ## TODO: or do this first calibration directly in the function ? (API change)
-    p = dimension(model)
+    p = length(tbl)
 
-    ## Compute mu_hat from root belief
-    ## Root is the last node of the root cluster
-    spt = spanningtree_clusterlist(cgraph, prenodes)
+    ## calibrate beliefs using infinite root and identity rate variance
+    calibrationparams = evomodelfun(LA.diagm(ones(p)), zeros(p), LA.diagm(repeat([Inf], p)))
+    init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual, calibrationparams) # in case root status changed
+    node2belief = init_beliefs_assignfactors!(beliefs.belief, calibrationparams, tbl, taxa, prenodes)
+    init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
+    calibrate!(beliefs, [spt])
+
+    ## Compute mu_hat from root belief, last node of the root cluster
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     exp_root, _ = integratebelief!(beliefs, rootj)
     mu_hat = exp_root[(end-p+1):end]
+    # fixit: use scopeindex((prenodes[1].name), beliefs.belief[rootj]) instead?
 
     ## Compute sigma2_hat from conditional moments
-    tmp_num = zeros(p, p)
-    tmp_den = 0
+    tmp_num = zeros(T, p, p)
+    tmp_den = zero(T)
     # loop over all nodes
     for i in eachindex(prenodes)
         # TODO: is it the correct way to iterate over the graph ?
@@ -325,17 +342,18 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
         clusterindex = node2belief[i]
         b = beliefs.belief[clusterindex]
         dimclus = length(b.nodelabel)
-        # child ind in the cluster
-        childind = findfirst(b.nodelabel .== i)
-        # find parents: should be in the cluster, if node2belief is valid
-        # fixit: why not use PN.getparents and PN.getparentedges below?
-        parind = findall([PN.isconnected(prenodes[nl], nodechild) && nl != i for nl in b.nodelabel])
-        all_parent_edges = [PN.getConnectingEdge(prenodes[b.nodelabel[d]], nodechild) for d in parind]
-        all_gammas = zeros(dimclus)
-        all_gammas[parind] = [ee.gamma for ee in all_parent_edges]
-        # parent(s) edge length
-        edge_length = 0.0
-        for ee in all_parent_edges
+        childind = findfirst(lab == i for lab in b.nodelabel) # child index in cluster
+        # parents should all be in the cluster, if node2belief is valid
+        all_parent_edges = PN.Edge[]; parind = Int[] # parent(s) indices in cluster
+        edge_length = zero(T) # parent edge length if 1 parent; sum of γ² t over all parent edges
+        all_gammas = zeros(T, dimclus)
+        for ee in nodechild.edge
+            getchild(ee) === nodechild || continue # skip below if child edge
+            push!(all_parent_edges, ee)
+            pn = getparent(ee) # parent node
+            pi = findfirst(prenodes[j].name == pn.name for j in b.nodelabel)
+            push!(parind, pi)
+            all_gammas[pi] = ee.gamma
             edge_length += ee.gamma * ee.gamma * ee.length
         end
         edge_length == 0.0 && continue # if edge has length zero, then the parameter R does not occur in the factor
@@ -344,7 +362,7 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
         vv = inv(b.J)
         # tip node
         if nodechild.leaf # tip node
-            # TODO: deal with missing data
+            # TODO: deal with missing data (completely missing tips)
             # TODO: is there a more simple way to do that ? Record of data in belief object ?
             size(vv, 1) == p || error("A leaf node should have only on non-degenerate factor.")
             # find tip data
@@ -386,42 +404,15 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief,
     ## TODO: This is the REML estimate. Should we get ML instead ?
 
     ## Get optimal paramters
-    bestθ = (sigma2_hat, mu_hat, zeros(p, p)) # zero variance at the root: fixed
+    bestθ = (sigma2_hat, mu_hat, zeros(T, p, p)) # zero variance at the root: fixed
     bestmodel = evomodelfun(bestθ...)
     ## Get associated likelihood
-    ## TODO: likelihood for the full BM (not implemented)
     loglikscore = NaN
-    init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual, bestmodel) # fixit: should this be bestmodel? why do this anyway?
+    init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual, bestmodel)
     init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
     init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
-    propagate_1traversal_postorder!(beliefs, spt...)
+    calibrate!(beliefs, [spt])
     _, loglikscore = integratebelief!(beliefs, rootj)
 
     return bestmodel, loglikscore
-end
-
-"""
-    findClusterIndex(node::PN.Node, belief_vector)
-
-In the belief in the vector that contains both the node and all its parents.
-Throws an error if this cluster does not exist.
-
-fixit: delete, function not used, and prone to error because it uses
-the belief's metadata instead of the belief's node labels.
-"""
-function findClusterIndex(node::PN.Node, belief_vector)
-    nodelab = node.name
-    for i in eachindex(belief_vector)
-        b = belief_vector[i]
-        # only cluster beliefs
-        b.type == bclustertype || continue
-        # label should match
-        occursin(nodelab, String(b.metadata)) || continue
-        # node should be in a cluster with all its parents
-        parentlabels = [nn.name for nn in PN.getparents(node)]
-        all([occursin(ll, String(b.metadata)) for ll in parentlabels]) || continue
-        # if still here, we found the cluster
-        return i
-    end
-    error("Could not find a cluster with the node and all its parents.")
 end

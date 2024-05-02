@@ -100,17 +100,17 @@ function get_sepsetindexdictionary(beliefs, nclusters)
 end
 
 """
-    init_beliefs_reset!(beliefs::ClusterGraphBelief)
+    init_beliefs_reset_fromfactors!(beliefs::ClusterGraphBelief)
 
 Reset
 - cluster beliefs to existing factors
 - sepset beliefs to h=0, J=0, g=0
+- messageresidual `kldiv` to -1 and `iscalibrated_*` flags to false,
+  for non-empty messages
 
-fixit: is this ever used?
-fixit: also reset message residuals to 0 and their flags to false?
-fixit: rename? init_clustergraphbeliefs_reset! or init_beliefs_fromfactors! ?
+fixit: this is never used, yet
 """
-function init_beliefs_reset!(beliefs::ClusterGraphBelief)
+function init_beliefs_reset_fromfactors!(beliefs::ClusterGraphBelief)
     nc, nb = nclusters(beliefs), length(beliefs.belief)
     b, f = beliefs.belief, beliefs.factor
     for i in 1:nc
@@ -122,6 +122,12 @@ function init_beliefs_reset!(beliefs::ClusterGraphBelief)
         b[i].h   .= 0.0
         b[i].J   .= 0.0
         b[i].g[1] = 0.0
+    end
+    for m in values(beliefs.messageresidual)
+        isempty(m.h) && continue
+        m.kldiv[1] = -1
+        m.iscalibrated_resid[1] = false
+        m.iscalibrated_kl[1] = false
     end
 end
 
