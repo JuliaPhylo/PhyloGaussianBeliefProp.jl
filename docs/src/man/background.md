@@ -1,6 +1,6 @@
 # Background
 
-## Modeling trait evolution on a phylogeny
+## Trait evolution on a phylogeny
 The evolution of molecular and phenotypic traits is commonly modeled using
 [Markov processes](https://en.wikipedia.org/wiki/Markov_chain) along a rooted
 phylogeny.
@@ -13,22 +13,22 @@ features such as:
 - adaptation
 - rate variation across lineages
 
-## Factoring the joint model into local models
+## Factoring the joint model
 A Markov process along the phylogeny induces a *joint distribution*
 ``p_\theta(x_1,\dots,x_m)``, with parameters ``\theta``, over all nodes
 (trait vectors) ``X_1,\dots,X_m``.
 
-``p_\theta(x_1,\dots,x_m)`` can also be expressed as the product of *local
-(heritability) factors* ``\phi_v`` for each node ``X_v``, where
-``\phi_v=p_\theta(x_v\mid x_{\mathrm{pa}(v)})`` is the (conditional)
-distribution of ``X_v`` given its parent(s) ``X_{\mathrm{pa}(v)}``, e.g.
+``p_\theta(x_1,\dots,x_m)`` can also be factored as the product of *conditional
+distributions* ``\phi_v`` for each node ``X_v``, where
+``\phi_v=p_\theta(x_v\mid x_{\mathrm{pa}(v)})`` is the distribution of ``X_v``
+given its parent(s) ``X_{\mathrm{pa}(v)}``, e.g.
 ``X_{\mathrm{pa}(v)}=\begin{bmatrix} X_{p_1} \\ X_{p_2}\end{bmatrix}``:
 ```math
 p_\theta(x_1,\dots,x_m) = \prod_{v=1}^n \phi_v
 ```
 
-We focus on the case where all local models are *linear Gaussian*. That is, for
-each node ``X_v``:
+We focus on the case where all conditional distributions are *linear Gaussian*.
+That is, for each node ``X_v``:
 ```math
 \begin{aligned}
 X_v\mid X_{\mathrm{pa}(v)} &\sim \mathcal{N}(\omega_v+
@@ -64,13 +64,15 @@ parameter values.
 In general, evaluating ``\mathrm{LL}(\theta)`` is costly as the size and
 complexity of the phylogeny grows.
 
-## Exact inference with belief propagation
-Belief propagation (BP) is a framework for efficiently computing various
+## BP for exact inference
+[Belief propagation](https://en.wikipedia.org/wiki/Belief_propagation) (BP) is a
+framework for efficiently computing various
 marginals of a joint distribution ``p_\theta`` that can be factored into
-local models ``\phi_v\in\Phi``, where ``\Phi`` denotes the full set of factors:
+conditional distributions ``\phi_v\in\Phi``, where ``\Phi`` denotes the full set
+of conditional distributions:
 
-1. Construct a tree data structure called a *clique tree* (also known by *junction tree*, *join tree*, or *tree decomposition*), whose nodes ``\mathcal{C}_i`` (called *clusters*) are subsets of ``\{X_1,\dots,X_m\}``.
-2. Each local model is assigned (``\mapsto``) to a cluster of the clique tree, and the product of all local models assigned to a cluster ``\mathcal{C}_i`` initializes its *belief* function ``\beta_i = \prod_{\phi_v\mapsto\mathcal{C}_i,\ \phi_v\in\Phi}\phi_v``
+1. Construct a tree data structure called a [*clique tree*](https://en.wikipedia.org/wiki/Tree_decomposition) (also known by *junction tree*, *join tree*, or *tree decomposition*), whose nodes ``\mathcal{C}_i`` (called *clusters*) are subsets of ``\{X_1,\dots,X_m\}``.
+2. Each conditional distribution is assigned (``\mapsto``) to a cluster of the clique tree, and the product of all conditional distributions assigned to a cluster ``\mathcal{C}_i`` initializes its *belief* function ``\beta_i = \prod_{\phi_v\mapsto\mathcal{C}_i,\ \phi_v\in\Phi}\phi_v``
 3. Each cluster computes messages from its belief, and propagates these to its neighbor clusters to update their beliefs.
 
 ``\mathrm{LL}(\theta)`` can be computed by passing messages according to a
@@ -81,7 +83,7 @@ corresponding marginal of ``p_\theta``. That is, every cluster belief reflects
 the conditional distribution of the cluster given the data.
 
 
-## Approximate inference with loopy belief propagation
+## Loopy BP for approximate inference
 A clique tree is a special case of a graph data structure called a
 *cluster graph*. In general, cluster graphs can be non-treelike with cycles.
 

@@ -18,6 +18,7 @@ Pages = [
     "man/background.md",
     "man/getting_started.md"
 ]
+Depth = 3
 ```
 
 ```@index
