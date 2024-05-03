@@ -129,10 +129,26 @@ function inscope_onenode(node_label, belief::Belief)
 end
 
 """
-    scopeindex(node_labels, belief::AbstractBelief)
+    scopeindex(j::Integer, belief::AbstractBelief)
+
+Indices in the belief's μ,h,J vectors and matrices of the traits in scope
+for node indexed `j` in `nodelabels(belief)`.
+"""
+function scopeindex(j::Integer, belief::AbstractBelief)
+    binscope = inscope(belief)
+    # subset_inscope = falses(size(belief_inscope))
+    # subset_inscope[:,j] .= binscope[:,j]
+    # return findall(subset_inscope[binscope])
+    node_dims = map(sum, eachslice(binscope, dims=2))
+    k0 = sum(node_dims[1:(j-1)]) # 0 if j=1
+    collect(k0 .+ (1:node_dims[j]))
+end
+
+"""
+    scopeindex(node_labels::Union{Tuple,AbstractVector}, belief::AbstractBelief)
 
 Indices in the belief's μ,h,J vectors and matrices of the variables
-for nodes labelled `node_labels`. The belief's `inscope` matrix of
+for nodes labeled `node_labels`. The belief's `inscope` matrix of
 booleans says which node (column) and trait (row) is in the belief's scope.
 These variables are vectorized by stacking up columns, that is,
 listing all in-scope traits of the first node, then all in-scope traits of

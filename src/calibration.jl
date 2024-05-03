@@ -251,12 +251,13 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
         model = evomodelfun(params_original(mod, θ)...)
         init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
         init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
-        # fixit: raise warning if calibration is not attained within `maxiter`?
         regularizebeliefs_bycluster!(beliefs, cgraph)
         calibrate!(beliefs, sch, maxiter, auto=true)
         return free_energy(beliefs)[3] # to be minimized
     end
     opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS())
+    iscalibrated_residnorm(beliefs) ||
+      @warn "calibration was not reached. increase maxiter ($maxiter) or use a different cluster graph?"
     fenergy = Optim.minimum(opt) 
     bestθ = Optim.minimizer(opt)
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
@@ -315,7 +316,13 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
     evomodelfun ∈ (UnivariateBrownianMotion, MvFullBrownianMotion) ||
         error("Exact optimization is only implemented for the univariate or full Brownian Motion.")
     p = length(tbl)
-
+    # check for "clean" data at the tips: data at 0 or all p traits
+    function clean(v) s = sum(v); s==0 || s==p; end
+    for ic in 1:nclusters(beliefs)
+        b = beliefs.belief[ic]
+        all(map(clean, eachslice(inscope(b), dims=2))) ||
+          error("some leaf must have partial data: cluster $(b.metadata) has partial traits in scope")
+    end
     ## calibrate beliefs using infinite root and identity rate variance
     calibrationparams = evomodelfun(LA.diagm(ones(p)), zeros(p), LA.diagm(repeat([Inf], p)))
     init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual, calibrationparams) # in case root status changed
@@ -323,23 +330,18 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
     init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
     calibrate!(beliefs, [spt])
 
-    ## Compute mu_hat from root belief, last node of the root cluster
+    ## Compute μ hat from root belief
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     exp_root, _ = integratebelief!(beliefs, rootj)
-    mu_hat = exp_root[(end-p+1):end]
-    # fixit: use scopeindex((prenodes[1].name), beliefs.belief[rootj]) instead?
+    mu_hat = exp_root[scopeindex((1,), beliefs.belief[rootj])]
 
-    ## Compute sigma2_hat from conditional moments
+    ## Compute σ² hat from conditional moments
     tmp_num = zeros(T, p, p)
     tmp_den = zero(T)
-    # loop over all nodes
-    for i in eachindex(prenodes)
+    for i in 2:length(prenodes) # loop over non-root notes (1=root in pre-order)
         # TODO: is it the correct way to iterate over the graph ?
-        # remove the root which is first in pre-order
-        i == 1 && continue
-        # find associated cluster
         nodechild = prenodes[i]
-        clusterindex = node2belief[i]
+        clusterindex = node2belief[i] # cluster to which its node family factor was assigned
         b = beliefs.belief[clusterindex]
         dimclus = length(b.nodelabel)
         childind = findfirst(lab == i for lab in b.nodelabel) # child index in cluster
@@ -356,23 +358,26 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
             all_gammas[pi] = ee.gamma
             edge_length += ee.gamma * ee.gamma * ee.length
         end
-        edge_length == 0.0 && continue # if edge has length zero, then the parameter R does not occur in the factor
+        edge_length == 0.0 && continue # 0 length => variance parameter absent from factor
+        @info "node $(nodechild.name), parind=$parind, cluster $(b.metadata) with labels $(b.nodelabel)"
         # moments
+        inscope_i_ch = scopeindex(i, b) # empty if leaf: data absorbed, not in scope
+        isempty(inscope_i_ch) && continue  # no data at or below: do nothing
         exp_be, _ = integratebelief!(b)
         vv = inv(b.J)
-        # tip node
         if nodechild.leaf # tip node
-            # TODO: deal with missing data (completely missing tips)
             # TODO: is there a more simple way to do that ? Record of data in belief object ?
+            # perhaps: tbl,taxa could be replaced by tipvalue constructed below, in nicer API later
             size(vv, 1) == p || error("A leaf node should have only on non-degenerate factor.")
             # find tip data
-            nodelab = nodechild.name
-            i_row = findfirst(isequal(nodelab), taxa)
-            !isnothing(i_row) || error("A node with data does not match any taxon")
+            i_row = findfirst(isequal(nodechild.name), taxa)
+            !isnothing(i_row) || error("leaf $(nodechild.name) is missing from the data's list of taxa")
             tipvalue = [tbl[v][i_row] for v in eachindex(tbl)]
-            # parent node moments are the p first
-            indpar = 1:p
-            diffExp = view(exp_be, indpar) - tipvalue
+            # there should be only 1 parent, and all traits should be in its scope
+            length(parind) == 1 || error("leaf $(nodechild.name) does not have 1 parent...")
+            inscope_i_pa = scopeindex(parind[1], b)
+            length(inscope_i_pa) == p || error("leaf $(nodechild.name)'s doesn't have all traits in scope")
+            diffExp = view(exp_be, inscope_i_pa) - tipvalue
             tmp_num += diffExp * transpose(diffExp) ./ edge_length
             # assumes that vv is a scalar times R_test
             tmp_den += 1 - vv[1, 1] / edge_length
