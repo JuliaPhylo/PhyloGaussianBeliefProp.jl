@@ -339,9 +339,8 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
     tmp_num = zeros(T, p, p)
     tmp_den = zero(T)
     for i in 2:length(prenodes) # loop over non-root notes (1=root in pre-order)
-        # TODO: is it the correct way to iterate over the graph ?
         nodechild = prenodes[i]
-        clusterindex = node2belief[i] # cluster to which its node family factor was assigned
+        clusterindex = node2belief[i] # index of cluster to which its node family factor was assigned
         b = beliefs.belief[clusterindex]
         dimclus = length(b.nodelabel)
         childind = findfirst(lab == i for lab in b.nodelabel) # child index in cluster
@@ -359,46 +358,39 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
             edge_length += ee.gamma * ee.gamma * ee.length
         end
         edge_length == 0.0 && continue # 0 length => variance parameter absent from factor
-        @info "node $(nodechild.name), parind=$parind, cluster $(b.metadata) with labels $(b.nodelabel)"
         # moments
-        inscope_i_ch = scopeindex(i, b) # empty if leaf: data absorbed, not in scope
-        isempty(inscope_i_ch) && continue  # no data at or below: do nothing
         exp_be, _ = integratebelief!(b)
         vv = inv(b.J)
         if nodechild.leaf # tip node
-            # TODO: is there a more simple way to do that ? Record of data in belief object ?
-            # perhaps: tbl,taxa could be replaced by tipvalue constructed below, in nicer API later
-            size(vv, 1) == p || error("A leaf node should have only on non-degenerate factor.")
+            # there should be only 1 parent
+            length(parind) == 1 || error("leaf $(nodechild.name) does not have 1 parent...")
+            inscope_i_pa = scopeindex(parind[1], b)
+            isempty(inscope_i_pa) && continue  # no data at or below: do nothing
             # find tip data
+            # TODO later: replace tbl,taxa by tipvalue, to avoid re-constructing it over and over
             i_row = findfirst(isequal(nodechild.name), taxa)
             !isnothing(i_row) || error("leaf $(nodechild.name) is missing from the data's list of taxa")
             tipvalue = [tbl[v][i_row] for v in eachindex(tbl)]
-            # there should be only 1 parent, and all traits should be in its scope
-            length(parind) == 1 || error("leaf $(nodechild.name) does not have 1 parent...")
-            inscope_i_pa = scopeindex(parind[1], b)
-            length(inscope_i_pa) == p || error("leaf $(nodechild.name)'s doesn't have all traits in scope")
             diffExp = view(exp_be, inscope_i_pa) - tipvalue
             tmp_num += diffExp * transpose(diffExp) ./ edge_length
-            # assumes that vv is a scalar times R_test
+            # assumes that vv ∝ (co)variance rate matrix R_test
             tmp_den += 1 - vv[1, 1] / edge_length
         else # internal node
             # init with child node
-            begic = (childind - 1) * p + 1
-            endic = childind * p
-            diffExp = view(exp_be, begic:endic)
+            inscope_i_ch = scopeindex(childind, b)
+            isempty(inscope_i_ch) && continue  # no data at or below: do nothing
+            begic = inscope_i_ch[1]
+            diffExp = view(exp_be, inscope_i_ch)
             diffVar = vv[begic, begic]
             # sum over parent nodes
-            for d in parind
-                # indexes
-                begi = (d - 1) * p + 1
-                endi = d * p
+            inscope_i_pa = [scopeindex(j, b) for j in parind]
+            for (j1, j1_ii) in zip(parind, inscope_i_pa)
                 # exp and covar with child
-                diffExp -= all_gammas[d] .* view(exp_be, begi:endi)
-                diffVar -= 2 * all_gammas[d] * vv[begic, begi]
+                diffExp -= all_gammas[j1] .* view(exp_be, j1_ii)
+                diffVar -= 2 * all_gammas[j1] * vv[begic, j1_ii[1]]
                 # parents var covar
-                for d2 in parind
-                    begi2 = (d2 - 1) * p + 1
-                    diffVar += all_gammas[d] * all_gammas[d2] * vv[begi, begi2]
+                for (j2, j2_ii) in zip(parind, inscope_i_pa)
+                    diffVar += all_gammas[j1] * all_gammas[j2] * vv[j1_ii[1], j2_ii[1]]
                 end
             end
             tmp_num += diffExp * transpose(diffExp) ./ edge_length
