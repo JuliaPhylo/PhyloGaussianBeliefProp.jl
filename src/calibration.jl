@@ -376,11 +376,10 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
             # assumes that vv ∝ (co)variance rate matrix R_test
             tmp_den += 1 - vv[1, 1] / edge_length
         else # internal node
-            # init with child node
             inscope_i_ch = scopeindex(childind, b)
             isempty(inscope_i_ch) && continue  # no data at or below: do nothing
             begic = inscope_i_ch[1]
-            diffExp = view(exp_be, inscope_i_ch)
+            diffExp = view(exp_be, inscope_i_ch) # init with child node
             diffVar = vv[begic, begic]
             # sum over parent nodes
             inscope_i_pa = [scopeindex(j, b) for j in parind]
@@ -398,7 +397,6 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
         end
     end
     sigma2_hat = tmp_num ./ tmp_den
-    ## TODO: This is the REML estimate. Should we get ML instead ?
 
     ## Get optimal paramters
     bestθ = (sigma2_hat, mu_hat, zeros(T, p, p)) # zero variance at the root: fixed
