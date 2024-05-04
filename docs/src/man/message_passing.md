@@ -1,3 +1,9 @@
 # Message passing
 
-# Regularization
+## Belief-updates
+
+## Regularization
+
+### Along variable subtrees
+
+### On a schedule

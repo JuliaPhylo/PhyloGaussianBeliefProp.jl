@@ -1,1 +1,3 @@
 # Message schedules
+
+## Tree reparametrization
