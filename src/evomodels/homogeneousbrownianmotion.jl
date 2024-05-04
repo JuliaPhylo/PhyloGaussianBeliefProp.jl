@@ -5,12 +5,13 @@
 ## Abstract BM type
 abstract type HomogeneousBrownianMotion{T} <: EvolutionaryModel{T} end
 
-## Univariate BM
 """
     UnivariateBrownianMotion{T} <: HomogeneousBrownianMotion{T}
 
-The univariate Brownian motion.
-TODO
+The univariate Brownian motion, homogeneous across the phylogeny, that is,
+with the same variance rate `σ2` across all edges.
+`μ` is the prior mean at the root.
+`v` the prior variance at the root, 0 by default.
 """
 struct UnivariateBrownianMotion{T<:Real} <: HomogeneousBrownianMotion{T}
     "variance rate"
@@ -28,7 +29,7 @@ UnivariateType(::Type{<:UnivariateBrownianMotion}) = IsUnivariate()
 modelname(m::UnivariateBrownianMotion) = "Univariate Brownian motion"
 variancename(m::UnivariateBrownianMotion) = "evolutionary variance rate σ2"
 varianceparam(m::UnivariateBrownianMotion) = m.σ2
-function UnivariateBrownianMotion(σ2::U1, μ::U2, v=nothing) where {U1<:Number, U2<:Number}
+function UnivariateBrownianMotion(σ2::Number, μ::Number, v=nothing)
     T = promote_type(Float64, typeof(σ2), typeof(μ))
     v = getrootvarianceunivariate(T, v)
     σ2 > 0 || error("evolutionary variance rate σ2 = $(σ2) must be positive")
@@ -47,7 +48,15 @@ params(m::UnivariateBrownianMotion) = isrootfixed(m) ? (m.σ2, m.μ) : (m.σ2, m
 params_optimize(m::UnivariateBrownianMotion) = [-2*m.g0 - log2π, m.μ] # log(σ2),μ
 params_original(m::UnivariateBrownianMotion, logσ2μ::AbstractArray) = (exp(logσ2μ[1]), logσ2μ[2], m.v)
 
-## Diagonal BM
+"""
+    MvDiagBrownianMotion{T,V} <: HomogeneousBrownianMotion{T}
+
+The multivariate Brownian motion with diagonal variance rate matrix, that is,
+traits with independent evolution. It is homogeneous across the phylogeny.
+`R` is the variance rate (stored as a vector of type `V`),
+`μ` is the prior mean at the root and
+`v` the prior variance at the root, 0 by default (and both also of type `V`)
+"""
 struct MvDiagBrownianMotion{T<:Real, V<:AbstractVector{T}} <: HomogeneousBrownianMotion{T}
     "diagonal entries of the diagonal variance rate matrix"
     R::V
@@ -79,7 +88,15 @@ params_optimize(m::MvDiagBrownianMotion) = [log.(m.R)..., m.μ...]
 params_original(m::MvDiagBrownianMotion, logRμ::AbstractArray) = (exp.(logRμ[1:dimension(m)]), logRμ[(dimension(m)+1):end], m.v)
 rootpriorvariance(obj::MvDiagBrownianMotion) = LA.Diagonal(obj.v)
 
-## Full BM
+"""
+    MvFullBrownianMotion{T,P1,V,P2} <: HomogeneousBrownianMotion{T}
+
+The full multivariate Brownian motion. It is homogeneous across the phylogeny.
+`R` is the variance rate (of matrix type `P1`),
+`μ` is the prior mean at the root (of vector type `V`) and
+`v` the prior variance at the root, 0 by default (of matrix type `P2`).
+```
+"""
 struct MvFullBrownianMotion{T<:Real, P1<:AbstractMatrix{T}, V<:AbstractVector{T}, P2<:AbstractMatrix{T}} <: HomogeneousBrownianMotion{T}
     "variance rate matrix"
     R::P1
@@ -95,7 +112,7 @@ end
 modelname(m::MvFullBrownianMotion) = "Multivariate Brownian motion"
 variancename(m::MvFullBrownianMotion) = "evolutionary variance rate matrix: R"
 varianceparam(m::MvFullBrownianMotion) = m.R
-function MvFullBrownianMotion(R, μ, v=nothing)
+function MvFullBrownianMotion(R::AbstractMatrix, μ, v=nothing)
     numt = length(μ)
     T = promote_type(Float64, eltype(R), eltype(μ))
     v = getrootvariancemultivariate(T, numt, v)
@@ -106,16 +123,27 @@ function MvFullBrownianMotion(R, μ, v=nothing)
     J = inv(R) # uses cholesky. fails if not symmetric positive definite
     MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, branch_logdet_variance(numt, R))
 end
-MvFullBrownianMotion(Uvec::AbstractVector, μ, v=nothing) = begin
-    # R is specified by its upper cholesky factor that has been vectorized
-    # todo: this can be absorbed into the original constructor above
+"""
+    MvFullBrownianMotion(R::AbstractMatrix, μ, v=nothing)
+    MvFullBrownianMotion(U::AbstractVector, μ, v=nothing)
+
+Constructor for a full multivariate Brownian motion (homogeneous) with
+variance rate matrix `V` and prior mean vector `μ` at the root.
+If not provided, the prior variance matrix at the root `v` is set to 0.
+
+If a vector `U` is provided, it is used as the Upper cholesky factor of R=U'U,
+vectorized, so U should be of length p(p+1)/2 where p is the number of traits
+(also the length of μ).
+"""
+function MvFullBrownianMotion(Uvec::AbstractVector{T}, μ, v=nothing) where T
+    # TODO: tested, but not used anywhere
     numt = length(μ)
-    div(numt*(1+numt),2) == length(Uvec) || error("Uvec and μ have conflicting sizes")
-    R = zeros(numt, numt)
+    (numt*(1+numt)) ÷ 2 == length(Uvec) || error("Uvec and μ have conflicting sizes")
+    R = zeros(T, numt, numt)
     for (k, (i,j)) in enumerate(((i,j) for i in 1:numt for j in i:numt))
         R[i,j] = Uvec[k]
     end
-    R = R' * R
+    R .= R' * R
     MvFullBrownianMotion(R, μ, v)
 end
 params(m::MvFullBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v)

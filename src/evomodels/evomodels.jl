@@ -29,8 +29,8 @@ UnivariateType(::Type) = IsMultivariate()
 modelname(obj::EvolutionaryModel) = string(typeof(obj))
 variancename(obj::EvolutionaryModel) = "variance"
 varianceparam(obj::EvolutionaryModel) = "error: 'varianceparam' not implemented"
-notrootparamnames(obj::EvolutionaryModel) = (variancename(obj), )
-paramnames(obj::EvolutionaryModel) = isrootfixed(obj) ? (notrootparamnames(obj)..., "root mean μ") : (notrootparamnames(obj)..., "root mean μ", "root variance v")
+nonrootparamnames(obj::EvolutionaryModel) = (variancename(obj), )
+paramnames(obj::EvolutionaryModel) = isrootfixed(obj) ? (nonrootparamnames(obj)..., "root mean μ") : (nonrootparamnames(obj)..., "root mean μ", "root variance v")
 
 ## Root
 # requires all models to have a field named μ

@@ -76,12 +76,6 @@ function moralize(net::HybridNetwork)
     return mg
 end
 
-#= todo perhaps: add function to add more moralizing edges,
-for a degenerate hybrid node with a single tree child to be remove from scope:
-connect the tree child to all its grandparents
-e.g. connect_degeneratehybridparents_treechild
-=#
-
 """
     triangulate_minfill!(graph)
 
