@@ -386,11 +386,11 @@ initial cluster beliefs) to h=0, J=0, g=0 (μ unchanged).
 They can later be re-initialized for different model parameters and
 re-calibrated, without re-allocating memory.
 """
-function init_beliefs_reset!(beliefs)
+function init_beliefs_reset!(beliefs::AbstractVector{B}) where B<:Belief{T} where T
     for be in beliefs
-        be.h .= 0.0
-        be.J .= 0.0
-        be.g[1] = 0.0
+        be.h .= zero(T)
+        be.J .= zero(T)
+        be.g[1] = zero(T)
     end
 end
 
@@ -631,6 +631,23 @@ function init_messageresidual_allocate(beliefs::Vector{B}, nclusters) where B<:B
         messageresidual[(clustlab2, clustlab1)] = MessageResidual(ssbe.J, ssbe.h)
     end
     return messageresidual
+end
+
+"""
+    init_messagecalibrationflags_reset!(mr::AbstractResidual, reset_kl::Bool)
+
+For a non-empty message residual `mr`, reset its `iscalibrated_*` flags to false,
+and if `reset_kl` is true, reset its `kldiv` to -1.
+Its `ΔJ` and `Δh` fields are *not* reset here, because they are overwritten
+during a belief propagation step.
+Nothing is done for empty messages.
+"""
+function init_messagecalibrationflags_reset!(mr::AbstractResidual{T}, resetkl::Bool) where T
+    if isempty(mr.Δh) return nothing; end
+    if resetkl   mr.kldiv[1] = - one(T); end
+    mr.iscalibrated_resid[1] = false
+    mr.iscalibrated_kl[1] = false
+    return nothing
 end
 
 iscalibrated_residnorm(res::AbstractResidual) = res.iscalibrated_resid[1]

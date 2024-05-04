@@ -105,10 +105,9 @@ end
 Reset
 - cluster beliefs to existing factors
 - sepset beliefs to h=0, J=0, g=0
-- messageresidual `kldiv` to -1 and `iscalibrated_*` flags to false,
-  for non-empty messages
 
-fixit: this is never used, yet
+This is not used so far, as changing model parameters requires a reset of both
+factors and beliefs, done by [`init_beliefs_assignfactors!`](@ref).
 """
 function init_beliefs_reset_fromfactors!(beliefs::ClusterGraphBelief)
     nc, nb = nclusters(beliefs), length(beliefs.belief)
@@ -123,13 +122,19 @@ function init_beliefs_reset_fromfactors!(beliefs::ClusterGraphBelief)
         b[i].J   .= 0.0
         b[i].g[1] = 0.0
     end
+end
+
+"""
+    init_messagecalibrationflags_reset!(beliefs::ClusterGraphBelief, reset_kl=true)
+
+Reset all non-empty message residuals in `beliefs`.
+"""
+function init_messagecalibrationflags_reset!(beliefs::ClusterGraphBelief, reset_kl=true)
     for m in values(beliefs.messageresidual)
-        isempty(m.h) && continue
-        m.kldiv[1] = -1
-        m.iscalibrated_resid[1] = false
-        m.iscalibrated_kl[1] = false
+        init_messagecalibrationflags_reset!(m, reset_kl)
     end
 end
+
 
 """
     iscalibrated_residnorm(beliefs::ClusterGraphBelief)

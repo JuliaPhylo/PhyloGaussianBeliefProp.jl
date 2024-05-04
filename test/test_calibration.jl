@@ -62,6 +62,7 @@ end
             -0.26000871507162693 rtol=1e-5 # posterior root mean
         @test (b[root_ind].J \ I)[end,end] ≈
             0.33501871740664146 rtol=1e-5 # posterior root variance
+        PGBP.init_beliefs_reset_fromfactors!(ctb)
         @testset "regularization by cluster" begin
             PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
             PGBP.regularizebeliefs_bynodesubtree!(ctb, ct);
