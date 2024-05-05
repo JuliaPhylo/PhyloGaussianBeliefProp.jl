@@ -72,7 +72,7 @@ conditional distributions ``\phi_v\in\Phi``, where ``\Phi`` denotes the full set
 of conditional distributions:
 
 1. Construct a tree data structure called a [*clique tree*](https://en.wikipedia.org/wiki/Tree_decomposition) (also known by *junction tree*, *join tree*, or *tree decomposition*), whose nodes ``\mathcal{C}_i`` (called *clusters*) are subsets of ``\{X_1,\dots,X_m\}``.
-2. Each conditional distribution is assigned (``\mapsto``) to a cluster of the clique tree, and the product of all conditional distributions assigned to a cluster ``\mathcal{C}_i`` initializes its *belief* function ``\beta_i = \prod_{\phi_v\mapsto\mathcal{C}_i,\ \phi_v\in\Phi}\phi_v``
+2. Each conditional distribution is assigned (``\mapsto``) to a cluster of the clique tree, and the product of all conditional distributions assigned to a cluster ``\mathcal{C}_i`` initializes its *belief* ``\beta_i = \prod_{\phi_v\mapsto\mathcal{C}_i,\ \phi_v\in\Phi}\phi_v``
 3. Each cluster computes messages from its belief, and propagates these to its neighbor clusters to update their beliefs.
 
 ``\mathrm{LL}(\theta)`` can be computed by passing messages according to a

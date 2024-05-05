@@ -55,15 +55,14 @@ We refer to these conditional distributions as *edge factors* since they relate
 the states of a parent node and its child.
 
 ## Hybrid factors
-Each reticulation node``X_h`` has multiple parents ``X_{p_1},\dots,X_{p_k}``,
+Each reticulation node ``X_h`` has multiple parents ``X_{p_1},\dots,X_{p_k}``,
 and is thus potentially associated with multiple edge factors.
 We reconcile these by modeling ``X_h`` as a weighted-average of its
 "immediate parents", the child states for each of these edge factors.
 
-Imagine that we replace ``X_h`` with ``k`` copies
-``X_{(p_1,h)},\dots,X_{(p_k,h)}`` each of which evolved from the
-corresponding ``X_{p_i}``. Then ``X_h`` is modeled as a weighted-average of
-``X_{(p_1,h)},\dots,X_{(p_k,h)}``:
+Imagine that we introduce ``k`` copies ``X_{(p_1,h)},\dots,X_{(p_k,h)}`` of
+``X_h``, each of which descends from the corresponding ``X_{p_i}``. Then ``X_h``
+is modeled as a weighted-average of ``X_{(p_1,h)},\dots,X_{(p_k,h)}``:
 ```math
 X_h = \sum\gamma_{(p_i,h)} X_{(p_i,h)}
 ```
