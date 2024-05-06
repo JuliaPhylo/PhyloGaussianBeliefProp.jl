@@ -2,13 +2,20 @@
 ## Homogeneous OU Model
 ################################################################
 
-"""
-UnivariateOrnsteinUhlenbeck{T} <: EvolutionaryModel{T}
+abstract type HomogeneousOrnsteinUhlenbeck{T} <: EvolutionaryModel{T} end
 
-The univariate Ornstein-Uhlenbeck
-TODO
 """
-struct UnivariateOrnsteinUhlenbeck{T<:Real} <: EvolutionaryModel{T}
+    UnivariateOrnsteinUhlenbeck{T} <: HomogeneousOrnsteinUhlenbeck{T}
+
+The univariate Ornstein-Uhlenbeck model. It is homogeneous, that is, has the
+same parameters across all edges in the phylogeny.
+`σ2` is the variance rate,
+`α` the selection strength,
+`θ` the optimal value,
+`μ` the prior mean at the root, and
+`v` the prior variance at the root, 0 by default.
+"""
+struct UnivariateOrnsteinUhlenbeck{T<:Real} <: HomogeneousOrnsteinUhlenbeck{T}
     "stationary variance rate"
     γ2::T
     "inverse stationary variance (precision) rate"
@@ -28,7 +35,7 @@ UnivariateType(::Type{<:UnivariateOrnsteinUhlenbeck}) = IsUnivariate()
 modelname(m::UnivariateOrnsteinUhlenbeck) = "homogeneous univariate Ornstein-Uhlenbeck"
 variancename(m::UnivariateOrnsteinUhlenbeck) = "stationary evolutionary variance γ2"
 varianceparam(m::UnivariateOrnsteinUhlenbeck) = m.γ2
-notrootparamnames(m::UnivariateOrnsteinUhlenbeck) = (variancename(m), "selection strength α", "optimal value θ")
+nonrootparamnames(m::UnivariateOrnsteinUhlenbeck) = (variancename(m), "selection strength α", "optimal value θ")
 function UnivariateOrnsteinUhlenbeck(σ2::U1, α::U2, θ::U3, μ::U4, v=nothing) where {U1<:Number, U2<:Number, U3<:Number, U4<:Number}
     T = promote_type(Float64, typeof(σ2), typeof(α), typeof(θ), typeof(μ))
     v = getrootvarianceunivariate(T, v)

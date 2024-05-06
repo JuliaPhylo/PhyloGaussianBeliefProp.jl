@@ -5,7 +5,9 @@ par = PGBP.params_optimize(m)
 oripar = PGBP.params_original(m, par)
 @test oripar == PGBP.params(m)
 @test PGBP.dimension(m) == 2
-m = PGBP.MvFullBrownianMotion([1 0.5; 0.5 1], [-1,1]) # default 0 root variance
+m = PGBP.MvFullBrownianMotion([1.0, .5, 0.8660254037844386], [-1,1]) # default 0 root variance
+@test PGBP.varianceparam(m) ≈ [1 0.5; 0.5 1]
+@test PGBP.rootpriorvariance(m) == [0 0; 0 0]
 m = PGBP.MvFullBrownianMotion([1 0.5; 0.5 1], [-1,1], [10^10 0; 0 10^10])
 @test PGBP.dimension(m) == 2
 m = PGBP.UnivariateBrownianMotion(2, 3)
