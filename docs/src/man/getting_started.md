@@ -1,3 +1,7 @@
+```@meta
+CurrentModule = PhyloGaussianBeliefProp
+```
+
 ```@setup getting_started
 using PhyloNetworks, PhyloGaussianBeliefProp
 const PGBP = PhyloGaussianBeliefProp
@@ -36,7 +40,8 @@ displayed below:
 ![](../assets/lazaridis_2014_trim.png)
 
 ### 2\. Choose an evolutionary model
-Models available are: `UnivariateBrownianMotion`, `MvDiagBrownianMotion`, `MvFullBrownianMotion`
+Models available are: `UnivariateBrownianMotion`, `UnivariateOrnsteinUhlenbeck`
+`MvDiagBrownianMotion`, `MvFullBrownianMotion`
 ```@repl getting_started
 using PhyloGaussianBeliefProp
 const PGBP = PhyloGaussianBeliefProp
@@ -47,7 +52,8 @@ We specify a univariate Brownian motion with mean ``\mu=0`` and variance rate
 though other values may better fit the data.
 
 ### 3\. Build a cluster graph from the network
-Methods available are: `Bethe`, `LTRIP`, `JoinGraphStructuring`, `Cliquetree`
+Methods available are: [`Bethe`](@ref), [`LTRIP`](@ref),
+[`JoinGraphStructuring`](@ref), [`Cliquetree`](@ref)
 ```@repl getting_started
 ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
 PGBP.labels(ct) |> collect # cluster labels
@@ -183,8 +189,8 @@ Suppose now that we use a loopy cluster graph instead. We choose `Bethe` to
 construct a Bethe cluster graph (also known as factor graph) `fg`.
 
 As before, we set up a data structure `fgb` to track the beliefs of the factor
-graph during message passing. Then we call `calibrate_optimize_clustergraph!`,
-the analog of `calibrate_optimize_cliquetree!` from earlier:
+graph during message passing. Then we call [`calibrate_optimize_clustergraph!`](@ref),
+the analog of [`calibrate_optimize_cliquetree!`](@ref) from earlier:
 ```@repl getting_started
 fg = PGBP.clustergraph!(net, PGBP.Bethe()) # factor graph
 b_fg = PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, fg, m); # allocate memory for beliefs
