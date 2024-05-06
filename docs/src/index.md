@@ -17,7 +17,10 @@ Pages = [
     "man/installation.md",
     "man/background.md",
     "man/getting_started.md",
-    "man/evolutionary_models.md"
+    "man/evolutionary_models.md",
+    "man/clustergraphs.md",
+    "man/message_passing.md",
+    "man/message_schedules.md"
 ]
 Depth = 3
 ```
