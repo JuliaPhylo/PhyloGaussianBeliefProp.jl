@@ -1022,6 +1022,7 @@ function default_rootcluster(cgraph::MetaGraph, prenodes::Vector{PN.Node})
     rootj = argmin(hasroot(lab) for lab in labels(cgraph))
     return rootj
 end
+
 """
     default_rootcluster(clustergraph)
 

@@ -1,6 +1,9 @@
 """
     calibrate!(beliefs::ClusterGraphBelief, schedule, niterations=1;
-        auto::Bool=false, info::Bool=false)
+        auto::Bool=false, info::Bool=false,
+        verbose::Bool=true,
+        update_residualnorm::Bool=true,
+        update_residualkldiv::Bool=false)
 
 Propagate messages in postorder then preorder for each tree in the `schedule`
 list, for `niterations`. Each schedule "tree" should be a tuple
@@ -8,20 +11,22 @@ of 4 vectors as output by [`spanningtree_clusterlist`](@ref), where each vector
 provides the parent/child label/index of an edge along which to pass a message,
 and where these edges are listed in preorder. For example, the parent of the
 first edge is taken to be the root of the schedule tree.
-
-Calibration is evaluated after each schedule tree is run, and said to be reached
-if all message residuals have a small norm.
-If `info` is true, information is sent with the iteration number and tree index
-when calibration is reached.
-If `auto` is true, then belief updates are stopped after calibration is found
-to be reached. Otherwise belief updates continue for the full number of iterations.
+Calibration is evaluated after each schedule tree is run,
+and said to be reached if all message residuals have a small norm,
+based on [`iscalibrated_residnorm`](@ref).
 
 Output: `true` if calibration is reached, `false` otherwise.
 
-optional positional arguments (default value):
-- `verbose` (true): log error messages about degenerate messages
-- `update_residualnorm` (true)
-- `update_residualkldiv` (false)
+Optional keyword arguments:
+
+- `auto`: If true, then belief updates are stopped after calibration is
+  found to be reached.
+  Otherwise belief updates continue for the full number of iterations.
+- `info`: Is true, information is logged with the iteration number and
+  schedule tree index when calibration is reached.
+- `verbose`: log error messages about degenerate messages
+- `update_residualnorm`
+- `update_residualkldiv`
 
 See also: [`iscalibrated_residnorm`](@ref)
 and [`iscalibrated_residnorm!`](@ref) for the tolerance and norm used by default,
@@ -45,6 +50,17 @@ function calibrate!(beliefs::ClusterGraphBelief, schedule::AbstractVector,
     end
     return iscal
 end
+
+"""
+    calibrate!(beliefs::ClusterGraphBelief, scheduletree::Tuple,
+        verbose::Bool=true, up_resnorm::Bool=true, up_reskldiv::Bool=false)
+
+Propage messages along the `scheduletree`, in postorder then preorder:
+see [`propagate_1traversal_postorder!`](@ref).
+
+Output: `true` if all message residuals have a small norm,
+based on [`iscalibrated_residnorm`](@ref), `false` otherwise.
+"""
 function calibrate!(beliefs::ClusterGraphBelief, spt::Tuple,
     verbose::Bool=true,
     up_resnorm::Bool=true,
@@ -71,7 +87,8 @@ should correspond to indices in `beliefs`.
 This condition holds if beliefs are produced on a given cluster graph and if the
 tree is produced by [`spanningtree_clusterlist`](@ref) on the same graph.
 
-optional positional arguments after spanning tree, in this order (default value):
+Optional positional arguments after spanning tree, in this order (default value):
+
 - `verbose` (true): log error messages about degenerate messages that failed
   to be passed.
 - `update_residualnorm` (true): to update each message residual's `iscalibrated_resid`

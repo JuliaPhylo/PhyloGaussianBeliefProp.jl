@@ -11,6 +11,7 @@ linear algebra, e.g. `\`, `invquad`, `X_invA_Xt` etc.
 function getcholesky(J::AbstractMatrix)
     return PDMat(J) # LA.cholesky(b.J)
 end
+
 """
     getcholesky_μ(J::AbstractMatrix, h)
     getcholesky_μ!(belief::Belief)

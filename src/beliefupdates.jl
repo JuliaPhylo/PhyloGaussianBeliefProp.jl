@@ -48,7 +48,6 @@ which can be handled by downstream functions.
 marginalizebelief(b::AbstractBelief, keepind) =
     marginalizebelief(b.h, b.J, b.g[1], keepind, b.metadata)
 function marginalizebelief(h,J,g::Real, keep_index, metadata)
-    # todo: if isempty(keep_index) call different function to avoid work for an empty messageJ
     integrate_index = setdiff(1:length(h), keep_index)
     marginalizebelief(h,J,g, keep_index, integrate_index, metadata)
 end

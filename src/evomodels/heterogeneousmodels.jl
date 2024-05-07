@@ -11,9 +11,12 @@ of `pp.parameter`
 This type is meant to store several values for a given evolutionary parameter
 (say, Brownian motion variance rate), each one being used on some edges or
 nodes of a phylogenetic network. The default parameter value is the first one.
+
 For an edge number `i`, color `j=pp.color[i]` indexes its parameter value,
 that is, evolution along edge number `i` should use `pp.parameter[j]`.
-This parameter value is obtained with `getparameter`.
+This parameter value is obtained with
+`getparameter(pp, j)` for the parameter value of color `j`, or
+`getparameter(pp, edge)` for the parameter value of `edge`.
 """
 struct PaintedParameter{T}
     parameter::Vector{T}
@@ -57,8 +60,8 @@ This model has no shifts, and no extra hybrid variance.
 By default, the root is fixed with prior variance 0.
 
 `T` is the scalar type, `U` is the type for the root mean (vector of length d,
-where `d` is the trait dimension, even if univariate), `V` is the type for
-the root variance, and `W` the type of each variance rate, one per color.
+where `d` is the trait dimension, even if univariate), `V` is a matrix type for
+the root variance, and `W` the matrix type of each variance rate, one per color.
 For a univariate BM, we may have `W=T` and `V=Vector{T}`.
 For a multivariate BM, we may have `W=V<:Matrix{T}`.
 This is such that each field is mutable, so we can update model parameters

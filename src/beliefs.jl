@@ -57,6 +57,16 @@ and which traits of which variables are in scope:
 - `inscope`
 - `type`: cluster or sepset
 - `metadata` of type `M`: `Symbol` for clusters, `Tuple{Symbol,Symbol}` for sepsets.
+
+Methods for a belief `b`:
+- `nodelabels(b)`: vector of node labels, of type `Vlabel`, e.g. Int8 if nodes
+  are labelled by their preorder index in the original phylogeny
+- `ntraits(b)`: number of traits (dimension of the random variable x above)
+- `inscope(b)`: matrix of booleans (trait i in row i and and node j in column j)
+- `nodedimensions(b)`: vector of integers, with jth value giving the dimension
+  (number of traits in scope) of node j.
+- `dimension(b)`: total dimension of the belief, that is, total number of traits
+  in scope. Without any missing data, that would be ntraits × length of nodelabels.
 """
 struct Belief{T<:Real,Vlabel<:AbstractVector,P<:AbstractMatrix{T},V<:AbstractVector{T},M} <: AbstractBelief{T}
     "Integer label for nodes in the cluster"
@@ -248,6 +258,12 @@ The root is removed from scope if the evolutionary model has a fixed root: so as
 to use the model's fixed root value as data if the root as zero prior variance.
 Also removed from scope is any hybrid node that is degenerate and who has
 a single child edge of positive length.
+
+Warnings: this function might need to be re-run to re-do allocation if
+- the data changed: different number of traits, or different pattern of missing
+  data at the tips
+- the model changed: with the root changed from fixed to random, see
+  [`init_beliefs_allocate_atroot!`](@ref) in that case.
 """
 function init_beliefs_allocate(tbl::Tables.ColumnTable, taxa::AbstractVector,
         net::HybridNetwork, clustergraph, model::EvolutionaryModel{T}) where T
@@ -336,10 +352,11 @@ function init_factors_allocate(beliefs::AbstractVector{B}, nclusters::Integer) w
 end
 
 """
-    init_beliefs_allocate_atroot!(beliefs, factors, model)
+    init_beliefs_allocate_atroot!(beliefs, factors, messageresiduals, model)
 
-Update the scope of cluster & sepset `beliefs` and `factors` to include or exclude
-the root, depending on whether the root variable is random or fixed in `model`.
+Update the scope and re-allocate memory for cluster & sepset `beliefs`, `factors`
+and `messageresiduals` to include or exclude the root,
+depending on whether the root variable is random or fixed in `model`.
 To change the dimension of canonical parameters μ,h,J, new memory is allocated
 and initilized to 0.
 This function can be used to update beliefs when the root model changes from
