@@ -354,7 +354,6 @@ Assumptions:
   traits as the current `model`.
 """
 function init_beliefs_allocate_atroot!(beliefs, factors, messageresidual, model::EvolutionaryModel{T}) where T
-    ## TODO: Should this be called at the begining of "init_beliefs_assignfactors", in case the root status of the model has changed ?
     numtraits = dimension(model)
     fixedroot = isrootfixed(model)
     # root *not* in scope if fixed; else *in* scope bc we assume data below

@@ -147,16 +147,11 @@ function MvFullBrownianMotion(Uvec::AbstractVector{T}, μ, v=nothing) where T
     MvFullBrownianMotion(R, μ, v)
 end
 params(m::MvFullBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v)
-params_optimize(m::MvFullBrownianMotion) = begin
-    U = LA.cholesky(m.R).U
-    # todo: fix below to allow for non-positive covariances
-    [log.(U[i,j] for d in dimension(m) for i in 1:d for j in i:d)..., m.μ...]
-end
-params_original(m::MvFullBrownianMotion, logRμ::AbstractArray) = begin
-    numut = (x -> div(x*(1+x),2))(dimension(m)) # no. of ◹ elements in m.R
-    # todo: fix below to allow for non-positive covariances
-    (exp.(logRμ[1:numut]), logRμ[(numut+1):end], m.v)
-end
+
+#= TODO: implement params_optimize and params_original for MvFullBrownianMotion
+- optimize variances with a log transformation
+- optimize the correlation matrix using a good parametrization
+=#
 
 ################################################################
 ## factor_treeedge

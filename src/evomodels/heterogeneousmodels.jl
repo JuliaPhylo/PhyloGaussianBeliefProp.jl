@@ -166,7 +166,6 @@ struct HeterogeneousShiftedBrownianMotion{T<:Real, U<:AbstractVector{T}, V<:Abst
     v::V
     "g0: -log(2π variancerate)/2"
     g0::PaintedParameter{T}
-    # TODO: we do not use g0 right now. Should we ? Or delete ? Or maybe will be used if we do not rely on fall backs anymore.
 end
 
 modelname(m::HeterogeneousShiftedBrownianMotion) = "Heterogeneous Brownian motion with mean shifts"
