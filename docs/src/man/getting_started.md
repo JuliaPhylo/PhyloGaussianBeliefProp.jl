@@ -5,7 +5,7 @@ CurrentModule = PhyloGaussianBeliefProp
 ```@setup getting_started
 using PhyloNetworks, PhyloGaussianBeliefProp
 const PGBP = PhyloGaussianBeliefProp
-net = readTopology("lazaridis_2014.phy")
+net = readTopology(pkgdir(PhyloGaussianBeliefProp, "test/example_networks", "lazaridis_2014.phy"))
 ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
 m = PGBP.UnivariateBrownianMotion(1, 0)
 sched = PGBP.spanningtrees_clusterlist(ct, net.nodes_changed)
@@ -19,6 +19,12 @@ ctb = PGBP.ClusterGraphBelief(b)
 ```
 
 # Getting started
+This version of the package is a proof of concept, and not all methods have been
+fully implemented.
+
+A minimal API is still incomplete, and so we demonstrate the package's various
+capabilities as pipelines involving multiple internal functions. A complete API
+that wraps these pipelines will be made available later.
 
 ## Exact likelihood for fixed parameters
 
@@ -26,7 +32,7 @@ ctb = PGBP.ClusterGraphBelief(b)
 ```@repl
 using PhyloNetworks # `readTopology`, `tipLabels`
 using DataFrames # `DataFrame`
-net = readTopology("lazaridis_2014.phy") # from `example_networks/` folder
+net = readTopology(pkgdir(PhyloGaussianBeliefProp, "test/example_networks", "lazaridis_2014.phy"))
 df = DataFrame(taxon=tipLabels(net),
         x=[1.343, 0.841, -0.623, -1.483, 0.456, -0.081, 1.311])
 ```
@@ -40,8 +46,10 @@ displayed below:
 ![](../assets/lazaridis_2014_trim.png)
 
 ### 2\. Choose an evolutionary model
-Models available are: `UnivariateBrownianMotion`, `UnivariateOrnsteinUhlenbeck`
-`MvDiagBrownianMotion`, `MvFullBrownianMotion`
+Models available are: [`UnivariateBrownianMotion`](@ref), [`UnivariateOrnsteinUhlenbeck`](@ref),
+[`MvDiagBrownianMotion`](@ref), [`MvFullBrownianMotion`](@ref).
+
+Note however that not all methods may be implemented across all models.
 ```@repl getting_started
 using PhyloGaussianBeliefProp
 const PGBP = PhyloGaussianBeliefProp
@@ -118,7 +126,6 @@ extract and display the preorder sequence of edges from `sched[1]`. For example,
 `NonAfricanI3` is the root cluster of `ct`, and `KaritianaH1` is a leaf cluster.
 ```@repl getting_started
 sched = PGBP.spanningtrees_clusterlist(ct, net.nodes_changed);
-length(sched) # no. of spanning trees needed
 DataFrame(parent=sched[1][1], child=sched[1][2]) # edges of spanning tree in preorder
 ```
 

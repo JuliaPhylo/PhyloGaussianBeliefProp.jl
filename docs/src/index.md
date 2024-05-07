@@ -15,8 +15,8 @@ phylogenetic networks using belief propagation (aka message passing).
 ```@contents
 Pages = [
     "man/installation.md",
-    "man/background.md",
     "man/getting_started.md",
+    "man/background.md",
     "man/evolutionary_models.md",
     "man/clustergraphs.md",
     "man/message_passing.md",
