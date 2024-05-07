@@ -28,7 +28,7 @@ UnivariateType(::Type) = IsMultivariate()
 # generic methods
 modelname(obj::EvolutionaryModel) = string(typeof(obj))
 variancename(obj::EvolutionaryModel) = "variance"
-varianceparam(obj::EvolutionaryModel) = "error: 'varianceparam' not implemented"
+varianceparam(obj::EvolutionaryModel) = error("varianceparam not implemented for type $(typeof(obj))")
 nonrootparamnames(obj::EvolutionaryModel) = (variancename(obj), )
 paramnames(obj::EvolutionaryModel) = isrootfixed(obj) ? (nonrootparamnames(obj)..., "root mean μ") : (nonrootparamnames(obj)..., "root mean μ", "root variance v")
 
@@ -89,17 +89,21 @@ params(m::EvolutionaryModel) = isrootfixed(m) ? (varianceparam(m), m.μ) : (vari
 """
     params_optimize(m::EvolutionaryModel)
 
-Tuple of transformed parameters of the model `m`, in an unconstrained space that can be used for numerical optimization.
+Tuple of transformed parameters for model `m`, in an unconstrained space that
+can be used for numerical optimization.
 """
-params_optimize(obj::EvolutionaryModel) = "error: 'params_optimize' not implemented"
+params_optimize(obj::EvolutionaryModel) =
+  error("params_optimize not implemented for type $(typeof(obj))")
 
 """
     params_original(m::EvolutionaryModel, transformedparams::AbstractArray)
 
-Tuple of parameters of the model `m` in the original space, corresponding to back-transformed 
-parameters of `transformedparams`.
+Tuple of parameters for model `m` in the original space, corresponding to
+back-transformed  parameters of `transformedparams`, and that can be used
+as input to the model constructor.
 """
-params_original(obj::EvolutionaryModel, transformedparams::AbstractArray) = "error: 'params_original' not implemented"
+params_original(obj::EvolutionaryModel, ::AbstractArray) =
+  error("params_original' not implemented for type $(typeof(obj))")
 
 function Base.show(io::IO, obj::EvolutionaryModel)
     disp = modelname(obj) * "\n"

@@ -23,7 +23,6 @@ PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
 cgb = PGBP.ClusterGraphBelief(b)
 PGBP.calibrate!(cgb, [spt])
 # Test conditional expectations and variances
-# TODO: automatic ordering of nodes to match with ape order ?
 @test PGBP.default_sepset1(cgb) == 9
 llscore = -18.83505
 condexp = [1,0.9,1,-1,-0.9,0.4436893,0.7330097,0.009708738,-0.6300971]

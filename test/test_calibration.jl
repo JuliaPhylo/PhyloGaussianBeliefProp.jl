@@ -1,5 +1,8 @@
 @testset "calibration" begin
 
+netstr_unnamed = "(A:2.5,((B:1,#H1:0.5::0.1):1,(C:1,(D:0.5)#H1:0.5::0.9):1):0.5);"
+netstr_named = "(((A:4.0,((B1:1.0,B2:1.0)i6:0.6)#H5:1.1::0.9)i4:0.5,(#H5:2.0::0.1,C:0.1)i2:1.0)i1:3.0);"
+
 @testset "miscellaneous" begin
     ex = PGBP.BPPosDefException("belief 1, integrate 3,4", 1)
     io = IOBuffer()
@@ -32,8 +35,7 @@ end
 end
 @testset "no optimization" begin
     @testset "Level-1 w/ 4 tips. Univariate. Clique tree" begin
-        netstr = "(((A:4.0,((B1:1.0,B2:1.0)i6:0.6)#H5:1.1::0.9)i4:0.5,(#H5:2.0::0.1,C:0.1)i2:1.0)i1:3.0);"
-        net = readTopology(netstr)
+        net = readTopology(netstr_named)
         df = DataFrame(taxon=["A","B1","B2","C"], y=[1.0,.9,1,-1])
         tbl_y = columntable(select(df, :y))
         #= fitBM = phylolm(@formula(y ~ 1), df, net; tipnames=:taxon)
@@ -77,8 +79,7 @@ end
         end
     end
     @testset "Level-1 w/ 4 tips. Univariate. Bethe, regularize on a schedule" begin
-        netstr = "(A:2.5,((B:1,#H1:0.5::0.1):1,(C:1,(D:0.5)#H1:0.5::0.9):1):0.5);"
-        net = readTopology(netstr)
+        net = readTopology(netstr_unnamed)
         # tip data simulated from ParamsBM(0,1)
         df = DataFrame(y=[-1.81358, 0.468158, 0.658486, 0.643821],
                 taxon=["A","B","C", "D"])
@@ -163,8 +164,7 @@ end
 end
 @testset "with optimization" begin
     @testset "Level-1 w/ 4 tips. Univariate. Bethe + Optim." begin
-        netstr = "(A:2.5,((B:1,#H1:0.5::0.1):1,(C:1,(D:0.5)#H1:0.5::0.9):1):0.5);"
-        net = readTopology(netstr)
+        net = readTopology(netstr_unnamed)
         df = DataFrame(y=[11.275034507978296, 10.032494469945764,
             11.49586603350308, 11.004447427824012], taxon=["A","B","C", "D"])
         tbl_y = columntable(select(df, :y))
@@ -181,8 +181,7 @@ end
         @test mod.σ2 ≈ 0.15239159696122745 rtol=1e-4
     end
     @testset "Level-1 w/ 4 tips. Univariate. Clique tree + Optim / Autodiff" begin
-        netstr = "(((A:4.0,((B1:1.0,B2:1.0)i6:0.6)#H5:1.1::0.9)i4:0.5,(#H5:2.0::0.1,C:0.1)i2:1.0)i1:3.0);"
-        net = readTopology(netstr)
+        net = readTopology(netstr_named)
         df = DataFrame(taxon=["A","B1","B2","C"], x=[10,10,missing,0], y=[1.0,.9,1,-1])
         df_var = select(df, Not(:taxon))
         tbl = columntable(df_var)
@@ -193,6 +192,8 @@ end
         spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
 
         # y: 1 trait, no missing values
+
+        #= calibrate_optimize_cliquetree! already tested later
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
         ctb = PGBP.ClusterGraphBelief(b)
@@ -202,6 +203,7 @@ end
         @test llscore ≈ -5.174720533524127
         @test mod.μ ≈ -0.26000871507162693
         @test PGBP.varianceparam(mod) ≈ 0.35360518758586457
+        =#
 
         lbc = GeneralLazyBufferCache(function (paramOriginal)
             mo = PGBP.UnivariateBrownianMotion(paramOriginal...)
@@ -210,7 +212,10 @@ end
         end)
         mod2, llscore2, opt2 = PGBP.calibrate_optimize_cliquetree_autodiff!(lbc, ct, net.nodes_changed,
             tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (1, -2))
-        @test PGBP.integratebelief!(ctb, spt[3][1])[2] ≈ llscore2
+        #= fixit: we would like to do this below, but we only have lbc.
+           We don't have any cluster graph belief object
+        @test PGBP.integratebelief!(lbc, spt[3][1])[2] ≈ llscore2
+        =#
         @test llscore2 ≈ -5.174720533524127
         @test mod2.μ ≈ -0.26000871507162693
         @test PGBP.varianceparam(mod2) ≈ 0.35360518758586457
@@ -241,6 +246,7 @@ end
         =#
 
         # x: 1 trait, some missing values
+        #= calibrate_optimize_cliquetree! and missing values already tested later
         m = PGBP.UnivariateBrownianMotion(2, 3, 0)
         b = (@test_logs (:error,"tip B2 in network without any data") PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, ct, m))
         PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed);
@@ -251,6 +257,7 @@ end
         @test llscore ≈ -9.215574122592923
         @test mod.μ ≈ 3.500266520382341
         @test PGBP.varianceparam(mod) ≈ 11.257682945973125
+        =#
         
         # lbc = GeneralLazyBufferCache(function (paramOriginal)
         #     mo = PGBP.UnivariateBrownianMotion(paramOriginal...)

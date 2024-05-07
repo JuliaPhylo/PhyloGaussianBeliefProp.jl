@@ -56,27 +56,33 @@ end
 
     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
     spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+    rootclusterindex = spt[3][1]
+    # allocate beliefs to avoid re-allocation of same sizes for multiple tests
+    m_uniBM_fixedroot = PGBP.UnivariateBrownianMotion(2, 3, 0)
+    b_y_fixedroot = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m_uniBM_fixedroot)
+    m_uniBM_randroot = PGBP.UnivariateBrownianMotion(2, 3, Inf)
+    b_y_randroot = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m_uniBM_randroot)
+    m_biBM_fixedroot = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0,0))
+    b_xy_fixedroot = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m_biBM_fixedroot)
+    m_biBM_randroot = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0.1,10))
+    b_xy_randroot = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m_biBM_randroot)
 
     @testset "homogeneous univariate BM" begin
         @testset "Fixed Root, no missing" begin
         # y no missing, fixed root
-        m = PGBP.UnivariateBrownianMotion(2, 3, 0)
-        show(devnull, m)
-        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b)
-        PGBP.calibrate!(ctb, [spt])
-        _, tmp = PGBP.integratebelief!(ctb)
+        show(devnull, m_uniBM_fixedroot)
+        PGBP.init_beliefs_assignfactors!(b_y_fixedroot, m_uniBM_fixedroot, tbl_y, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b_y_fixedroot)
+        PGBP.propagate_1traversal_postorder!(ctb, spt...)
+        _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
         @test tmp ≈ -10.732857817537196
         end
         @testset "Infinite Root, no missing" begin
-        # y no missing, fixed root
-        m = PGBP.UnivariateBrownianMotion(2, 3, Inf)
-        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b)
-        PGBP.calibrate!(ctb, [spt])
-        _, tmp = PGBP.integratebelief!(ctb)
+        # y no missing, infinite root variance
+        PGBP.init_beliefs_assignfactors!(b_y_randroot, m_uniBM_randroot, tbl_y, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b_y_randroot)
+        PGBP.propagate_1traversal_postorder!(ctb, spt...)
+        _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
         @test tmp ≈ -5.899094849099194
         end
         @testset "Random Root, with missing" begin
@@ -85,8 +91,8 @@ end
         b = (@test_logs (:error,"tip B2 in network without any data") PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, ct, m);)
         PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed);
         ctb = PGBP.ClusterGraphBelief(b)
-        PGBP.calibrate!(ctb, [spt])
-        _, tmp = PGBP.integratebelief!(ctb)
+        PGBP.propagate_1traversal_postorder!(ctb, spt...)
+        _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
         @test tmp ≈ -13.75408386332493
         end
     end
@@ -94,71 +100,101 @@ end
         @testset "Random Root, no missing" begin
         m = PGBP.UnivariateOrnsteinUhlenbeck(2, 3, -2, 0.0, 0.4)
         show(devnull, m)
-        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b)
-        PGBP.calibrate!(ctb, [spt])
-        _, tmp = PGBP.integratebelief!(ctb)
-        @test_broken (prinln("Need to compute OU likelihood on a network."); tmp ≈ 0.0)
+        PGBP.init_beliefs_assignfactors!(b_y_randroot, m, tbl_y, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b_y_randroot)
+        PGBP.propagate_1traversal_postorder!(ctb, spt...)
+        _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
+        @test_broken tmp ≈ -7.1868997100919
+        #= code to compute the univariate OU likelihood by hand
+        # 1. calculate vcv of all nodes in preorder
+        V(t) = (1-exp(-2m.α * t)) * m.γ2 # variance conditional on parent(s)
+        q(t::Number) = exp(-m.α * t) # actualization along tree edge: weight of parent value
+        q(e) = q(e.length) * e.gamma
+        net_vcv = zeros(9,9) # all 9 nodes
+        net_vcv[1,1] = PGBP.rootpriorvariance(m)
+        for i in 2:9 # non-root nodes
+            n = net.nodes_changed[i]
+            pae = [PhyloNetworks.getparentedge(n)]
+            if n.hybrid push!(pae, PhyloNetworks.getparentedgeminor(n)); end
+            nparents = length(pae)
+            pa = [PhyloNetworks.getparent(e) for e in pae]
+            pai = indexin(pa, net.nodes_changed)
+            # var(Xi)
+            net_vcv[i,i] = (n.hybrid ? 0.0 : V(pae[1].length)) # initialize
+            for (j1,e1) in zip(pai, pae) for (j2,e2) in zip(pai, pae)
+                net_vcv[i,i] += q(e1) * q(e2) * net_vcv[j1,j2]
+            end; end
+            # cov(Xi,Xj) for j<i in preorder
+            for j in 1:(i-1)
+                for (j1,e1) in zip(pai, pae)
+                    net_vcv[i,j] += q(e1) * net_vcv[j1,j]
+                end
+                net_vcv[j,i] = net_vcv[i,j]
+            end
+        end
+        net_vcv
+        [n.name for n in net.nodes_changed] # i1,i2,C,i4,H5,i6,B2,B1,A
+        df.taxon # A,B1,B2,C with preorder indices: 9,8,7,3
+        taxon_ind = [findfirst(isequal(tax), n.name for n in net.nodes_changed) for tax in df.taxon]
+        print(net_vcv[taxon_ind,taxon_ind]) # copy-pasted below
+        Σnet = [
+        0.3333333333334586 5.651295717406613e-10 5.651295717406613e-10 2.0226125393342098e-8;
+        5.651295717406613e-10 0.33331078221860694 0.0008036996108290846 1.4032919760109094e-6;
+        5.651295717406613e-10 0.0008036996108290846 0.33331078221860694 1.4032919760109094e-6;
+        2.0226125393342098e-8 1.4032919760109094e-6 1.4032919760109094e-6 0.3334240245358365]
+        loglikelihood(MvNormal(repeat([m.μ],4), Σnet), tbl.y) # -7.1868997100919
+        =#
         end
     end
     @testset "Diagonal BM" begin
         @testset "homogeneous, fixed root" begin
-        m = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0,0))
-        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b)
-        PGBP.calibrate!(ctb, [spt])
-        _, tmp = PGBP.integratebelief!(ctb)
+        PGBP.init_beliefs_assignfactors!(b_xy_fixedroot, m_biBM_fixedroot, tbl, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b_xy_fixedroot)
+        PGBP.propagate_1traversal_postorder!(ctb, spt...)
+        _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
         @test tmp ≈ -24.8958130127972
         end
         @testset "homogeneous, random root" begin
-        m = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0.1,10))
-        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b)
-        PGBP.calibrate!(ctb, [spt])
-        _, tmp = PGBP.integratebelief!(ctb)
+        PGBP.init_beliefs_assignfactors!(b_xy_randroot, m_biBM_randroot, tbl, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b_xy_randroot)
+        PGBP.propagate_1traversal_postorder!(ctb, spt...)
+        _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
         @test tmp ≈ -21.347496753649892
         end
         @testset "homogeneous, improper root" begin
         m = PGBP.MvDiagBrownianMotion((2,1), (1,-3), (Inf,Inf))
-        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b)
-        PGBP.calibrate!(ctb, [spt])
-        _, tmp = PGBP.integratebelief!(ctb)
+        PGBP.init_beliefs_assignfactors!(b_xy_randroot, m, tbl, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b_xy_randroot)
+        PGBP.propagate_1traversal_postorder!(ctb, spt...)
+        _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
         @test tmp ≈ -17.66791635814575
         end
     end
     @testset "Full BM" begin
         @testset "homogeneous, fixed root" begin
         m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0,-3.0])
-        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b)
-        PGBP.calibrate!(ctb, [spt])
-        _, tmp = PGBP.integratebelief!(ctb)
+        PGBP.init_beliefs_assignfactors!(b_xy_fixedroot, m, tbl, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b_xy_fixedroot)
+        PGBP.propagate_1traversal_postorder!(ctb, spt...)
+        _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
         @test tmp ≈ -24.312323855394055
         end
         @testset "homogeneous, random root" begin
         m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0,-3.0],
                 [0.1 0.01; 0.01 0.2])
-        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b)
-        PGBP.calibrate!(ctb, [spt])
-        _, tmp = PGBP.integratebelief!(ctb)
+        PGBP.init_beliefs_assignfactors!(b_xy_randroot, m, tbl, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b_xy_randroot)
+        PGBP.propagate_1traversal_postorder!(ctb, spt...)
+        _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
         @test tmp ≈ -23.16482738327936
         end
         @testset "homogeneous, improper root" begin
         m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0,-3.0],
                 [Inf 0; 0 Inf])
-        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b)
-        PGBP.calibrate!(ctb, [spt])
-        _, tmp = PGBP.integratebelief!(ctb)
+        PGBP.init_beliefs_assignfactors!(b_xy_randroot, m, tbl, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b_xy_randroot)
+        PGBP.propagate_1traversal_postorder!(ctb, spt...)
+        _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
         @test tmp ≈ -16.9626044836951
         end
     end
@@ -166,11 +202,10 @@ end
         @testset "Fixed Root one mv rate" begin
         m = PGBP.HeterogeneousBrownianMotion([2.0 0.5; 0.5 1.0], [3.0, -3.0])
         show(devnull, m)
-        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b)
-        PGBP.calibrate!(ctb, [spt])
-        _, tmp = PGBP.integratebelief!(ctb)
+        PGBP.init_beliefs_assignfactors!(b_xy_fixedroot, m, tbl, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b_xy_fixedroot)
+        PGBP.propagate_1traversal_postorder!(ctb, spt...)
+        _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
         @test tmp ≈ -24.312323855394055
         end
         @testset "Random root several mv rates" begin
@@ -180,11 +215,10 @@ end
         show(devnull, pp)
         m = PGBP.HeterogeneousBrownianMotion(pp, [3.0, -3.0], [0.1 0.01; 0.01 0.2])
         show(devnull, m)
-        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b)
-        PGBP.calibrate!(ctb, [spt])
-        _, tmp = PGBP.integratebelief!(ctb)
+        PGBP.init_beliefs_assignfactors!(b_xy_randroot, m, tbl, df.taxon, net.nodes_changed);
+        ctb = PGBP.ClusterGraphBelief(b_xy_randroot)
+        PGBP.propagate_1traversal_postorder!(ctb, spt...)
+        _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
         @test tmp ≈ -23.16482738327936
         end
     end
