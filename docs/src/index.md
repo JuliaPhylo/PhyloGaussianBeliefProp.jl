@@ -19,7 +19,7 @@ Pages = [
     "man/background.md",
     "man/evolutionary_models.md",
     "man/clustergraphs.md",
-    "man/message_passing.md",
+    "man/regularization.md",
     "man/message_schedules.md"
 ]
 Depth = 3
