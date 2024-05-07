@@ -86,6 +86,21 @@ Tuple of parameters, the same that can be used to construct the evolutionary mod
 """
 params(m::EvolutionaryModel) = isrootfixed(m) ? (varianceparam(m), m.μ) : (varianceparam(m), m.μ, m.v)
 
+"""
+    params_optimize(m::EvolutionaryModel)
+
+Tuple of transformed parameters of the model `m`, in an unconstrained space that can be used for numerical optimization.
+"""
+params_optimize(obj::EvolutionaryModel) = "error: 'params_optimize' not implemented"
+
+"""
+    params_original(m::EvolutionaryModel, transformedparams::AbstractArray)
+
+Tuple of parameters of the model `m` in the original space, corresponding to back-transformed 
+parameters of `transformedparams`.
+"""
+params_original(obj::EvolutionaryModel, transformedparams::AbstractArray) = "error: 'params_original' not implemented"
+
 function Base.show(io::IO, obj::EvolutionaryModel)
     disp = modelname(obj) * "\n"
     parnames = paramnames(obj)
@@ -102,22 +117,26 @@ end
 
 """
     branch_actualization(obj::EvolutionaryModel, edge::PN.Edge) 
-    branch_displacement(obj::EvolutionaryModel, edge::PN.Edge)
-    branch_precision(obj::EvolutionaryModel, edge::PN.Edge)
-    branch_variance(obj::EvolutionaryModel, edge::PN.Edge)
-    branch_logdet(obj::EvolutionaryModel, edge::PN.Edge, precision::AbstractMatrix)
-    branch_transition_qωjg(obj::EvolutionaryModel, edge)
+    branch_displacement(obj::EvolutionaryModel,  edge::PN.Edge)
+    branch_precision(obj::EvolutionaryModel,     edge::PN.Edge)
+    branch_variance(obj::EvolutionaryModel,      edge::PN.Edge)
+    branch_logdet(obj::EvolutionaryModel,        edge::PN.Edge, precision::AbstractMatrix)
+    branch_transition_qωjg(obj::EvolutionaryModel,    edge)
     branch_transition_qωv!(q, obj::EvolutionaryModel, edge)
 
 Under the most general linear Gaussian model, X₀ given X₁ is Gaussian with
 conditional mean q X₁ + ω and conditional variance Σ independent of X₁.
-`branch_precision` and `branch_variance`should return a matrix of symmetric type.
+`branch_actualization`, `branch_displacement` and `branch_variance`
+return, respectivelly, q, ω and Σ.
+`branch_precision` and `branch_variance` should return a matrix of symmetric type.
 `branch_variance` defaults to the inverse of `branch_precision`.
-`branch_logdet` defaults to -0.5*log(|2πΣ|), the log normalizing constant of the
+`branch_logdet` defaults to g = -0.5*log(|2πΣ|), the log normalizing constant of the
 Gaussian density in the traditional form.
+`branch_transition_*` return or modify in place the corresponding
+transition matrices.
 
-Under a Brownian motion, we have q=I, ω=0, and conditional variance tR
-where R is the model's variance rate.
+Under a Brownian motion, we have q=I, ω=0, and conditional variance t*R
+where R is the model's variance rate and t the branch length.
 """
 function branch_actualization(obj::EvolutionaryModel{T}, edge::PN.Edge) where T
     p = dimension(obj)
@@ -226,13 +245,17 @@ end
 
 """
     hybridnode_displacement(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
-    hybridnode_precision(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
-    hybridnode_variance(obj::EvolutionaryModel, parentedges::AbstractVector{PN.Edge})
+    hybridnode_precision(obj::EvolutionaryModel,    parentedges::AbstractVector{PN.Edge})
+    hybridnode_variance(obj::EvolutionaryModel,     parentedges::AbstractVector{PN.Edge})
 
 Under the most general weighted average Gaussian model, X₀ given its parents X₁, X₂, ...
 is Gaussian with conditional mean the weighted average of the parents
 plus a displacement vector ω and conditional variance Σ independent of X₁, X₂, ... .
-`hybridnode_variance` and `hybridnode_precision`should return a matrix of symmetric type.
+The weights are given by the inheritance probabilities contained in the `PN.Edge` objects.
+`hybridnode_displacement` and `hybridnode_variance` return, respectivelly,
+ω and Σ.
+
+`hybridnode_variance` and `hybridnode_precision` should return a matrix of symmetric type.
 `hybridnode_precision` defaults to the inverse of `hybridnode_variance`.
 `hybridnode_displacement` and `hybridnode_variance` default to a vector or matrix of zeros. 
 """
@@ -344,7 +367,7 @@ function 1, which corresponds to h,J,g all 0 (and an irrelevant mean).
 
 If the root variance is not invertible (e.g., fixed root),
 this function fails and should never be called
-(see `isrootfix`)
+(see `isrootfixed`)
 """
 factor_root(obj::T) where {T <: EvolutionaryModel} = factor_root(UnivariateType(T), obj)
 
