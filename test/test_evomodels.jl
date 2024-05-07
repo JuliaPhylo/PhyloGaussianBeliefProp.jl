@@ -104,7 +104,46 @@ end
         ctb = PGBP.ClusterGraphBelief(b_y_randroot)
         PGBP.propagate_1traversal_postorder!(ctb, spt...)
         _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
-        @test_broken (prinln("Need to compute OU likelihood on a network."); tmp ≈ 0.0)
+        @test_broken tmp ≈ -7.1868997100919
+        #= code to compute the univariate OU likelihood by hand
+        # 1. calculate vcv of all nodes in preorder
+        V(t) = (1-exp(-2m.α * t)) * m.γ2 # variance conditional on parent(s)
+        q(t::Number) = exp(-m.α * t) # actualization along tree edge: weight of parent value
+        q(e) = q(e.length) * e.gamma
+        net_vcv = zeros(9,9) # all 9 nodes
+        net_vcv[1,1] = PGBP.rootpriorvariance(m)
+        for i in 2:9 # non-root nodes
+            n = net.nodes_changed[i]
+            pae = [PhyloNetworks.getparentedge(n)]
+            if n.hybrid push!(pae, PhyloNetworks.getparentedgeminor(n)); end
+            nparents = length(pae)
+            pa = [PhyloNetworks.getparent(e) for e in pae]
+            pai = indexin(pa, net.nodes_changed)
+            # var(Xi)
+            net_vcv[i,i] = (n.hybrid ? 0.0 : V(pae[1].length)) # initialize
+            for (j1,e1) in zip(pai, pae) for (j2,e2) in zip(pai, pae)
+                net_vcv[i,i] += q(e1) * q(e2) * net_vcv[j1,j2]
+            end; end
+            # cov(Xi,Xj) for j<i in preorder
+            for j in 1:(i-1)
+                for (j1,e1) in zip(pai, pae)
+                    net_vcv[i,j] += q(e1) * net_vcv[j1,j]
+                end
+                net_vcv[j,i] = net_vcv[i,j]
+            end
+        end
+        net_vcv
+        [n.name for n in net.nodes_changed] # i1,i2,C,i4,H5,i6,B2,B1,A
+        df.taxon # A,B1,B2,C with preorder indices: 9,8,7,3
+        taxon_ind = [findfirst(isequal(tax), n.name for n in net.nodes_changed) for tax in df.taxon]
+        print(net_vcv[taxon_ind,taxon_ind]) # copy-pasted below
+        Σnet = [
+        0.3333333333334586 5.651295717406613e-10 5.651295717406613e-10 2.0226125393342098e-8;
+        5.651295717406613e-10 0.33331078221860694 0.0008036996108290846 1.4032919760109094e-6;
+        5.651295717406613e-10 0.0008036996108290846 0.33331078221860694 1.4032919760109094e-6;
+        2.0226125393342098e-8 1.4032919760109094e-6 1.4032919760109094e-6 0.3334240245358365]
+        loglikelihood(MvNormal(repeat([m.μ],4), Σnet), tbl.y) # -7.1868997100919
+        =#
         end
     end
     @testset "Diagonal BM" begin
