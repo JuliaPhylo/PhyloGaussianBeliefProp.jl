@@ -1,8 +1,3 @@
-```@setup evolutionary_models
-using PhyloGaussianBeliefProp
-const PGBP = PhyloGaussianBeliefProp
-```
-
 # Evolutionary models
 ## Specifying a process
 Each trait evolutionary model is specified as a BM, or some extension of it,
@@ -12,9 +7,24 @@ Minimally, the user provides a variance rate ``\Sigma``, and a prior mean
 ``\mu`` and variance ``\bm{V}_{\!\!\rho}`` for the root state ``X_\rho``.
 For example, ``\bm{V}_{\!\!\rho}=0`` treats ``X_\rho=\mu`` as known, while
 ``\bm{V}_{\!\!\rho}=\infty`` disregards all prior beliefs about ``X_\rho``.
-```@repl evolutionary_models
-PGBP.UnivariateBrownianMotion(1, 0) # v = 0
-PGBP.UnivariateBrownianMotion(1, 0, Inf)
+```@jldoctest evolutionary_models; setup = :(using PhyloGaussianBeliefProp; const PGBP = PhyloGaussianBeliefProp)
+julia> PGBP.UnivariateBrownianMotion(1, 0) # v = 0
+Univariate Brownian motion
+
+- evolutionary variance rate σ2 :
+1.0
+- root mean μ :
+0.0
+
+julia> PGBP.UnivariateBrownianMotion(1, 0, Inf)
+Univariate Brownian motion
+
+- evolutionary variance rate σ2 :
+1.0
+- root mean μ :
+0.0
+- root variance v :
+Inf
 ```
 
 The multivariate BM is available to model multivariate traits.
@@ -22,9 +32,24 @@ If the components of a multivariate trait evolve in an uncorrelated manner,
 then ``\Sigma`` is a diagonal matrix and is specified its diagonal entries
 (e.g. `MvDiagBrownianMotion`). Otherwise, ``\Sigma`` is potentially dense and
 is passed in whole (e.g. `MvFullBrownianMotion`).
-```@repl evolutionary_models
-PGBP.MvDiagBrownianMotion([1, 0.5], [-1, 1]) # v = [0, 0]
-PGBP.MvFullBrownianMotion([1 0.5; 0.5 1], [-1,1], [10^10 0; 0 10^10])
+```@jldoctest evolutionary_models
+julia> PGBP.MvDiagBrownianMotion([1, 0.5], [-1, 1]) # v = [0, 0]
+Multivariate Diagonal Brownian motion
+
+- evolutionary variance rates (diagonal values in the rate matrix): R :
+[1.0, 0.5]
+- root mean μ :
+[-1.0, 1.0]
+
+julia> PGBP.MvFullBrownianMotion([1 0.5; 0.5 1], [-1,1], [10^10 0; 0 10^10])
+Multivariate Brownian motion
+
+- evolutionary variance rate matrix: R :
+[1.0 0.5; 0.5 1.0]
+- root mean μ :
+[-1.0, 1.0]
+- root variance v :
+[1.0e10 0.0; 0.0 1.0e10]
 ```
 
 ``\Sigma`` can vary along the phylogeny. If path length ``t\ge 0`` from the root
@@ -40,8 +65,20 @@ Selection can be additionally modeled by the
 (OU) process, which allows a trait to diffuse with variance rate ``\Sigma`` yet
 drift towards some optimal value ``\theta`` (with selection "strength"
 ``\bm{A}``).
-```@repl evolutionary_models
-PGBP.UnivariateOrnsteinUhlenbeck(2, 3, -2, 0, 0.4) # σ2 = 2, γ2 = σ2/2α
+```@jldoctest evolutionary_models
+julia> PGBP.UnivariateOrnsteinUhlenbeck(2, 3, -2, 0, 0.4) # σ2 = 2, γ2 = σ2/2α
+homogeneous univariate Ornstein-Uhlenbeck
+
+- stationary evolutionary variance γ2 :
+0.3333333333333333
+- selection strength α :
+3.0
+- optimal value θ :
+-2.0
+- root mean μ :
+0.0
+- root variance v :
+0.4
 ```
 
 ## Edge factors
