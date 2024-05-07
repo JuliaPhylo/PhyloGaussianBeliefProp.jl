@@ -45,7 +45,6 @@ length 0 and with 2 or more children edges, or with 1 child edge of length 0.
 """
 hasdegenerate(net::HybridNetwork) = any(isdegenerate(v) && !unscope(v) for v in net.node)
 
-
 """
     parentinformation(node, net)
 
