@@ -278,10 +278,10 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
     opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS())
     iscalibrated_residnorm(beliefs) ||
       @warn "calibration was not reached. increase maxiter ($maxiter) or use a different cluster graph?"
-    fenergy = Optim.minimum(opt) 
+    fenergy = -Optim.minimum(opt) 
     bestθ = Optim.minimizer(opt)
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
-    return bestmodel, -fenergy, opt
+    return bestmodel, fenergy, opt
 end
 
 """
