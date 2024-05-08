@@ -18,7 +18,7 @@ julia> using PhyloGaussianBeliefProp # `test/example_networks` folder
 
 julia> const PGBP = PhyloGaussianBeliefProp;
 
-julia> using PhyloNetworks # `readTopology`, `tipLabels`
+julia> using PhyloNetworks # `readTopology`, `tipLabels`, `preorder!`
 
 julia> using DataFrames # `DataFrame`
 
@@ -28,6 +28,7 @@ PhyloNetworks.HybridNetwork, Rooted Network
 20 nodes: 7 tips, 4 hybrid nodes, 9 internal tree nodes.
 tip labels: Mbuti, Onge, Karitiana, MA1, ...
 (Mbuti:1.0,(((Onge:1.0,#H1:0.01::0.4)EasternNorthAfrican:1.0,(((Karitiana:1.0)#H1:0.01::0.6,(MA1:1.0,#H3:0.01::0.4)ANE:1.0)AncientNorthEurasian:1.0,(((#H2:0.01::0.4)#H3:0.01::0.6,Loschbour:1.0)WHG:1.0,#H4:0.01::0.4)WestEurasian:1.0)I1:1.0)I2:1.0,((European:1.0)#H2:0.01::0.6,Stuttgart:1.0)#H4:0.01::0.6)NonAfrican:1.0)I3;
+julia> preorder!(net) # updates net.nodes_changed to contain network nodes listed in preorder
 
 julia> df = DataFrame(taxon=tipLabels(net),
                x=[1.343, 0.841, -0.623, -1.483, 0.456, -0.081, 1.311])
@@ -45,6 +46,10 @@ julia> df = DataFrame(taxon=tipLabels(net),
 ```
 In this example, the trait `x` observed for the tip species is univariate.
 We have mapped the observed data to the corresponding species in the dataframe `df`.
+
+The call to `preorder!` updates `net` to contain a list of its nodes arranged in
+preorder. Many internals in the package assume that this information is available,
+and so it is important that this be called immediately after reading in the network!
 
 `net`, which reproduces
 [Lazaridis et al. (2014), Figure 3](https://doi.org/10.1038/nature13673), is

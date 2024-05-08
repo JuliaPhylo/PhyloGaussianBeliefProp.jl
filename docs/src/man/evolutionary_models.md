@@ -1,3 +1,7 @@
+```@meta
+CurrentModule = PhyloGaussianBeliefProp
+```
+
 # Evolutionary models
 ## Specifying a process
 Each trait evolutionary model is specified as a BM, or some extension of it,
@@ -84,7 +88,7 @@ homogeneous univariate Ornstein-Uhlenbeck
 ## Edge factors
 After specifying the evolutionary model
 (e.g. `m = PGBP.UnivariateBrownianMotion(1, 0)`), it is eventually passed to
-`init_beliefs_assignfactors!`
+[`init_beliefs_assignfactors!`](@ref)
 (see [4\. Initialize cluster graph beliefs](@ref)), which infers the conditional
 distribution for each node and assigns it to a cluster.
 
@@ -101,6 +105,9 @@ Imagine that we introduce ``k`` copies ``X_{(p_1,h)},\dots,X_{(p_k,h)}`` of
 ``X_h``, each of which descends from the corresponding ``X_{p_i}``. Then ``X_h``
 is modeled as a weighted-average of ``X_{(p_1,h)},\dots,X_{(p_k,h)}``:
 ```math
-X_h = \sum\gamma_{(p_i,h)} X_{(p_i,h)}
+X_h = \sum_{i=1}^k \gamma_{(p_i,h)} X_{(p_i,h)}
 ```
 where the inheritance weights ``\gamma_{(p_i,h)}`` are positive and sum to 1.
+
+Thus, each tree node is associated with an edge factor, and each hybrid node
+with a hybrid factor.
