@@ -217,7 +217,7 @@ function factor_treeedge(q::AbstractMatrix{T}, ω::AbstractVector{T}, j::Abstrac
     qjomega = transpose(jq) * ω
     jomega = j * ω
     gen = ((u,tu) for u in 0:nparents for tu in 1:ntraits)
-    huv = (u,tu) -> (u==0 ? jomega[tu] : qjomega[tu])
+    huv = (u,tu) -> (u==0 ? jomega[tu] : qjomega[(u-1)*ntraits+tu])
     h = SVector{ntot,T}(huv(x...) for x in gen)
     g = g0 - LA.dot(ω, jomega) / 2
     return(h,J,g)
