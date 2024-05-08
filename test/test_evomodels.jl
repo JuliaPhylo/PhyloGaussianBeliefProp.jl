@@ -104,7 +104,7 @@ end
         ctb = PGBP.ClusterGraphBelief(b_y_randroot)
         PGBP.propagate_1traversal_postorder!(ctb, spt...)
         _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
-        @test_broken tmp ≈ -7.186656141645798
+        @test_broken tmp ≈ -42.31401134496844
         #= code to compute the univariate OU likelihood by hand
         # 1. calculate vcv of all nodes in preorder
         V(t::Number) = (1-exp(-2m.α * t)) * m.γ2 # variance conditional on parent, one edge
@@ -113,6 +113,8 @@ end
         V(parentedges) = sum(V(e.length) * e.gamma * e.gamma for e in parentedges)
         net_vcv = zeros(9,9) # all 9 nodes
         net_vcv[1,1] = PGBP.rootpriorvariance(m)
+        net_mean = zeros(9,1) # all 9 nodes expectations
+        net_mean[1] = m.μ
         for i in 2:9 # non-root nodes
             n = net.nodes_changed[i]
             pae = [PhyloNetworks.getparentedge(n)]
@@ -132,6 +134,10 @@ end
                 end
                 net_vcv[j,i] = net_vcv[i,j]
             end
+            # E[Xi]
+            for (j1,e1) in zip(pai, pae)
+                net_mean[i] += q(e1) * net_mean[j1] + (e1.gamma - q(e1)) * m.θ
+            end
         end
         net_vcv
         [n.name for n in net.nodes_changed] # i1,i2,C,i4,H5,i6,B2,B1,A
@@ -143,7 +149,9 @@ end
         5.651295717406613e-10 0.33332926986180506 0.000822187254027199 1.4032919760109094e-6;
         5.651295717406613e-10 0.000822187254027199 0.33332926986180506 1.4032919760109094e-6;
         2.0226125393342098e-8 1.4032919760109094e-6 1.4032919760109094e-6 0.3334240245358365]
-        loglikelihood(MvNormal(repeat([m.μ],4), Σnet), tbl.y) # -7.186656141645798
+        print(net_mean[taxon_ind]) # copy-pasted below
+        Mnet = [-1.9999972580818273, -1.9998778851480223, -1.9998778851480223, -1.92623366519752]
+        loglikelihood(MvNormal(Mnet, Σnet), tbl.y) # -42.31401134496844
         =#
         end
     end
