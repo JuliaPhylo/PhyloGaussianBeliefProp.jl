@@ -104,7 +104,7 @@ end
         ctb = PGBP.ClusterGraphBelief(b_y_randroot)
         PGBP.propagate_1traversal_postorder!(ctb, spt...)
         _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
-        @test_broken tmp ≈ -42.31401134496844
+        @test tmp ≈ -42.31401134496844
         #= code to compute the univariate OU likelihood by hand
         # 1. calculate vcv of all nodes in preorder
         V(t::Number) = (1-exp(-2m.α * t)) * m.γ2 # variance conditional on parent, one edge
