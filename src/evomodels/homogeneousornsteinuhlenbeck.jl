@@ -54,7 +54,7 @@ function branch_transition_qωjg(obj::UnivariateOrnsteinUhlenbeck, edge::PN.Edge
     j = 1 / obj.γ2 / facvar
     ω = (1 - q) * obj.θ
     g = obj.g0 - log(facvar)/2
-    return (reshape([q],1,1),[ω],reshape([j],1,1),g)
+    return ([q;;],[ω],[j;;],g)
 end
 function branch_transition_qωv!(q::AbstractMatrix, obj::UnivariateOrnsteinUhlenbeck, edge::PN.Edge)
     actu = exp(-obj.α * edge.length)
@@ -62,5 +62,5 @@ function branch_transition_qωv!(q::AbstractMatrix, obj::UnivariateOrnsteinUhlen
     v = obj.γ2 * facvar
     ω = (1 - actu) * obj.θ
     q[1,1] = actu
-    return ([ω],reshape([v],1,1))
+    return ([ω],[v;;])
 end
