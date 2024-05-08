@@ -104,12 +104,13 @@ end
         ctb = PGBP.ClusterGraphBelief(b_y_randroot)
         PGBP.propagate_1traversal_postorder!(ctb, spt...)
         _, tmp = PGBP.integratebelief!(ctb, rootclusterindex)
-        @test_broken tmp ≈ -7.1868997100919
+        @test_broken tmp ≈ -7.186656141645798
         #= code to compute the univariate OU likelihood by hand
         # 1. calculate vcv of all nodes in preorder
-        V(t) = (1-exp(-2m.α * t)) * m.γ2 # variance conditional on parent(s)
+        V(t::Number) = (1-exp(-2m.α * t)) * m.γ2 # variance conditional on parent, one edge
         q(t::Number) = exp(-m.α * t) # actualization along tree edge: weight of parent value
-        q(e) = q(e.length) * e.gamma
+        q(edge) = q(edge.length) * edge.gamma
+        V(parentedges) = sum(V(e.length) * e.gamma * e.gamma for e in parentedges)
         net_vcv = zeros(9,9) # all 9 nodes
         net_vcv[1,1] = PGBP.rootpriorvariance(m)
         for i in 2:9 # non-root nodes
@@ -120,7 +121,7 @@ end
             pa = [PhyloNetworks.getparent(e) for e in pae]
             pai = indexin(pa, net.nodes_changed)
             # var(Xi)
-            net_vcv[i,i] = (n.hybrid ? 0.0 : V(pae[1].length)) # initialize
+            net_vcv[i,i] = V(pae) # initialize
             for (j1,e1) in zip(pai, pae) for (j2,e2) in zip(pai, pae)
                 net_vcv[i,i] += q(e1) * q(e2) * net_vcv[j1,j2]
             end; end
@@ -139,10 +140,10 @@ end
         print(net_vcv[taxon_ind,taxon_ind]) # copy-pasted below
         Σnet = [
         0.3333333333334586 5.651295717406613e-10 5.651295717406613e-10 2.0226125393342098e-8;
-        5.651295717406613e-10 0.33331078221860694 0.0008036996108290846 1.4032919760109094e-6;
-        5.651295717406613e-10 0.0008036996108290846 0.33331078221860694 1.4032919760109094e-6;
+        5.651295717406613e-10 0.33332926986180506 0.000822187254027199 1.4032919760109094e-6;
+        5.651295717406613e-10 0.000822187254027199 0.33332926986180506 1.4032919760109094e-6;
         2.0226125393342098e-8 1.4032919760109094e-6 1.4032919760109094e-6 0.3334240245358365]
-        loglikelihood(MvNormal(repeat([m.μ],4), Σnet), tbl.y) # -7.1868997100919
+        loglikelihood(MvNormal(repeat([m.μ],4), Σnet), tbl.y) # -7.186656141645798
         =#
         end
     end
