@@ -110,6 +110,7 @@ The algorithm loops over each cluster and tracks which messages have been sent:
 
 The example below shows how both regularization methods can help to minimize
 ill-defined messages. We follow the steps in [Exact likelihood for fixed parameters](@ref):
+
 ```@jldoctest regularization
 julia> using DataFrames, Tables, PhyloNetworks, PhyloGaussianBeliefProp
 
@@ -138,13 +139,21 @@ julia> PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed
 julia> fgb = PGBP.ClusterGraphBelief(b); # wrap beliefs for message passing
 
 julia> sched = PGBP.spanningtrees_clusterlist(fg, net.nodes_changed); # generate schedule
+```
 
+Without regularization, errors indicating ill-defined messages (which are skipped)
+are returned when we run a single iteration of calibration:
+```@jldoctest regularization
 julia> PGBP.calibrate!(fgb, sched); # there are ill-defined messages (which are skipped)
 ┌ Error: belief H5I5I16, integrating [2, 3]
 └ @ PhyloGaussianBeliefProp ~/Work/Research/BeliefPropagation/PhyloGaussianBeliefProp.jl/src/calibration.jl:101
 ┌ Error: belief H6I10I15, integrating [2, 3]
 └ @ PhyloGaussianBeliefProp ~/Work/Research/BeliefPropagation/PhyloGaussianBeliefProp.jl/src/calibration.jl:101
+```
 
+However, with regularization, there are no ill-defined messages for a single
+iteration of calibration:
+```@jldoctest regularization
 julia> PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed); # reset to initial beliefs
 
 julia> PGBP.regularizebeliefs_bynodesubtree!(fgb, fg); # regularize by node subtree
@@ -157,9 +166,5 @@ julia> PGBP.regularizebeliefs_onschedule!(fgb, fg); # regularize by on schedule
 
 julia> PGBP.calibrate!(fgb, sched); # no ill-defined messages
 ```
-Without regularization, errors indicating ill-defined messages (which are skipped)
-are returned when we run a single iteration of calibration.
-
-However, with regularization, there are no ill-defined messages for a single
-iteration of calibration. Note that this does not necessarily guarantee that
-subsequent iterations avoid ill-defined messages.
+Note that this does not necessarily guarantee that subsequent iterations avoid
+ill-defined messages.

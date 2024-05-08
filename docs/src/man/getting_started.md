@@ -213,7 +213,8 @@ julia> DataFrame(parent=sched[1][1], child=sched[1][2]) # edges of spanning tree
 ### 6\. Calibrate beliefs with the schedule
 We apply one iteration of belief propagation on `ctb` following the schedule
 `sched`. Since `ct` is a clique tree, the resulting beliefs are guaranteed to be
-calibrated. 
+*calibrated* (i.e. the beliefs of neighbor clusters agree marginally over the
+sepset between them).
 ```@jldoctest getting_started
 julia> PGBP.calibrate!(ctb, sched);
 ```
@@ -221,7 +222,7 @@ julia> PGBP.calibrate!(ctb, sched);
 ### 7\. Extract the log-likelihood
 On a calibrated clique tree, there are two ways to obtain the log-likelihood:
 - integrate any belief over its scope to get its normalization constant (`norm`)
-- compute the factored energy, which approximates the log-likelihood on loopy cluster graphs but is exact on a clique tree
+- compute the [`factored_energy`](@ref), which approximates the log-likelihood on loopy cluster graphs but is exact on a clique tree
 ```@jldoctest getting_started
 julia> (_, norm) = PGBP.integratebelief!(b[1]); # `norm` is the integral of `b[1]` over its scope
 
