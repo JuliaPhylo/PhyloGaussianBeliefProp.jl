@@ -111,17 +111,13 @@ The algorithm loops over each cluster and tracks which messages have been sent:
 The example below shows how both regularization methods can help to minimize
 ill-defined messages. We follow the steps in [Exact likelihood for fixed parameters](@ref):
 
-```@jldoctest regularization
+```jldoctest regularization
 julia> using DataFrames, Tables, PhyloNetworks, PhyloGaussianBeliefProp
 
 julia> const PGBP = PhyloGaussianBeliefProp;
 
-julia> net = readTopology(pkgdir(PGBP, "test/example_networks", "lipson_2020b.phy")) # read in network
-HybridNetwork, Rooted Network
-54 edges
-44 nodes: 12 tips, 11 hybrid nodes, 21 internal tree nodes.
-tip labels: Altai, South_Africa_HG, French, Agaw, ...
-((((#H1:0.01::0.04,Altai:0.71)I2:0.16,((South_Africa_HG:0.16,((#H2:0.01::0.28,#H4:0.01::0.25)I3:0.01,((((French:0.12,((Agaw:0.01)#H3:0.01::0.9)#H2:0.01::0.72)I1:0.21)#H1:0.01::0.96,((#H3:0.01::0.1,Mota:1.3)I4:0.15)#H5:0.01::0.58)I5:0.16,((Cameroon_SMA:0.08)#H7:0.01::0.68,((((Biaka:0.03)#H8:0.01::0.62,#H9:0.01::0.3)I6:1.0,Lemande:0.01)I7:0.01,(Yoruba:0.01,(Mende:0.01)#H10:0.01::0.97)I8:0.01)I9:0.03)#H6:0.01::0.84)I10:0.04)I11:0.28)I12:0.04,(((#H8:0.01::0.38,#H7:0.01::0.32)I13:0.07,((Mbuti:0.1)#H4:0.01::0.75)#H9:0.01::0.7)I14:0.13,(#H5:0.01::0.42,((#H6:0.01::0.16,#H10:0.01::0.03)I15:0.01)#H11:0.01::0.7)I16:0.53)I17:0.01)I18:0.5)I19:0.09,#H11:0.01::0.3)I20:0.5,Chimp:0.5)I21;
+julia> net = readTopology(pkgdir(PGBP, "test/example_networks", "lipson_2020b.phy")); #  54 edges; 44 nodes: 12 tips, 11 hybrid nodes, 21 internal tree nodes.
+
 julia> preorder!(net)
 
 julia> df = DataFrame(taxon=tipLabels(net),
@@ -144,7 +140,8 @@ julia> sched = PGBP.spanningtrees_clusterlist(fg, net.nodes_changed); # generate
 
 Without regularization, errors indicating ill-defined messages (which are skipped)
 are returned when we run a single iteration of calibration:
-```@jldoctest regularization
+
+```jldoctest regularization
 julia> PGBP.calibrate!(fgb, sched); # there are ill-defined messages (which are skipped)
 ┌ Error: belief H5I5I16, integrating [2, 3]
 └ @ PhyloGaussianBeliefProp ~/Work/Research/BeliefPropagation/PhyloGaussianBeliefProp.jl/src/calibration.jl:101
@@ -154,7 +151,8 @@ julia> PGBP.calibrate!(fgb, sched); # there are ill-defined messages (which are 
 
 However, with regularization, there are no ill-defined messages for a single
 iteration of calibration:
-```@jldoctest regularization
+
+```jldoctest regularization
 julia> PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed); # reset to initial beliefs
 
 julia> PGBP.regularizebeliefs_bynodesubtree!(fgb, fg); # regularize by node subtree

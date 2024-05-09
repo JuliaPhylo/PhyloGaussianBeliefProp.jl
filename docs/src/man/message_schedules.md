@@ -1,5 +1,18 @@
 ```@meta
 CurrentModule = PhyloGaussianBeliefProp
+DocTestSetup  = quote
+  using PhyloNetworks, PhyloGaussianBeliefProp
+  const PGBP = PhyloGaussianBeliefProp;
+  net = readTopology(pkgdir(PGBP, "test/example_networks", "lazaridis_2014.phy"))
+  ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
+  sched = PGBP.spanningtrees_clusterlist(ct, net.nodes_changed); # hide
+  preorder!(net)
+  m = PGBP.UnivariateBrownianMotion(1, 0)
+  using DataFrames, Tables
+  df = DataFrame(taxon=tipLabels(net), x=[1.343, 0.841, -0.623, -1.483, 0.456, -0.081, 1.311])
+  tbl_x = columntable(select(df, :x))
+  b = PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, ct, m)
+end
 ```
 
 # Message schedules
@@ -27,16 +40,17 @@ passes messages according to a postorder then preorder traversal of the tree.
 
 Returning to the last few edges of the spanning tree schedule from
 [5. Propose a schedule from the cluster graph](@ref):
-```@jldoctest getting_started
+
+```jldoctest
 julia> DataFrame(parent=sched[1][1], child=sched[1][2])[13:16,:] # edges of spanning tree in preorder
 4×2 DataFrame
  Row │ parent                             child                             
      │ Symbol                             Symbol                            
 ─────┼──────────────────────────────────────────────────────────────────────
-  13 │ AncientNorthEurasianI1I2NonAfric…  EasternNorthAfricanAncientNorthE…
-  14 │ EasternNorthAfricanAncientNorthE…  H1EasternNorthAfricanAncientNort…
-  15 │ H1EasternNorthAfricanAncientNort…  OngeEasternNorthAfrican
-  16 │ H1EasternNorthAfricanAncientNort…  KaritianaH1
+   1 │ AncientNorthEurasianI1I2NonAfric…  EasternNorthAfricanAncientNorthE…
+   2 │ EasternNorthAfricanAncientNorthE…  H1EasternNorthAfricanAncientNort…
+   3 │ H1EasternNorthAfricanAncientNort…  OngeEasternNorthAfrican
+   4 │ H1EasternNorthAfricanAncientNort…  KaritianaH1
 ```
 The first message to be sent is from `KaritianaH1` to
 `H1EasternNorthAfricanAncientNort…`, followed by `OngeEasternNorthAfrican` to
@@ -49,7 +63,8 @@ Continuing with the code example from [A heuristic](@ref), we:
 - increase the number of iterations of calibration to 100 (the default is 1)
 - tell `calibrate!` to return once calibration is detected (`auto=true`)
 - log information on when calibration was detected (`info=true`)
-```@jldoctest regularization
+
+```jldoctest regularization
 julia> PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed); # reset to initial beliefs
 
 julia> PGBP.regularizebeliefs_bynodesubtree!(fgb, fg); # regularize by node subtree
