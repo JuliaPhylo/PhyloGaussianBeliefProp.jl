@@ -62,7 +62,8 @@ Models available are: [`UnivariateBrownianMotion`](@ref), [`UnivariateOrnsteinUh
 [`MvDiagBrownianMotion`](@ref), [`MvFullBrownianMotion`](@ref).
 
 Note however that not all methods may be implemented across all models.
-```@jldoctest getting_started
+
+```jldoctest getting_started
 julia> m = PGBP.UnivariateBrownianMotion(1, 0) # σ2 = 1.0, μ = 0.0
 Univariate Brownian motion
 
@@ -78,7 +79,8 @@ though other values may better fit the data.
 ### 3\. Build a cluster graph from the network
 Methods available are: [`Bethe`](@ref), [`LTRIP`](@ref),
 [`JoinGraphStructuring`](@ref), [`Cliquetree`](@ref)
-```@jldoctest getting_started
+
+```jldoctest getting_started
 julia> ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
 Meta graph based on a Graphs.SimpleGraphs.SimpleGraph{Int8} with vertex labels of type Symbol, vertex metadata of type Tuple{Vector{Symbol}, Vector{Int8}}, edge metadata of type Vector{Int8}, graph metadata given by :cliquetree, and default weight 0
 
@@ -114,7 +116,8 @@ for each cluster. Next, we:
 - allocate memory for these beliefs
 - initialize their values using the evolutionary model
 - wrap them within another data structure to facilitate message passing.
-```@jldoctest getting_started
+
+```jldoctest getting_started
 julia> using Tables # `columntable`
 
 julia> tbl_x = columntable(select(df, :x)) # extract trait `x` from `df` as a column table
@@ -189,7 +192,8 @@ edges following some preorder traversal of `ct`.
 Since `ct` is a clique tree, there is a single spanning tree (`sched[1]`). We
 extract and display the preorder sequence of edges from `sched[1]`. For example,
 `NonAfricanI3` is the root cluster of `ct`, and `KaritianaH1` is a leaf cluster.
-```@jldoctest getting_started
+
+```jldoctest getting_started
 julia> sched = PGBP.spanningtrees_clusterlist(ct, net.nodes_changed);
 
 julia> DataFrame(parent=sched[1][1], child=sched[1][2]) # edges of spanning tree in preorder
@@ -220,7 +224,8 @@ We apply one iteration of belief propagation on `ctb` following the schedule
 `sched`. Since `ct` is a clique tree, the resulting beliefs are guaranteed to be
 *calibrated* (i.e. the beliefs of neighbor clusters agree marginally over the
 sepset between them).
-```@jldoctest getting_started
+
+```jldoctest getting_started
 julia> PGBP.calibrate!(ctb, sched);
 ```
 
@@ -228,7 +233,8 @@ julia> PGBP.calibrate!(ctb, sched);
 On a calibrated clique tree, there are two ways to obtain the log-likelihood:
 - integrate any belief over its scope to get its normalization constant (`norm`)
 - compute the [`factored_energy`](@ref), which approximates the log-likelihood on loopy cluster graphs but is exact on a clique tree
-```@jldoctest getting_started
+
+```jldoctest getting_started
 julia> (_, norm) = PGBP.integratebelief!(b[1]); # `norm` is the integral of `b[1]` over its scope
 
 julia> norm
@@ -252,7 +258,8 @@ Now we find ``\mu=\widehat{\mu}`` and ``\sigma^2=\widehat{\sigma}^2`` that
 maximize the log-likelihood. There are two options:
 - iterative optimization
 - exact computation using belief propagation
-```@jldoctest getting_started
+
+```jldoctest getting_started
 julia> mod, ll, _ = PGBP.calibrate_optimize_cliquetree!( # iterative optimization
                ctb, # beliefs
                ct, # clique tree
@@ -304,7 +311,8 @@ construct a Bethe cluster graph (also known as factor graph) `fg`.
 As before, we set up a data structure `fgb` to track the beliefs of the factor
 graph during message passing. Then we call [`calibrate_optimize_clustergraph!`](@ref),
 the analog of [`calibrate_optimize_cliquetree!`](@ref) from earlier:
-```@jldoctest getting_started
+
+```jldoctest getting_started
 julia> fg = PGBP.clustergraph!(net, PGBP.Bethe()) # factor graph
 Meta graph based on a Graphs.SimpleGraphs.SimpleGraph{Int8} with vertex labels of type Symbol, vertex metadata of type Tuple{Vector{Symbol}, Vector{Int8}}, edge metadata of type Vector{Int8}, graph metadata given by :Bethe, and default weight 0
 
@@ -328,4 +336,4 @@ julia> fe # factored energy approximation to the log-likelihood
 ```
 We see that both parameter estimates are very close to their maximum-likelihood
 counterparts (within 10⁻⁴ percent), and the factored energy slightly
-overestimates the log-likelihood for these values (within 1 percent). 
+overestimates the log-likelihood for these values (within 1 percent).

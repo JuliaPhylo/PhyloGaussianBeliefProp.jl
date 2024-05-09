@@ -12,7 +12,7 @@ makedocs(;
         mathengine=Documenter.KaTeX(),
         prettyurls=get(ENV, "CI", "false") == "true",
         size_threshold = 600 * 2^10, size_threshold_warn = 500 * 2^10, # 600 KiB
-        canonical="https://cecileane.github.io/PhyloGaussianBeliefProp.jl",
+        canonical="https://cecileane.github.io/PhyloGaussianBeliefProp.jl/stable/",
         edit_link="main",
         assets=String[],
     ),
@@ -27,10 +27,14 @@ makedocs(;
             "Regularization" => "man/regularization.md",
             "Message schedules" => "man/message_schedules.md"
         ]
-    ]
+    ],
+    doctestfilters=[
+        # Ignore any digit after the 5th digit after a decimal, throughout the docs
+        r"(?<=\d\.\d{5})\d+",
+    ],
 )
 
-# deploydocs(;
-#     repo="github.com/cecileane/PhyloGaussianBeliefProp.jl",
-#     devbranch="main",
-# )
+deploydocs(;
+    repo="github.com/cecileane/PhyloGaussianBeliefProp.jl",
+    devbranch="main",
+)
