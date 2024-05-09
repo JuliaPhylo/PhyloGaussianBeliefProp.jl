@@ -14,7 +14,7 @@ that wraps these pipelines will be made available later.
 
 ### 1\. Read in the network and the tip data
 ```jldoctest getting_started
-julia> using PhyloGaussianBeliefProp # `test/example_networks` folder
+julia> using PhyloGaussianBeliefProp
 
 julia> const PGBP = PhyloGaussianBeliefProp;
 
@@ -44,6 +44,12 @@ julia> df = DataFrame(taxon=tipLabels(net),
    6 │ European    -0.081
    7 │ Stuttgart    1.311
 ```
+In all the following, we use the network `net` imported here as an example.
+It reproduces [Lazaridis et al. (2014), Figure 3](https://doi.org/10.1038/nature13673) [lazaridis2014ancient](@cite),
+displayed below:
+
+![](../assets/lazaridis_2014_trim.png)
+
 In this example, the trait `x` observed for the tip species is univariate.
 We have mapped the observed data to the corresponding species in the dataframe `df`.
 
@@ -51,17 +57,12 @@ The call to `preorder!` updates `net` to contain a list of its nodes arranged in
 preorder. Many internals in the package assume that this information is available,
 and so it is important that this be called immediately after reading in the network!
 
-`net`, which reproduces
-[Lazaridis et al. (2014), Figure 3](https://doi.org/10.1038/nature13673), is
-displayed below:
-
-![](../assets/lazaridis_2014_trim.png)
-
 ### 2\. Choose an evolutionary model
-Models available are: [`UnivariateBrownianMotion`](@ref), [`UnivariateOrnsteinUhlenbeck`](@ref),
+At the moment, models available are: [`UnivariateBrownianMotion`](@ref), [`UnivariateOrnsteinUhlenbeck`](@ref),
 [`MvDiagBrownianMotion`](@ref), [`MvFullBrownianMotion`](@ref).
 
 Note however that not all methods may be implemented across all models.
+See section [Evolutionary models](@ref) for more details on the available models.
 
 ```jldoctest getting_started
 julia> m = PGBP.UnivariateBrownianMotion(1, 0) # σ2 = 1.0, μ = 0.0
@@ -78,7 +79,11 @@ though other values may better fit the data.
 
 ### 3\. Build a cluster graph from the network
 Methods available are: [`Bethe`](@ref), [`LTRIP`](@ref),
-[`JoinGraphStructuring`](@ref), [`Cliquetree`](@ref)
+[`JoinGraphStructuring`](@ref), [`Cliquetree`](@ref).
+
+We first choose `Cliquetree` to compute the likelihood exactly. Other methods may
+return a loopy cluster graph, which gives an approximate likelihood.
+See section [Cluster graphs](@ref) for more background on cluster graphs.
 
 ```jldoctest getting_started
 julia> ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
@@ -104,8 +109,6 @@ julia> PGBP.labels(ct) |> collect # cluster labels
  :NonAfricanI3
  :MA1ANE
 ```
-We choose `Cliquetree` to compute the likelihood exactly. Other methods may
-return a loopy cluster graph, which gives an approximate likelihood.
 
 See that each cluster's label is derived by concatenating the labels of the
 nodes it contains.
@@ -188,9 +191,10 @@ We build a message schedule `sched` from `ct` by finding a minimal set of
 spanning trees for the cluster graph that together cover all its edges (i.e.
 neighbor cluster pairs). Each spanning tree is represented as a sequence of
 edges following some preorder traversal of `ct`.
+See section [Message schedules](@ref) for more details on message schedules.
 
 Since `ct` is a clique tree, there is a single spanning tree (`sched[1]`). We
-extract and display the preorder sequence of edges from `sched[1]`. For example,
+extract and display the preorder sequence of edges from `sched[1]`. In this example,
 `NonAfricanI3` is the root cluster of `ct`, and `KaritianaH1` is a leaf cluster.
 
 ```jldoctest getting_started
@@ -303,9 +307,15 @@ the latter returns the restricted maximum-likelihood (REML) estimate for
 Strictly speaking, the estimates from the latter option do not jointly maximize
 the log-likelihood. However, the REML estimate for ``\sigma^2`` is generally
 less biased than its ML counterpart.
+In this simple model, the REML estimate is just equal to the ML estimate
+up to a factor $(n-1)/n$, with $n$ the number of tips in the network:
+```jldoctest getting_started
+julia> PGBP.varianceparam(mod) * (net.numTaxa - 1) / net.numTaxa # sigma2_REML = (n-1)/n * sigma2_ML
+0.3181294885963141
+```
 
 ## Approximate inference
-Suppose now that we use a loopy cluster graph instead. We choose `Bethe` to
+Suppose now that we use a loopy cluster graph instead of a clique tree. We choose `Bethe` to
 construct a Bethe cluster graph (also known as factor graph) `fg`.
 
 As before, we set up a data structure `fgb` to track the beliefs of the factor

@@ -1,7 +1,10 @@
 using PhyloGaussianBeliefProp
 using Documenter
+using DocumenterCitations
 
 DocMeta.setdocmeta!(PhyloGaussianBeliefProp, :DocTestSetup, :(using PhyloGaussianBeliefProp); recursive=true)
+
+bib = CitationBibliography(joinpath(@__DIR__, "src", "refs.bib"))
 
 makedocs(;
     modules=[PhyloGaussianBeliefProp],
@@ -14,7 +17,7 @@ makedocs(;
         size_threshold = 600 * 2^10, size_threshold_warn = 500 * 2^10, # 600 KiB
         canonical="https://cecileane.github.io/PhyloGaussianBeliefProp.jl/stable/",
         edit_link="main",
-        assets=String[],
+        assets=String["assets/citations.css"],
     ),
     pages=[
         "Home" => "index.md",
@@ -32,6 +35,7 @@ makedocs(;
         # Ignore any digit after the 5th digit after a decimal, throughout the docs
         r"(?<=\d\.\d{5})\d+",
     ],
+    plugins=[bib],
 )
 
 deploydocs(;

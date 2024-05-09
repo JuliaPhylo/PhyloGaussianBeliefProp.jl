@@ -38,7 +38,7 @@ X_v\mid X_{\mathrm{pa}(v)} &\sim \mathcal{N}(\omega_v+
 ```
 with trend vector ``\omega_v``, actualization matrix ``\bm{q}_v``, and
 covariance matrix ``\bm{V}_v``. For example, the BM (and most of its extensions)
-on a phylogeny satisfies this characterization.
+on a phylogeny satisfies this characterization [mitov2020fast](@cite).
 
 ## Parameter inference
 Typically, we observe the tips of the phylogeny
@@ -69,7 +69,9 @@ complexity of the phylogeny grows.
 framework for efficiently computing various
 marginals of a joint distribution ``p_\theta`` that can be factored into
 conditional distributions ``\phi_v\in\Phi``, where ``\Phi`` denotes the full set
-of conditional distributions:
+of conditional distributions.
+We refer to the reference book by Koller and Friedman (2009) [koller2009probabilistic](@cite)
+for more background on BP, and only sketch the main steps involved here:
 
 1. Construct a tree data structure called a [*clique tree*](https://en.wikipedia.org/wiki/Tree_decomposition) (also known by *junction tree*, *join tree*, or *tree decomposition*), whose nodes ``\mathcal{C}_i`` (called *clusters*) are subsets of ``\{X_1,\dots,X_m\}``.
 2. Each conditional distribution is assigned (``\mapsto``) to a cluster of the clique tree, and the product of all conditional distributions assigned to a cluster ``\mathcal{C}_i`` initializes its *belief* ``\beta_i = \prod_{\phi_v\mapsto\mathcal{C}_i,\ \phi_v\in\Phi}\phi_v``
@@ -90,3 +92,9 @@ A clique tree is a special case of a graph data structure called a
 BP on a *loopy cluster graph* (i.e. a cluster graph with cycles), abbreviated
 as *loopy BP*, can approximate the likelihood and conditional distributions of
 the unobserved, ancestral nodes, and be more computationally efficient than BP.
+
+
+## References
+
+```@bibliography
+```

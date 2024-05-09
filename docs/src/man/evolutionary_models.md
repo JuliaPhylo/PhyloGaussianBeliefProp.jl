@@ -4,15 +4,17 @@ CurrentModule = PhyloGaussianBeliefProp
 
 # Evolutionary models
 ## Specifying a process
-Each trait evolutionary model is specified as a BM, or some extension of it,
+Each trait evolutionary model is specified as a linear Gaussian process, such as a BM or some extension of it,
 that evolves along the phylogeny.
 
 Minimally, the user provides a variance rate ``\Sigma``, and a prior mean
 ``\mu`` and variance ``\bm{V}_{\!\!\rho}`` for the root state ``X_\rho``.
 For example, ``\bm{V}_{\!\!\rho}=0`` treats ``X_\rho=\mu`` as known, while
 ``\bm{V}_{\!\!\rho}=\infty`` disregards all prior beliefs about ``X_\rho``.
+
+For example, the univariate BM can be specified as:
 ```@jldoctest evolutionary_models; setup = :(using PhyloGaussianBeliefProp; const PGBP = PhyloGaussianBeliefProp)
-julia> PGBP.UnivariateBrownianMotion(1, 0) # v = 0
+julia> PGBP.UnivariateBrownianMotion(1, 0) # root variance v = 0 (fixed root)
 Univariate Brownian motion
 
 - evolutionary variance rate σ2 :
@@ -20,7 +22,7 @@ Univariate Brownian motion
 - root mean μ :
 0.0
 
-julia> PGBP.UnivariateBrownianMotion(1, 0, Inf)
+julia> PGBP.UnivariateBrownianMotion(1, 0, Inf) # root variance v = Inf (improper prior)
 Univariate Brownian motion
 
 - evolutionary variance rate σ2 :
@@ -63,6 +65,7 @@ Rate (AC) model respectively allow ``\Sigma`` to decay (``b<0``) and grow
 ```math
 \Sigma(t) = \Sigma_0\exp(bt), \text{ where } \Sigma_0 = \Sigma(0)
 ```
+This model is not implemented at the moment.
 
 Selection can be additionally modeled by the
 [Ornstein-Uhlenbeck](https://en.wikipedia.org/wiki/Ornstein–Uhlenbeck_process)
@@ -70,7 +73,7 @@ Selection can be additionally modeled by the
 drift towards some optimal value ``\theta`` (with selection "strength"
 ``\bm{A}``).
 ```@jldoctest evolutionary_models
-julia> PGBP.UnivariateOrnsteinUhlenbeck(2, 3, -2, 0, 0.4) # σ2 = 2, γ2 = σ2/2α
+julia> PGBP.UnivariateOrnsteinUhlenbeck(2, 3, -2, 0, 0.4) # σ2 = 2
 homogeneous univariate Ornstein-Uhlenbeck
 
 - stationary evolutionary variance γ2 :
