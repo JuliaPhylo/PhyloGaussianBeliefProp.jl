@@ -37,12 +37,13 @@ X_v\mid X_{\mathrm{pa}(v)} &\sim \mathcal{N}(\omega_v+
 \end{aligned}
 ```
 with trend vector ``\omega_v``, actualization matrix ``\bm{q}_v``, and
-covariance matrix ``\bm{V}_v``. For example, the BM (and most of its extensions)
-on a phylogeny satisfies this characterization [mitov2020fast](@cite).
+covariance matrix ``\bm{V}_v``. For example, the BM on a phylogeny
+(and most of its extensions)
+satisfies this characterization [mitov2020fast](@cite).
 
 ## Parameter inference
 Typically, we observe the tips of the phylogeny
-``X_1=\mathrm{x}_1,\dots,X_n=\mathrm{x}_n`` and use this data for parameter
+``X_1=\mathrm{x}_1,\dots,X_n=\mathrm{x}_n`` and use these data for parameter
 inference by optimizing the log-likelihood
 ``\mathrm{LL}(\theta)=\log\int p_\theta(\mathrm{x}_1,\dots,\mathrm{x}_n,x_{n+1},
 \dots x_m)dx_{n+1}\dots dx_m``:
@@ -73,9 +74,17 @@ of conditional distributions.
 We refer to the reference book by Koller and Friedman (2009) [koller2009probabilistic](@cite)
 for more background on BP, and only sketch the main steps involved here:
 
-1. Construct a tree data structure called a [*clique tree*](https://en.wikipedia.org/wiki/Tree_decomposition) (also known by *junction tree*, *join tree*, or *tree decomposition*), whose nodes ``\mathcal{C}_i`` (called *clusters*) are subsets of ``\{X_1,\dots,X_m\}``.
-2. Each conditional distribution is assigned (``\mapsto``) to a cluster of the clique tree, and the product of all conditional distributions assigned to a cluster ``\mathcal{C}_i`` initializes its *belief* ``\beta_i = \prod_{\phi_v\mapsto\mathcal{C}_i,\ \phi_v\in\Phi}\phi_v``
-3. Each cluster computes messages from its belief, and propagates these to its neighbor clusters to update their beliefs.
+1. Construct a tree data structure called a
+   [*clique tree*](https://en.wikipedia.org/wiki/Tree_decomposition)
+   (also known by junction tree, join tree, or tree decomposition),
+   whose nodes ``\mathcal{C}_i``, called *clusters*,
+   are subsets of ``\{X_1,\dots,X_m\}``.
+2. Each conditional distribution is assigned (``\mapsto``) to a cluster of the
+   clique tree, and the product of all conditional distributions assigned to a
+   cluster ``\mathcal{C}_i`` initializes its *belief*
+   ``\beta_i = \prod_{\phi_v\mapsto\mathcal{C}_i,\ \phi_v\in\Phi}\phi_v``
+3. Each cluster computes messages from its belief, and propagates these to its
+   neighbor clusters to update their beliefs.
 
 ``\mathrm{LL}(\theta)`` can be computed by passing messages according to a
 single postorder traversal of the clique tree,

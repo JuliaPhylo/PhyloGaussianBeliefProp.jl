@@ -73,7 +73,7 @@ Selection can be additionally modeled by the
 drift towards some optimal value ``\theta`` (with selection "strength"
 ``\bm{A}``).
 ```@jldoctest evolutionary_models
-julia> PGBP.UnivariateOrnsteinUhlenbeck(2, 3, -2, 0, 0.4) # σ2 = 2
+julia> PGBP.UnivariateOrnsteinUhlenbeck(2, 3, -2, 0, 0.4) # σ2=2, below showing γ2 = σ2/(2α)
 homogeneous univariate Ornstein-Uhlenbeck
 
 - stationary evolutionary variance γ2 :
