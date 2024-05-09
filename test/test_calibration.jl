@@ -212,10 +212,9 @@ end
         end)
         mod2, llscore2, opt2 = PGBP.calibrate_optimize_cliquetree_autodiff!(lbc, ct, net.nodes_changed,
             tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (1, -2))
-        #= fixit: we would like to do this below, but we only have lbc.
-           We don't have any cluster graph belief object
-        @test PGBP.integratebelief!(lbc, spt[3][1])[2] ≈ llscore2
-        =#
+        
+        index_ctb = findfirst(isassigned(lbc.bufs.vals, i) for i in 1:length(lbc.bufs.vals))
+        @test PGBP.integratebelief!(lbc.bufs.vals[index_ctb], spt[3][1])[2].value ≈ llscore2
         @test llscore2 ≈ -5.174720533524127
         @test mod2.μ ≈ -0.26000871507162693
         @test PGBP.varianceparam(mod2) ≈ 0.35360518758586457
@@ -235,7 +234,6 @@ end
         r = tbl.y .- μhat
         σ2hat_ML = (transpose(r) * inv(Σ) * r) / n # 0.35360518758586457
         llscore = - n/2 - logdet(2π * σ2hat_ML .* Σ)/2 # -5.174720533524127
-
         # for x: third value is missing
         xind = [1,2,4]; n = length(xind); i = ones(n) # intercept
         Σ = Matrix(vcv(net)[!,Symbol.(df.taxon)])[xind,xind]
@@ -245,43 +243,19 @@ end
         llscore = - n/2 - logdet(2π * σ2hat_ML .* Σ)/2 # -9.215574122592923
         =#
 
-        # x: 1 trait, some missing values
-        #= calibrate_optimize_cliquetree! and missing values already tested later
-        m = PGBP.UnivariateBrownianMotion(2, 3, 0)
-        b = (@test_logs (:error,"tip B2 in network without any data") PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, ct, m))
-        PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b)
-        mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(ctb, ct, net.nodes_changed,
-            tbl_x, df.taxon, PGBP.UnivariateBrownianMotion, (1,-2))
-        @test PGBP.integratebelief!(ctb, spt[3][1])[2] ≈ llscore
-        @test llscore ≈ -9.215574122592923
-        @test mod.μ ≈ 3.500266520382341
-        @test PGBP.varianceparam(mod) ≈ 11.257682945973125
-        =#
-        
-        # lbc = GeneralLazyBufferCache(function (paramOriginal)
-        #     mo = PGBP.UnivariateBrownianMotion(paramOriginal...)
-        #     bel = PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, ct, mo)
-        #     return PGBP.ClusterGraphBelief(bel)
-        # end)
-        # mod2, llscore2, opt2 = (@test_logs (:error, "tip B2 in network without any data") PGBP.calibrate_optimize_cliquetree_autodiff!(lbc, ct, net.nodes_changed,
-        #     tbl_x, df.taxon, PGBP.UnivariateBrownianMotion, (1, -2)))
-        # @test llscore2 ≈ -9.215574122592923
-        # @test mod2.μ ≈ 3.500266520382341
-        # @test PGBP.varianceparam(mod2) ≈ 11.257682945973125
-
         # x,y: 2 traits, some missing values
         m = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0,0))
         b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
         PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
         ctb = PGBP.ClusterGraphBelief(b)
-        # mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(ctb, ct, net.nodes_changed,
-        #     tbl, df.taxon, PGBP.MvDiagBrownianMotion, ((2,1), (1,-1)))
-        # @test PGBP.integratebelief!(ctb, spt[3][1])[2] ≈ llscore
-        # @test llscore ≈ -14.39029465611705 # -5.174720533524127 -9.215574122592923
-        # @test mod.μ ≈ [3.500266520382341, -0.26000871507162693]
-        # @test PGBP.varianceparam(mod) ≈ [11.257682945973125,0.35360518758586457]
+        mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(ctb, ct, net.nodes_changed,
+            tbl, df.taxon, PGBP.MvDiagBrownianMotion, ((2,1), (1,-1)))
+        @test PGBP.integratebelief!(ctb, spt[3][1])[2] ≈ llscore
+        @test llscore ≈ -14.39029465611705 # -5.174720533524127 -9.215574122592923
+        @test mod.μ ≈ [3.500266520382341, -0.26000871507162693]
+        @test PGBP.varianceparam(mod) ≈ [11.257682945973125,0.35360518758586457]
 
+        #= calibrate_optimize_cliquetree_autodiff! already tested earlier
         lbc = GeneralLazyBufferCache(function (paramOriginal)
             mo = PGBP.MvDiagBrownianMotion(paramOriginal...)
             bel = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, mo)
@@ -292,6 +266,7 @@ end
         @test llscore2 ≈ -14.39029465611705 # -5.174720533524127 -9.215574122592923
         @test mod2.μ ≈ [3.500266520382341, -0.26000871507162693]
         @test PGBP.varianceparam(mod2) ≈ [11.257682945973125, 0.35360518758586457]
+        =#
 
         #=
         using BenchmarkTools
