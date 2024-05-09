@@ -147,9 +147,9 @@ are returned when we run a single iteration of calibration:
 ```jldoctest regularization
 julia> PGBP.calibrate!(fgb, sched); # there are ill-defined messages (which are skipped)
 ┌ Error: belief H5I5I16, integrating [2, 3]
-└ @ PhyloGaussianBeliefProp ~/Work/Research/BeliefPropagation/PhyloGaussianBeliefProp.jl/src/calibration.jl:101
+└ @ PhyloGaussianBeliefProp ~/Work/Research/BeliefPropagation/PhyloGaussianBeliefProp.jl/src/calibration.jl:118
 ┌ Error: belief H6I10I15, integrating [2, 3]
-└ @ PhyloGaussianBeliefProp ~/Work/Research/BeliefPropagation/PhyloGaussianBeliefProp.jl/src/calibration.jl:101
+└ @ PhyloGaussianBeliefProp ~/Work/Research/BeliefPropagation/PhyloGaussianBeliefProp.jl/src/calibration.jl:118
 ```
 
 However, with regularization, there are no ill-defined messages for a single
