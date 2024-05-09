@@ -109,7 +109,10 @@ The algorithm loops over each cluster and tracks which messages have been sent:
 - After being regularized, ``\mathcal{C}_i`` sends a message to each neighbor for which it has not already done so.
 
 The example below shows how both regularization methods can help to minimize
-ill-defined messages. We follow the steps in [Exact likelihood for fixed parameters](@ref):
+ill-defined messages. We use here a network from
+[Lipson et al. (2020, Extended Data Fig. 4)](https://doi.org/10.1038/s41586-020-1929-1)
+[lipson2020ancient](@cite)
+and follow the steps in [Exact likelihood for fixed parameters](@ref):
 
 ```jldoctest regularization
 julia> using DataFrames, Tables, PhyloNetworks, PhyloGaussianBeliefProp
