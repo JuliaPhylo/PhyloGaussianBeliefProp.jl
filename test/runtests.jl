@@ -15,5 +15,6 @@ const PGBP = PhyloGaussianBeliefProp
   include("test_evomodels.jl")
   include("test_canonicalform.jl")
   include("test_calibration.jl")
+  # include("test_optimization.jl") redundant with test_calibration.jl, but future tests could use networks in there to vary networks used in test
   include("test_exactBM.jl")
 end
