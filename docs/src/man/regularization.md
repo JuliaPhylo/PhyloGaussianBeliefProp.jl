@@ -111,7 +111,8 @@ The algorithm loops over each cluster and tracks which messages have been sent:
 The example below shows how both regularization methods can help to minimize
 ill-defined messages. We use here a network from
 [Lipson et al. (2020, Extended Data Fig. 4)](https://doi.org/10.1038/s41586-020-1929-1)
-[lipson2020ancient](@cite)
+[lipson2020ancient](@cite), with degree-2 nodes suppressed and any resulting
+length 0 edges assigned length 1 (see [lipson2020b_notes.jl](https://github.com/bstkj/graphicalmodels_for_phylogenetics_code/blob/5f61755c4defe804fd813113e883d49445971ade/real_networks/lipson2020b_notes.jl)),
 and follow the steps in [Exact likelihood for fixed parameters](@ref):
 
 ```jldoctest regularization

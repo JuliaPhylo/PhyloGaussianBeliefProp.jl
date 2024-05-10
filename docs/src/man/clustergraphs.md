@@ -32,7 +32,8 @@ by maximum cluster size, and so clique trees allow for exact inference but at a
 greater cost than approximate inference on a loopy cluster graph.
 Below is an example using a virus recombination network from
 [Müller et al. (2022, Fig 1a)](https://doi.org/10.1038/s41467-022-31749-8)
-[muller2022bayesian](@cite).
+[muller2022bayesian](@cite), with inheritance probabilities estimated from the
+inferred recombination breakpoints (see [muller2022_nexus2newick.jl](https://github.com/bstkj/graphicalmodels_for_phylogenetics_code/blob/5f61755c4defe804fd813113e883d49445971ade/real_networks/muller2022_nexus2newick.jl)).
 
 ```jldoctest clustergraphs; setup = :(using PhyloNetworks, PhyloGaussianBeliefProp; const PGBP = PhyloGaussianBeliefProp)
 julia> net = readTopology(pkgdir(PhyloGaussianBeliefProp, "test/example_networks", "muller_2022.phy")); # 1161 edges, 801 nodes: 40 tips, 361 hybrid nodes, 400 internal tree nodes.

@@ -25,7 +25,7 @@ Pages = [
 Depth = 3
 ```
 
-## library
+## Library
 
 ```@index
 ```
