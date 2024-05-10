@@ -19,4 +19,4 @@ inferred recombination breakpoints (see [muller2022_nexus2newick.jl](https://git
 length 0 edges assigned length 1 (see [lipson2020b_notes.jl](https://github.com/bstkj/graphicalmodels_for_phylogenetics_code/blob/5f61755c4defe804fd813113e883d49445971ade/real_networks/lipson2020b_notes.jl)).
 - `sun_2023.phy`: degree-2 nodes were not suppressed. All admixture edges
 were assigned a length of 1.0 (the minimum length among all drift edges).
-- `maier_2023.phy`:
+- `maier_2023.phy`: Edge lengths were set arbitrarily.
