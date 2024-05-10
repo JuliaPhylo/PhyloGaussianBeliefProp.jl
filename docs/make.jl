@@ -34,8 +34,6 @@ makedocs(;
     doctestfilters=[
         # Ignore any digit after the 5th digit after a decimal, throughout the docs
         r"(?<=\d\.\d{5})\d+",
-        # Ignore message after @error
-        r"^└ @ PhyloGaussianBeliefProp.*",
     ],
     plugins=[bib],
 )

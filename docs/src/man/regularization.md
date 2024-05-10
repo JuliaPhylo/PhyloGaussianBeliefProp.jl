@@ -144,12 +144,12 @@ julia> sched = PGBP.spanningtrees_clusterlist(fg, net.nodes_changed); # generate
 Without regularization, errors indicating ill-defined messages (which are skipped)
 are returned when we run a single iteration of calibration:
 
-```jldoctest regularization
+```jldoctest regularization; filter = r"└ @ PhyloGaussianBeliefProp.*" => s""
 julia> PGBP.calibrate!(fgb, sched); # there are ill-defined messages (which are skipped)
 ┌ Error: belief H5I5I16, integrating [2, 3]
-└ @ PhyloGaussianBeliefProp ~/Work/Research/BeliefPropagation/PhyloGaussianBeliefProp.jl/src/calibration.jl:118
+└ @ PhyloGaussianBeliefProp ...
 ┌ Error: belief H6I10I15, integrating [2, 3]
-└ @ PhyloGaussianBeliefProp ~/Work/Research/BeliefPropagation/PhyloGaussianBeliefProp.jl/src/calibration.jl:118
+└ @ PhyloGaussianBeliefProp ...
 ```
 
 However, with regularization, there are no ill-defined messages for a single
