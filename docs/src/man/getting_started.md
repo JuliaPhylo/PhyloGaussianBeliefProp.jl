@@ -10,6 +10,15 @@ A minimal API is still incomplete, and so we demonstrate the package's various
 capabilities as pipelines involving multiple internal functions. A complete API
 that wraps these pipelines will be made available later.
 
+In what follows, we use simulated trait data.
+In most of this manual, we use as an example the network topology from
+[Lazaridis et al. (2014), Figure 3](https://doi.org/10.1038/nature13673)
+[lazaridis2014ancient](@cite), displayed below,
+with branch lengths arbitrarily set to 1 and inheritance probabilities
+(admixture proportions) set arbibitrarily to 0.4 and 0.6 at each hybrid node.
+
+![](../assets/lazaridis_2014_trim.png)
+
 ## Exact likelihood for fixed parameters
 
 ### 1\. Read in the network and the tip data
@@ -30,7 +39,7 @@ tip labels: Mbuti, Onge, Karitiana, MA1, ...
 (Mbuti:1.0,(((Onge:1.0,#H1:0.01::0.4)EasternNorthAfrican:1.0,(((Karitiana:1.0)#H1:0.01::0.6,(MA1:1.0,#H3:0.01::0.4)ANE:1.0)AncientNorthEurasian:1.0,(((#H2:0.01::0.4)#H3:0.01::0.6,Loschbour:1.0)WHG:1.0,#H4:0.01::0.4)WestEurasian:1.0)I1:1.0)I2:1.0,((European:1.0)#H2:0.01::0.6,Stuttgart:1.0)#H4:0.01::0.6)NonAfrican:1.0)I3;
 julia> preorder!(net) # updates net.nodes_changed to contain network nodes listed in preorder
 
-julia> df = DataFrame(taxon=tipLabels(net), # tip data simulated using `simulate(net, ParamsBM(0, 1))` from PhyloNetworks
+julia> df = DataFrame(taxon=tipLabels(net), # simulated using `simulate(net, ParamsBM(0, 1))` from PhyloNetworks
                x=[1.343, 0.841, -0.623, -1.483, 0.456, -0.081, 1.311])
 7×2 DataFrame
  Row │ taxon      x       
@@ -44,18 +53,13 @@ julia> df = DataFrame(taxon=tipLabels(net), # tip data simulated using `simulate
    6 │ European    -0.081
    7 │ Stuttgart    1.311
 ```
-In all the following, we use the network `net` imported here as an example.
-It reproduces [Lazaridis et al. (2014), Figure 3](https://doi.org/10.1038/nature13673) [lazaridis2014ancient](@cite),
-displayed below:
 
-![](../assets/lazaridis_2014_trim.png)
-
-In this example, the trait `x` observed (this is simulated) for the tip species
-is univariate.
+In this example, the trait `x` is univariate.
 We have mapped the observed data to the corresponding species in the dataframe `df`.
 
 The call to `preorder!` updates `net` to contain a list of its nodes arranged in
-preorder. Many internals in the package assume that this information is available,
+preorder (or topological ordering).
+Many internals in the package assume that this information is available,
 and so it is important that this be called immediately after reading in the network!
 
 ### 2\. Choose an evolutionary model
@@ -201,7 +205,7 @@ extract and display the preorder sequence of edges from `sched[1]`. In this exam
 ```jldoctest getting_started
 julia> sched = PGBP.spanningtrees_clusterlist(ct, net.nodes_changed);
 
-julia> DataFrame(parent=sched[1][1], child=sched[1][2]) # edges of spanning tree in preorder
+julia> DataFrame(parent=sched[1][1], child=sched[1][2]) # edges of tree 1 in preorder
 16×2 DataFrame
  Row │ parent                             child                             
      │ Symbol                             Symbol                            
@@ -287,7 +291,7 @@ julia> ll # log-likelihood for ML estimates
 
 julia> mod, _ = PGBP.calibrate_exact_cliquetree!( # exact computation
                ctb,
-               sched[1], # spanning tree
+               sched[1], # schedule the order in which edges (sepsets) are traversed
                net.nodes_changed,
                tbl_x,
                df.taxon,

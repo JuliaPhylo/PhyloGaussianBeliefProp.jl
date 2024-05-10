@@ -155,7 +155,7 @@ with larger clusters is less likely to be loopy than one with smaller clusters.
 ## LTRIP
 For [LTRIP](https://doi.org/10.1145/3132711.3132717), the user provides the set
 of clusters, which are assumed to be family-preserving (see above).
-1. For each node, the clusters that contain it are joined as a tree, prioritizing edges formed with clusters that intersect heavily with others. See [`LTRIP`](@ref) for details on the spanning tree algorithm applied.
+1. For each node, the clusters that contain it are joined as a tree, prioritizing edges formed with clusters that intersect heavily with others. See [`LTRIP`](@ref) for details.
 2. The trees for each node are layered on one another (the sepsets for an edge are merged) to produce the cluster graph.
 As an example, we use the clusters from join-graph structuring:
 
