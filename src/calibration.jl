@@ -253,6 +253,8 @@ to the ELBO for the log-likelihood of the data
 When `clustergraph` is a clique tree, the factored energy approximation is exactly
 equal to the ELBO and the log-likelihood.
 
+Cluster beliefs are regularized using [`regularizebeliefs_bycluster!`](@ref)
+(other options are likely to be available in future versions) before calibration.
 The calibration repeatedly loops through a minimal set of spanning trees (see
 [`spanningtrees_clusterlist`](@ref)) that covers all edges in the cluster
 graph, and does a postorder-preorder traversal for each tree. The loop runs till

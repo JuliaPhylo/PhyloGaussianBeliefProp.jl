@@ -88,6 +88,17 @@ similar modification to one or more associated edge beliefs. For example, if
 We provide several options for regularization below. A typical usage of these
 methods is after the initial assignment of factors.
 
+### By cluster
+[`regularizebeliefs_bycluster!`](@ref) performs regularization separately from
+message passing.
+
+The algorithm loops over each cluster. For each incident sepset, ``\epsilon`` is
+added to all the diagonal entries of its precision, and to the corresponding
+diagonal entries of the cluster's precision.
+
+Currently, [`calibrate_optimize_clustergraph!`](@ref) calls
+`regularizebeliefs_bycluster!` for each set of candidate parameter values, before calibration is run. Other options are likely to be available in future versions.
+
 ### Along node subtrees
 [`regularizebeliefs_bynodesubtree!`](@ref) performs regularization separately
 from message passing.
@@ -108,7 +119,7 @@ The algorithm loops over each cluster and tracks which messages have been sent:
 - Regularization proceeds by adding ``\epsilon`` to the diagonal entries of ``\mathcal{C}_i``'s precision that correspond to the nodes in ``\mathcal{S}_{i,j}``, and to all diagonal entries of ``\mathcal{S}_{i,j}``'s precision, if neighbor ``\mathcal{C}_j`` has not sent a message to ``\mathcal{C}_i``.
 - After being regularized, ``\mathcal{C}_i`` sends a message to each neighbor for which it has not already done so.
 
-The example below shows how both regularization methods can help to minimize
+The example below shows how regularization methods can help to minimize
 ill-defined messages. We use here a network from
 [Lipson et al. (2020, Extended Data Fig. 4)](https://doi.org/10.1038/s41586-020-1929-1)
 [lipson2020ancient](@cite), with degree-2 nodes suppressed and any resulting
