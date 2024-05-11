@@ -9,7 +9,6 @@ bib = CitationBibliography(joinpath(@__DIR__, "src", "refs.bib"))
 makedocs(;
     modules=[PhyloGaussianBeliefProp],
     authors="Cecile Ane <cecileane@users.noreply.github.com>, Benjamin Teo <bstkj@users.noreply.github.com>, and contributors",
-    repo="https://github.com/cecileane/PhyloGaussianBeliefProp.jl/blob/{commit}{path}#{line}",
     sitename="PhyloGaussianBeliefProp.jl",
     format=Documenter.HTML(;
         mathengine=Documenter.KaTeX(),
