@@ -39,6 +39,7 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/cecileane/PhyloGaussianBeliefProp.jl",
+    repo="github.com/cecileane/PhyloGaussianBeliefProp.jl.git",
+    push_preview=true,
     devbranch="main",
 )
