@@ -106,6 +106,9 @@ and [`hasdegenerate`](@ref) to check if `net` still has degenerate nodes.
 """
 function addtreenode_belowdegeneratehybrid!(net::HybridNetwork)
     restart = true
+    # find prefix for naming new nodes
+    m = match(r"(^\D+)\d+$", net.node[net.root].name)
+    prefix = (isnothing(m) ? "I" : m.captures[1])
     while restart
         for hyb in net.hybrid
             (isdegenerate(hyb) && ishybridsinglepositivechild(hyb)) || continue
@@ -115,6 +118,7 @@ function addtreenode_belowdegeneratehybrid!(net::HybridNetwork)
             _,newe = PN.breakedge!(che, net) # hyb --newe--> newv --che--> hybridchild
             newe.length = t
             che.length = 0.0 # the hybrid child may now be degenerate, so restart
+            preprocessnet!(net, prefix) # name new node, update net.nodes_changed
             break
         end
         restart=false

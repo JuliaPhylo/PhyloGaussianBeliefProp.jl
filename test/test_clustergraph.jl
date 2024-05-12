@@ -11,6 +11,16 @@ mateescu = "((((g:1)#H4:1)#H2:2.04,(d:1,(#H2:0.01::0.5,#H4:1::0.5)#H3:1)D:1,(#H3
     @test PhyloGaussianBeliefProp.triangulate_minfill!(g) ==
     [:A,:B,:H1,:C,:C2,:D,:I5,:I1,:I2,:I3,:I4]
     @test ne(g) == 13 # 1 extra fill edge
+
+    @test PGBP.parentinformation(net.node[1], net) == ([4.0], [1.0], [8])
+    @test PGBP.parentinformation(net.hybrid[1], net) == ([1.1,1.], [.9,.1], [8,6])
+
+    # hybrid ladder H2 -> H1; and H2 child of root
+    net6 = readTopology("(#H2:0::0.2,((C:1,((B:1)#H1:100::0.6)#H2:0::0.8),(#H1:0,(A1:0.1,A2:0.1):0.2):0.3):0.1,O:3);")
+    PGBP.preprocessnet!(net6, "i")
+    PGBP.addtreenode_belowdegeneratehybrid!(net6)
+    @test net6.node[13].name == "i6"
+    @test length(net6.nodes_changed) == 13
 end
 
 #=
