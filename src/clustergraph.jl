@@ -322,7 +322,7 @@ They assume, *with no check*, that `net` already has a preordering.
 
 S. Streicher and J. du Preez. Graph Coloring: Comparing Cluster Graphs to Factor
 Graphs. In *Proceedings of the ACM Multimedia 2017 Workshop on South African
-Academic Participation, pages 35-42, 2017.
+Academic Participation*, pages 35-42, 2017.
 doi: [10.1145/3132711.3132717](https://doi.org/10.1145/3132711.3132717).
 """
 struct LTRIP{T<:Integer} <: AbstractClusterGraphMethod
@@ -434,7 +434,7 @@ struct Cliquetree <: AbstractClusterGraphMethod end
 
 """
     clustergraph!(net, method)
-    clustergraph( net, method)
+    clustergraph(net, method)
 
 Cluster graph `U` for an input network `net` and a `method` of cluster graph
 construction. The following methods are supported:
@@ -826,7 +826,7 @@ and the following types:
 - vertex data: `Tuple{Vector{Symbol}, Vector{T}}`
   to hold information about the variables (nodes in phylogenetic network)
   in the cluster (vertex in cluster graph):
-  node names as symbols, and node preorder index
+  node names as symbols, and node preorder indices
 - edge data: `Vector{T}` to hold information about the sepset:
   preorder index of nodes in the sepset.
 
@@ -956,51 +956,51 @@ function nodesubtree_clusterlist(cgraph::MetaGraph, ns::Symbol)
     return spt
 end
 
-"""
-    minimal_valid_schedule(clustergraph, clusterswithevidence)
+# """
+#     minimal_valid_schedule(clustergraph, clusterswithevidence)
 
-Generate a minimal valid schedule of messages to be computed on a initialized
-Bethe cluster graph, so that any schedule of messages following is valid.
-Return the schedule as a tuple of four vectors: (`parent_labels`, `child_labels`,
-`parent_indices`, `child_indices`) as in [`spanningtree_clusterlist`](@ref).
-"""
-function minimal_valid_schedule(cgraph::MetaGraph, wevidence::Vector{Symbol})
-    !isempty(wevidence) || error("`wevidence` cannot be empty")
-    #= `received` tracks clusters that have received evidence (through messages
-    during initialization). Only clusters that have received evidence can
-    transmit this (such clusters get added to `cansend`) to neighbor clusters
-    through a message. =#
-    received = Set{Symbol}(wevidence)
-    cansend = copy(wevidence)
-    T = typeof(cgraph[cansend[1]][2][1])
-    childclust_j = T[] # child cluster indices
-    parentclust_j = T[] # parent cluster indices
-    childclust_lab = Symbol[] # child cluster labels
-    parentclust_lab = Symbol[] # parent cluster labels
-    while !isempty(cansend)
-        #= For each cluster in `cansend`, send a message to any neighbors that
-        have not received evidence (all such neighbors get added to `cansend`),
-        then remove it from `cansend`. Since the cluster graph represented by
-        `cgraph` is connected, all clusters will eventually be added to `cansend`
-        and processed in order. Hence, this generates a minimal sequence of
-        messages that can be computed, so that the updated cluster beliefs will
-        be non-degenerate wrt any messages they are allowed to compute (i.e.
-        any schedule of messages following is valid). =#
-        cl = popfirst!(cansend) # remove node to be processed
-        nb = neighbor_labels(cgraph, cl)
-        for cl2 in nb
-            if cl2 ∉ received
-                push!(childclust_j, code_for(cgraph, cl2))
-                push!(parentclust_j, code_for(cgraph, cl))
-                push!(childclust_lab, cl2)
-                push!(parentclust_lab, cl)
-                push!(received, cl2) # `cl2` can no longer receive messages
-                push!(cansend, cl2) # `cl2` can now send messages
-            end
-        end
-    end
-    return parentclust_lab, childclust_lab, parentclust_j, childclust_j
-end
+# Generate a minimal valid schedule of messages to be computed on a initialized
+# Bethe cluster graph, so that any schedule of messages following is valid.
+# Return the schedule as a tuple of four vectors: (`parent_labels`, `child_labels`,
+# `parent_indices`, `child_indices`) as in [`spanningtree_clusterlist`](@ref).
+# """
+# function minimal_valid_schedule(cgraph::MetaGraph, wevidence::Vector{Symbol})
+#     !isempty(wevidence) || error("`wevidence` cannot be empty")
+#     #= `received` tracks clusters that have received evidence (through messages
+#     during initialization). Only clusters that have received evidence can
+#     transmit this (such clusters get added to `cansend`) to neighbor clusters
+#     through a message. =#
+#     received = Set{Symbol}(wevidence)
+#     cansend = copy(wevidence)
+#     T = typeof(cgraph[cansend[1]][2][1])
+#     childclust_j = T[] # child cluster indices
+#     parentclust_j = T[] # parent cluster indices
+#     childclust_lab = Symbol[] # child cluster labels
+#     parentclust_lab = Symbol[] # parent cluster labels
+#     while !isempty(cansend)
+#         #= For each cluster in `cansend`, send a message to any neighbors that
+#         have not received evidence (all such neighbors get added to `cansend`),
+#         then remove it from `cansend`. Since the cluster graph represented by
+#         `cgraph` is connected, all clusters will eventually be added to `cansend`
+#         and processed in order. Hence, this generates a minimal sequence of
+#         messages that can be computed, so that the updated cluster beliefs will
+#         be non-degenerate wrt any messages they are allowed to compute (i.e.
+#         any schedule of messages following is valid). =#
+#         cl = popfirst!(cansend) # remove node to be processed
+#         nb = neighbor_labels(cgraph, cl)
+#         for cl2 in nb
+#             if cl2 ∉ received
+#                 push!(childclust_j, code_for(cgraph, cl2))
+#                 push!(parentclust_j, code_for(cgraph, cl))
+#                 push!(childclust_lab, cl2)
+#                 push!(parentclust_lab, cl)
+#                 push!(received, cl2) # `cl2` can no longer receive messages
+#                 push!(cansend, cl2) # `cl2` can now send messages
+#             end
+#         end
+#     end
+#     return parentclust_lab, childclust_lab, parentclust_j, childclust_j
+# end
 
 """
     default_rootcluster(clustergraph, nodevector_preordered)

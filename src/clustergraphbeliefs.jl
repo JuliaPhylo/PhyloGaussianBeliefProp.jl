@@ -8,11 +8,11 @@ sepset beliefs coming last. Fields:
 - `nclusters`: number of clusters
 - `cdict`: dictionary to get the index of a cluster belief from its node labels
 - `sdict`: dictionary to get the index of a sepset belief from the labels of
-   its two incident clusters.
+   its two incident clusters
 - `messageresidual`: dictionary to log information about sepset messages,
   which can be used to track calibration or help adaptive scheduling with
   residual BP. See [`MessageResidual`](@ref).
-  The keys of `messageresidual` are tuples of cluster labels, similarly to a
+  The keys of `messageresidual` are tuples of cluster labels, similar to a
   sepset's metadata. Each edge in the cluster graph has 2 messages corresponding
   to the 2 directions in which a message can be passed, with keys:
   `(label1, label2)` and `(label2, label1)`.
@@ -102,9 +102,7 @@ end
 """
     init_beliefs_reset_fromfactors!(beliefs::ClusterGraphBelief)
 
-Reset
-- cluster beliefs to existing factors
-- sepset beliefs to h=0, J=0, g=0
+Reset cluster beliefs to existing factors, and sepset beliefs to h=0, J=0, g=0
 
 This is not used so far, as changing model parameters requires a reset of both
 factors and beliefs, done by [`init_beliefs_assignfactors!`](@ref).

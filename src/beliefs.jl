@@ -340,8 +340,8 @@ end
 
 Vector of `nclusters` factors of type [`FamilyFactor`](@ref), whose canonical
 parameters and metadata are initialized to be a copy of those in `beliefs`.
-Assumption: the first `nclusters` beliefs are cluster beliefs, and the next
-beliefs (if any) are sepset beliefs. This is not checked.
+Assumption: `beliefs[1:nclusters]` are cluster beliefs, and
+`beliefs[nclusters+1:end]` (if any) are sepset beliefs. This is not checked.
 """
 function init_factors_allocate(beliefs::AbstractVector{B}, nclusters::Integer) where B<:Belief{T} where T
     factors = FamilyFactor{T}[]
@@ -397,8 +397,7 @@ end
 """
     init_beliefs_reset!(beliefs::Vector{<:Belief})
 
-Reset all beliefs (which may be cluster & sepset beliefs or factors, which are
-initial cluster beliefs) to h=0, J=0, g=0 (μ unchanged).
+Reset all beliefs (which can be cluster and/or sepset beliefs) to h=0, J=0, g=0 (μ unchanged).
 They can later be re-initialized for different model parameters and
 re-calibrated, without re-allocating memory.
 """
@@ -440,12 +439,12 @@ end
 
 Initialize cluster beliefs prior to belief propagation, by assigning
 each factor to one cluster. Sepset beliefs are reset to 0.
-There is one factor for each node `v` in the vector of nodes:
-the density of X_v conditional on its parent X_pa(v) if v is not the root,
-and prior density for X_root.
+There is one factor for each node v in the vector of nodes:
+the density of X\\_v conditional on its parent X\\_pa(v) if v is not the root,
+or the prior density for X_root.
 - for each leaf, the factor is reduced by absorbing the evidence for that leaf,
-  that is, the data found in the `columntable`, whose rows are supposed to
-  correspond to taxa in the same order in which they are listed in `taxa`.
+  that is, the data found in the `columntable`, whose rows should be ordered by
+  taxa as they appear in `taxa`.
 - for each leaf, missing trait values are removed from scope.
 - for each internal node, any trait not in scope (e.g. if all descendant leaves
   are missing a value for this trait) is marginalized out of the factor.
@@ -454,15 +453,14 @@ Assumptions:
 - In vector `nodevector_preordered`, nodes are assumed to be preordered.
   Typically, this vector is `net.nodes_changed` after the network is preordered.
 - Belief node labels correspond to the index of each node in `nodevector_preordered`.
-- In `beliefs`, cluster beliefs (those of type `bclustertype`) come first
-  and sepset beliefs (of type `bclustertype`) come last,
+- In `beliefs`, cluster beliefs come first and sepset beliefs come last,
   as when created by [`init_beliefs_allocate`](@ref)
 
 Output: vector `node2belief` such that, if `i` is the preorder index of a node
 in the network, `node2belief[i]` is the index of the belief that the node family
 was assigned to.
 
-Output: `beliefs` vector. Each belief & factor is modified in place.
+The `beliefs` vector is modified in place.
 """
 function init_beliefs_assignfactors!(
         beliefs::Vector{<:Belief},
@@ -577,7 +575,7 @@ abstract type AbstractResidual{T} end
     MessageResidual{T<:Real, P<:AbstractMatrix{T}, V<:AbstractVector{T}} <: AbstractResidual{T}
 
 Structure to store the most recent computation history of a message, in the
-form of the ratio: sent_message / current_sepset_belief, when a message is
+form of the ratio: sent\\_message / current\\_sepset\\_belief, when a message is
 sent from one cluster to another along a given sepset.
 At calibration, this ratio is 1. For Gaussian beliefs, this ratio is an
 exponential quadratic form, stored using its canonical parametrization,

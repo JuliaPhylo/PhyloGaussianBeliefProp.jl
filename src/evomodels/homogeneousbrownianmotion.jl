@@ -95,7 +95,6 @@ The full multivariate Brownian motion. It is homogeneous across the phylogeny.
 `R` is the variance rate (of matrix type `P1`),
 `μ` is the prior mean at the root (of vector type `V`) and
 `v` the prior variance at the root, 0 by default (of matrix type `P2`).
-```
 """
 struct MvFullBrownianMotion{T<:Real, P1<:AbstractMatrix{T}, V<:AbstractVector{T}, P2<:AbstractMatrix{T}} <: HomogeneousBrownianMotion{T}
     "variance rate matrix"

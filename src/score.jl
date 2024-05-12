@@ -6,7 +6,7 @@ stored as a `PDMat` object.
 Warning: PDMat is not a subtype of Cholesky.
 [PDMats.jl](https://github.com/JuliaStats/PDMats.jl) is efficient for
 structured matrices (e.g diagonal or sparse) and has efficient methods for
-linear algebra, e.g. `\`, `invquad`, `X_invA_Xt` etc.
+linear algebra, e.g. `\\`, `invquad`, `X_invA_Xt` etc.
 """
 function getcholesky(J::AbstractMatrix)
     return PDMat(J) # LA.cholesky(b.J)
@@ -96,7 +96,7 @@ function average_energy!(ref::Belief, Jₜ, hₜ, gₜ)
     (Jᵣ, μᵣ) = getcholesky_μ!(ref)
     average_energy(Jᵣ, μᵣ, Jₜ, hₜ, gₜ)
 end
-@doc (@doc average_energy) average_energy!
+@doc (@doc average_energy!) average_energy
 function average_energy(Jᵣ::Union{LA.Cholesky,PDMat}, μᵣ, Jₜ, hₜ, gₜ)
     isempty(Jₜ) && return -gₜ # dot(x,A,x) fails on empty x & A
     (LA.tr(Jᵣ \ Jₜ) + LA.dot(μᵣ, Jₜ, μᵣ)) / 2 - LA.dot(hₜ, μᵣ) - gₜ

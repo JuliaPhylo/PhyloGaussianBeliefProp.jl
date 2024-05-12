@@ -131,10 +131,10 @@ end
 Under the most general linear Gaussian model, X₀ given X₁ is Gaussian with
 conditional mean q X₁ + ω and conditional variance Σ independent of X₁.
 `branch_actualization`, `branch_displacement` and `branch_variance`
-return, respectivelly, q, ω and Σ.
+return, respectively, q, ω and Σ.
 `branch_precision` and `branch_variance` should return a matrix of symmetric type.
 `branch_variance` defaults to the inverse of `branch_precision`.
-`branch_logdet` defaults to g = -0.5*log(|2πΣ|), the log normalizing constant of the
+`branch_logdet` defaults to g = -0.5\\*log(|2πΣ|), the log normalizing constant of the
 Gaussian density in the traditional form.
 `branch_transition_*` return or modify in place the corresponding
 transition matrices.
@@ -256,7 +256,7 @@ Under the most general weighted average Gaussian model, X₀ given its parents X
 is Gaussian with conditional mean the weighted average of the parents
 plus a displacement vector ω and conditional variance Σ independent of X₁, X₂, ... .
 The weights are given by the inheritance probabilities contained in the `PN.Edge` objects.
-`hybridnode_displacement` and `hybridnode_variance` return, respectivelly,
+`hybridnode_displacement` and `hybridnode_variance` return, respectively,
 ω and Σ.
 
 `hybridnode_variance` and `hybridnode_precision` should return a matrix of symmetric type.
@@ -287,7 +287,7 @@ states of the parent nodes.
 
 It is assumed that the conditional mean is a simple weighted average:
 
-``E[X_0 | X_1, X_2, ...] = \\sum_k \\gamma_k X_k = q vec(X_1,X_2,...) + \\omega``
+``E[X_0 | X_1, X_2, ...] = \\sum_k \\gamma_k X_k = q \\mathrm{vec}(X_1,X_2,...) + \\omega``
 
 where q has one block for each parent, and each block is diagonal scalar:
 ``\\gamma_k I_p``.

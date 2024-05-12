@@ -17,7 +17,7 @@ are distributed among the clusters, then the topology of the cluster graph
 implies the possible computational pathways in which these factors may be
 sequentially "combined" by product or marginalization.
 
-For example, a cluster's belief is the cumulative result of computations that
+For example, a cluster's belief is the cumulative result of computations that might
 follow some walk along the cluster graph, ending at that cluster. This is then
 interpreted as an estimate of its conditional distribution given the data.
 
