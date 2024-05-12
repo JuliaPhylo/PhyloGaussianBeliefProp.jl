@@ -1,4 +1,4 @@
-name: documentation
+name: Documenter
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 
 jobs:
   Documenter:
-    name: Documentation
+    name: documentation
     permissions:
       contents: write
       pull-requests: read
@@ -20,9 +20,6 @@ jobs:
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1'
-      - uses: julia-actions/cache@v2
-        with:
-            cache-compiled: "true"
       - uses: julia-actions/julia-buildpkg@latest
       - uses: julia-actions/julia-docdeploy@latest
         env:
