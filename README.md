@@ -8,6 +8,11 @@
 [![ColPrac: Contributor's Guide on Collaborative Practices for Community Packages](https://img.shields.io/badge/ColPrac-Contributor's%20Guide-blueviolet)](https://github.com/SciML/ColPrac)
 [![PkgEval](https://JuliaCI.github.io/NanosoldierReports/pkgeval_badges/P/PhyloGaussianBeliefProp.svg)](https://JuliaCI.github.io/NanosoldierReports/pkgeval_badges/report.html)
 
+[Julia](http://julialang.org) package for the analysis of Gaussian models on
+phylogenetic networks and admixture graphs
+using belief propagation (aka message passing).
+It depends on utilities from [PhyloNetworks](https://github.com/crsl4/PhyloNetworks.jl).
+
 ## Citing
 
 See [`CITATION.bib`](CITATION.bib) for the relevant reference(s).

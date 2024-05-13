@@ -1,19 +1,38 @@
 name = "PhyloGaussianBeliefProp"
 uuid = "e3084505-90a0-4799-8167-4168d9f39f7c"
 authors = ["Cecile Ane <cecileane@users.noreply.github.com>", "Benjamin Teo <bstkj@users.noreply.github.com>", "and contributors"]
-version = "0.1.0"
+version = "0.0.1"
 
 [deps]
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 Graphs = "86223c79-3864-5bf0-83f7-82e725a168b6"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MetaGraphsNext = "fa8bd995-216d-47f1-8a91-f3b68fbeb377"
+Optim = "429524aa-4258-5aef-a3af-852621145aeb"
+PDMats = "90014a1f-27ba-587c-ab20-58faa44d9150"
 PhyloNetworks = "33ad39ac-ed31-50eb-9b15-43d0656eaa72"
+PreallocationTools = "d236fae5-4411-538c-8e31-a6e3d9e00b46"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+StatsFuns = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
+Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 
 [compat]
-julia = "1.1"
+Distributions = "0.25"
+Graphs = "1"
+MetaGraphsNext = "0.7"
+Optim = "1"
+PDMats = "0.11"
+PhyloNetworks = "0.16"
+StaticArrays = "1"
+StatsFuns = "1"
+Tables = "1"
+julia = "1.4" # for 3-argument dot
 
 [extras]
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["DataFrames", "Test"]
