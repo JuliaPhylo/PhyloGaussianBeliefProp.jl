@@ -293,7 +293,7 @@ where q has one block for each parent, and each block is diagonal scalar:
 ``\\gamma_k I_p``.
 More complex models could consider adding a shift ω to the conditional mean.
 
-If all the parent hybrid edges edges have length 0, then it is assumed that
+If all the parent hybrid edges have length 0, then it is assumed that
 the model gives a degenerate distribution, with 0 conditional variance.
 More complex models could consider adding a hybrid conditional variance Σ.
 
