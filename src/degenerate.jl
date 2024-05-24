@@ -29,8 +29,8 @@ is only updated as needed.
 `hbuf`, `Qbuf`, `Λbuf`, `gbuf`, `kbuf`, `Rbuf`, `cbuf` are matrices/vectors of
 the same dimensions as `h`, `Q`, `Λ`, `g`, `k`, `R`, `c` and are meant to act as
 buffers to reduce allocations during belief-update operations such as scope
-matching (for incoming messages) and division (of an outgoing message by a sepset
-belief).
+extension (for incoming messages) and division (of an outgoing message by a
+sepset belief).
 """
 struct generalizedBelief{T<:Real,Vlabel<:AbstractVector,P<:AbstractMatrix{T},V<:AbstractVector{T},M} <: AbstractBelief{T}
     "Integer label for nodes in the cluster"
@@ -54,8 +54,8 @@ struct generalizedBelief{T<:Real,Vlabel<:AbstractVector,P<:AbstractMatrix{T},V<:
     g::MVector{1,T}
     gbuf::MVector{1,T}
     "degrees of degeneracy"
-    k::MVector{1,T}
-    kbuf::MVector{1,T}
+    k::MVector{1,Int64}
+    kbuf::MVector{1,Int64}
     "constraint matrix: linear dependencies among inscope variables"
     R::P
     Rbuf::P
@@ -95,14 +95,14 @@ are square with the same dimensions as `b.J`, and `Λ` is positive semidefinite.
 """
 function generalizedBelief(b::Belief{T,Vlabel,P,V,M}) where {T,Vlabel,P,V,M}
     # J = SArray{Tuple{size(b.J)...}}(b.J) # `eigen` cannot be called on
-    Λ, Q = LA.eigen(b.J)
+    Q, Λ = LA.svd(b.J)
     m = size(b.J,1) # dimension
-    k = MVector{1,T}(0) # 0 degrees of degeneracy
+    k = MVector{1,Int64}(0) # 0 degrees of degeneracy
     R = MMatrix{m,m,T}(undef)
     c = MVector{m,T}(undef)
     generalizedBelief{T,Vlabel,P,V,M}(
         b.nodelabel,b.ntraits,b.inscope,
-        b.μ,b.h,similar(b.h),Q,similar(Q),Λ,similar(Λ),b.g,similar(b.g),
+        b.μ,transpose(Q)*b.h,similar(transpose(Q)*b.h),Q,similar(Q),Λ,similar(Λ),b.g,similar(b.g),
         k,similar(k),R,similar(R),c,similar(c),
         b.type,b.metadata)
 end
@@ -117,8 +117,11 @@ Constructor from a standard belief `b` and a constraint matrix `R`.
 """
 function generalizedBelief(b::Belief{T,Vlabel,P,V,M}, R::AbstractMatrix{T}) where {T,Vlabel,P,V,M}
     gb = generalizedBelief(b)
-    k = size(R)[2] # degrees of degeneracy
+    m, k = size(R)
     gb.R[:,1:k] .= R # R should have the same no. of rows as gb.R
+    gb.Q[:,1:(m-k)] .= LA.nullspace(transpose(R))
+    gb.Λ[1:(m-k)] .= LA.diag(transpose(view(gb.Q,:,1:(m-k)))*b.J*view(gb.Q,:,1:(m-k)))
+    gb.h[1:(m-k)] .= transpose(view(gb.Q,:,1:(m-k)))*b.h
     gb.k[1] = k
     gb.c[:,1:k] .= 0
     gb
@@ -147,16 +150,20 @@ function extend!(cluster_to::generalizedBelief, sepset::generalizedBelief)
     upind) and P*[QΛQᵀ 0; 0 0]*Pᵀ = (P*[Q 0; 0 I])*[Λ 0; 0 0]*([Q 0; 0 I]ᵀ*Pᵀ) =#
     cluster_to.Qbuf .= 0.0 # reset buffer
     cluster_to.Qbuf[LA.diagind(cluster_to.Qbuf)] .= 1.0 # 1s along the diagonal
-    cluster_to.Qbuf[upind,1:(m2-k2)] .= view(sepset.Qbuf,:,1:(m2-k2)) # store Q in buffer
+    cluster_to.Qbuf[1:length(upind),1:(m2-k2)] .= view(sepset.Qbuf,:,1:(m2-k2)) # store Q in buffer
+    m1 = size(cluster_to.Q)[1]
+    perm = [upind;setdiff(1:m1,upind)]
+    cluster_to.Qbuf[perm,:] .= view(cluster_to.Qbuf,:,:) # permute
     # copy sepset.Λbuf[1:(m2-k2)] to cluster_to.Λbuf
     cluster_to.Λbuf .= 0.0
     cluster_to.Λbuf[1:(m2-k2)] .= sepset.Λbuf[1:(m2-k2)]
     # extend sepset.Rbuf[:,1:k2] in cluster_to.Rbuf
     cluster_to.Rbuf[:,1:k2] .= 0.0
-    cluster_to.Rbuf[upind,1:k2] .= view(sepset.Rbuf,:,1:k2)
+    cluster_to.Rbuf[1:length(upind),1:k2] .= view(sepset.Rbuf,:,1:k2)
+    cluster_to.Rbuf[perm,:] .= view(cluster_to.Rbuf,:,:) # permute
     # extend sepset.hbuf[1:(m2-k2)] in cluster_to.hbuf
     cluster_to.hbuf .= 0.0
-    cluster_to.hbuf[upind] .= view(sepset.hbuf,1:(m2-k2))
+    cluster_to.hbuf[1:(m2-k2)] .= view(sepset.hbuf,1:(m2-k2))
     # copy sepset.cbuf[1:k2] to cluster_to.cbuf
     cluster_to.cbuf[1:k2] .= view(sepset.cbuf,1:k2)
     # copy sepset.gbuf[1] to cluster_to.gbuf
@@ -191,16 +198,17 @@ function mult!(cluster_to::generalizedBelief, sepset::generalizedBelief)
     # precisions
     m1 = size(cluster_to.Q)[2]
     Q1 = cluster_to.Q[:,1:(m1-k1)]
-    Λ1 = Diagonal(cluster_to.Λ[1:(m1-k1)])
+    Λ1 = LA.Diagonal(cluster_to.Λ[1:(m1-k1)])
     m2 = size(cluster_to.Qbuf)[2] # extended sepset
     Q2 = cluster_to.Qbuf[:,1:(m2-k2)] # Qbuf
-    Λ2 = Diagonal(cluster_to.Λbuf[1:(m2-k2)]) # Λbuf
+    Λ2 = LA.Diagonal(cluster_to.Λbuf[1:(m2-k2)]) # Λbuf
     # potentials
     h = cluster_to.h
     h1 = h[1:(m1-k1)]
     h2 = cluster_to.hbuf[1:(m2-k2)] # hbuf
     # project onto R2 onto colsp(Q1), then orthonormalize by qr
-    V = qr(Q1 * transpose(Q1) * R2).Q * I
+    V = LA.qr(Q1 * transpose(Q1) * R2)
+    V = V.Q[:,findall(LA.diag(V.R) .!== 0.0)]
     Δk1 = size(V)[2] # increase in degrees of degeneracy
     b = (transpose(R2)*V) \ (c2 - transpose(R2)*R1*c1)
     # update c1
@@ -216,16 +224,17 @@ function mult!(cluster_to::generalizedBelief, sepset::generalizedBelief)
     Q2tR1c1 = transpose(Q2)*view(R,:,1:k1)*view(c,1:k1)
     Λ2Q2tR1c1 = Λ2*Q2tR1c1
     # update Λ1
-    U = LA.nullspace(view(R,:,1:k1))
-    Λ, Z = LA.eigen(transpose(U)*(Q1*Λ1*transpose(Q1) + Q2*Λ2*transpose(Q2))*U)
+    U = LA.nullspace(transpose(view(R,:,1:k1)))
+    Z, Λ, _ = LA.svd(transpose(U)*(Q1*Λ1*transpose(Q1) + Q2*Λ2*transpose(Q2))*U)
     # update Q1
-    cluster_to.Q[1:(m1-k1)] .= U*Z
-    cluster_to.Λ[1:(m1-k1)] .= LA.diag(Λ)
+    cluster_to.Q[:,1:(m1-k1)] .= U*Z
+    cluster_to.Λ[1:(m1-k1)] .= Λ
     # update h1
-    h[1:(m1-k1)] .= view(cluster_to.Q,:,1:(m1-k1))*(Q1*(h1-Λ1Q1tVb) + Q2*(h2-Λ2Q2tR1c1))
+    h[1:(m1-k1)] .= transpose(view(cluster_to.Q,:,1:(m1-k1)))*(Q1*(h1-Λ1Q1tVb) +
+        Q2*(h2-Λ2Q2tR1c1))
     # update g1
-    cluster_to.g[1] += (@. cluster_to.gbuf[1] + transpose(h1-0.5*Λ1Q1tVb)*Q1tVb +
-        transpose(h2-0.5*Λ2Q2tR1c1)*Q2tR1c1 - logabs(transpose(R2)*V))[1]
+    cluster_to.g[1] += (cluster_to.gbuf[1] + transpose(h1-0.5*Λ1Q1tVb)*Q1tVb +
+        transpose(h2-0.5*Λ2Q2tR1c1)*Q2tR1c1 - LA.logdet(transpose(R2)*V))[1]
     return
 end
 
@@ -253,11 +262,12 @@ function div!(sepset::generalizedBelief, cluster_from::generalizedBelief)
     c1 = cluster_from.cbuf[1:k1]
     # precisions
     Q1 = cluster_from.Qbuf[1:m,1:(m-k1)]
-    Λ1 = Diagonal(cluster_from.Λbuf[1:(m-k1)])
+    Λ1 = LA.Diagonal(cluster_from.Λbuf[1:(m-k1)])
     Q2 = sepset.Q[:,1:(m-k2)]
-    Λ2 = Diagonal(sepset.Λ[1:(m-k2)])
+    Λ2 = LA.Diagonal(sepset.Λ[1:(m-k2)])
     # potentials
     h1 = cluster_from.hbuf[1:(m-k1)]
+    h2 = sepset.h[1:(m-k2)]
 
     ## compute quotient
     k = k1-k2 # degrees of degeneracy for quotient
@@ -269,9 +279,9 @@ function div!(sepset::generalizedBelief, cluster_from::generalizedBelief)
     # save quotient.c to sepset.cbuf[1:k]
     sepset.cbuf[1:k] = transpose(view(sepset.Rbuf,:,1:k))*R1*c1
     # save quotient.Λ to sepset.Λbuf[1:(m-k1)]
-    Λ, Z = LA.eigen(Λ1-transpose(Q1)*Q2*Λ2*transpose(Q2)*Q1)
+    Z, Λ, _ = LA.svd(Λ1-transpose(Q1)*Q2*Λ2*transpose(Q2)*Q1)
     sepset.Λbuf[:] .= 0.0 # reset buffer
-    sepset.Λbuf[1:(m-k1)] .= LA.diag(Λ)
+    sepset.Λbuf[1:(m-k1)] .= Λ
     # save quotient.Q to sepset.Qbuf[:,1:(m-k1+k2)]
     sepset.Qbuf[:,1:(m-k1)] .= Q1*Z
     sepset.Qbuf[:,(m-k1+1):(m+k)] .= R2
@@ -291,13 +301,59 @@ function div!(sepset::generalizedBelief, cluster_from::generalizedBelief)
     sepset.Q[:,1:(m-k1)] .= Q1
     sepset.Λ[1:(m-k1)] .= LA.diag(Λ1)
     sepset.h[1:(m-k1)] .= h1
-    sepset.g[1] .= cluster_from.gbuf[1]
+    sepset.g[1] = cluster_from.gbuf[1]
     return
 end
 
 """
-Marginalize a generalized belief.
+    marg!(cluster_from, keep_index)
+
+Marginalize a generalized belief (`cluster_from`) by integrating out all
+variables at indices `keep_index`.
+
+Note that:
+- the resulting marginal / outgoing message is saved in the buffer of
+`cluster_from`
 """
-function marg(cluster::generalizedBelief, keepind)
+function marg!(cluster_from::generalizedBelief, keepind)
+    m = length(keepind)
+    m1 = size(cluster_from.Q)[1]
+    k1 = cluster_from.k[1]
+    Q1 = cluster_from.Q[keepind,1:(m1-k1)]
+    R1 = cluster_from.R[keepind,1:k1]
+    Λ1 = LA.Diagonal(view(cluster_from.Λ,1:(m1-k1)))
+    U = LA.qr(Q1)
+    k = sum(LA.diag(U.R) .== 0.0) # degrees of degeneracy
+    cluster_from.kbuf[1] = k # update kbuf
+    cluster_from.Rbuf[1:m,1:k] .= view(U.Q,:,findall(LA.diag(U.R) .== 0.0)) # update Rbuf
+    cluster_from.cbuf[1:k] .= (transpose(view(cluster_from.Rbuf,1:m,1:k))*R1*
+        view(cluster_from.c,1:k1)) # update cbuf
+    U = U.Q[:,findall(LA.diag(U.R) .!== 0.0)] # columnspace(Q_x)
+    V = LA.nullspace(U) # nullspace(Q_x)
+    W = transpose(R1)*Q1
+    if !isempty(W)
+        W = LA.qr(W)
+        W = W.Q[:,findall(LA.diag(W.R) .!== 0.0)] # columnspace(transpose(R_x)*Q_x)
+    end
+    Q2 = cluster_from.Q[setdiff(1:m1,keepind),1:(m1-k1)]
+    R2 = cluster_from.R[setdiff(1:m1,keepind),1:k1]
+    F = transpose(W*((R2*W)\Q2))
+    G = (transpose(Q1)-F*transpose(R1))*U
+    S = V * ((transpose(V)*Λ1*V) \ transpose(V))
+    Z, Λ, _ = LA.svd(transpose(G)*(Λ1-Λ1*S*Λ1)*G)
+    cluster_from.Λbuf[1:(m-k)] .= Λ
+    cluster_from.Qbuf[1:m,1:(m-k)] .= U*Z
+    Fc1 = F*cluster_from.c[1:k1]
+    Λ1Fc1 = Λ1*Fc1
+    h1_Λ1Fc1 = cluster_from.h[1:(m1-k1)] - Λ1Fc1
+    cluster_from.hbuf[1:(m-k)] .= transpose(Z)*transpose(G)*(LA.I-Λ1*S)*(h1_Λ1Fc1)
+    cluster_from.gbuf[1] = (@. cluster_from.g[1] +
+        transpose(h1_Λ1Fc1+0.5*Λ1Fc1)*Fc1 + 0.5*transpose(h1_Λ1Fc1)*S*(h1_Λ1Fc1))[1]
+    if !isempty(transpose(V)*Λ1*V)
+        cluster_from.gbuf[1] -= 0.5*LA.logdet((1/2π)*transpose(V)*Λ1*V)[1]
+    end
+    if !isempty(R2*W)
+        cluster_from.gbuf[1] -= 0.5*LA.logdet(transpose(R2*W)*R2*W)[1]
+    end
     return
 end
