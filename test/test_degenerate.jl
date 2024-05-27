@@ -55,6 +55,9 @@ gb_H1x4x6.Λ[1:2] .= diag(transpose(Q)*b_H1x4x6.J*Q)
 b_x4x6 = b[PGBP.sepsetindex(:H1x4x6, :x4x6x0, ctb)] # sepset (:H1x4x6, :x4x6x0)
 gb_x4x6 = PGBP.generalizedBelief(b_x4x6)
 
+b_x4x6x0 = b[PGBP.clusterindex(:x4x6x0, ctb)] # root cluster :x4x6x0
+gb_x4x6x0 = PGBP.generalizedBelief(b_x4x6x0)
+
 ##############################################################
 # trivial marginalization (no nodes need to be integrated out)
 ##############################################################
@@ -118,3 +121,16 @@ Q = gb_H1x4x6.Qbuf[1:(m-k),1:(m-k)]
 h = gb_H1x4x6.hbuf[1:(m-k)]
 @test Q*h ≈ [1.5, 1.5]
 @test gb_H1x4x6.gbuf[1] == -4.2568155996140185
+
+#####################################
+# normalization constant / likelihood
+#####################################
+# fully integrate belief of cluster :x4x6x0
+PGBP.div!(gb_x4x6, gb_H1x4x6)
+PGBP.mult!(gb_x4x6x0, gb_x4x6)
+(μ,ll) = PGBP.integratebelief!(gb_x4x6x0)
+# K = [9 1; 1 9]/4; h = [3,3]/2; inv(K)*h # [0.6, 0.6]
+@test μ ≈ [0.6, 0.6]
+# sumg = 3*(-0.5+log(1/sqrt(2π))) + 2*log(1/sqrt(2π)) # -6.094692666023364
+# sumg - (logdet(K/2π) - transpose(h)*(K \ h))/2 # -4.161534555831068
+@test ll == -4.161534555831068

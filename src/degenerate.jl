@@ -274,7 +274,7 @@ function div!(sepset::generalizedBelief, cluster_from::generalizedBelief)
     # save quotient.k to sepset.kbuf[1]
     sepset.kbuf[1] = k
     # save quotient.R to sepset.Rbuf[:,1:k]
-    cluster_from.Q[:,(m-k1+1):(m+k)] .= R2 # use cluster_from.Q as a buffer for R2
+    cluster_from.Q[1:m,(m-k1+1):(m+k)] .= R2 # use cluster_from.Q as a buffer for R2
     sepset.Rbuf[:,1:k] .= LA.nullspace(view(cluster_from.Q,:,1:(m+k)))
     # save quotient.c to sepset.cbuf[1:k]
     sepset.cbuf[1:k] = transpose(view(sepset.Rbuf,:,1:k))*R1*c1
@@ -356,4 +356,24 @@ function marg!(cluster_from::generalizedBelief, keepind)
         cluster_from.gbuf[1] -= 0.5*LA.logdet(transpose(R2*W)*R2*W)[1]
     end
     return
+end
+
+"""
+    integratebelief!(b::generalizedBelief)
+
+Return `(μ, g)`, where `μ` is the conditional mean of inscope nodes in `b`, and
+`g` is the normalization constant from integrating out all inscope nodes in `b`.
+
+Note that:
+- `b` does not necessarily have k=0 degrees of degeneracy
+- `μ` is the mean estimate for the inscope nodes x if k=0, and for QQᵀx if k>0
+- it is assumed that QΛQᵀ is positive-definite (i.e. Λ has no 0-entries)
+"""
+function integratebelief!(b::generalizedBelief)
+    m = size(b.Q)[1]
+    k = b.k[1]
+    μ = view(b.Q,:,1:(m-k))*(view(b.h,1:(m-k)) ./ view(b.Λ,1:m-k))
+    messageg = b.g[1] + (m*log(2π) - log(prod(view(b.Λ,1:(m-k)))) +
+        sum(view(b.h,1:(m-k)) .^2 ./ view(b.Λ,1:(m-k))))/2
+    return (μ, messageg)
 end
