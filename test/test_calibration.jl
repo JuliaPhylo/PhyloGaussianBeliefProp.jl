@@ -22,12 +22,10 @@ end
     > KLdiv(c(1,0),c(0,1),matrix(c(2,1,1,2),nrow=2),matrix(c(1,0,0,1),nrow=2))
     [1] 1.215973
     """
-    # allocate memory for ::MessageResidual object (resid distr)
     res = PGBP.MessageResidual(zeros(2,2), zeros(2,))
     res.ΔJ .= ones(2,2)/3
     res.Δh .= [-2,4]/3
-    # allocate memory for ::Belief object (ref distr)
-    sepset = PGBP.Belief([1, 2], 1, BitArray([1 1]), PGBP.bsepsettype, (:A,:B))
+    sepset = PGBP.CanonicalBelief([1, 2], 1, BitArray([1 1]), PGBP.bsepsettype, (:A,:B))
     sepset.J .= [1 0; 0 1]
     sepset.h .= [0, 1]
     PGBP.residual_kldiv!(res, sepset)

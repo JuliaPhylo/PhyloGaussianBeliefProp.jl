@@ -26,7 +26,7 @@ net.edge[4].length=0.6 # back to original
 @test PGBP.unscope(net.hybrid[1])
 
 nm = trues(3,2); nm[2,1]=false
-b1 = PGBP.Belief(Int8[5,6], 3, nm, PGBP.bclustertype, 1)
+b1 = PGBP.CanonicalBelief(Int8[5,6], 3, nm, PGBP.bclustertype, 1)
 @test PGBP.nodelabels(b1) == [5,6]
 @test size(b1.inscope) == (3,2)
 @test length(b1.μ) == 5

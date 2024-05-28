@@ -334,7 +334,7 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
     prenodes::Vector{PN.Node},
     tbl::Tables.ColumnTable, taxa::AbstractVector,
     evomodelfun # constructor function
-) where B<:Belief{T} where T
+) where B<:AbstractBelief{T} where T
     evomodelfun ∈ (UnivariateBrownianMotion, MvFullBrownianMotion) ||
         error("Exact optimization is only implemented for the univariate or full Brownian Motion.")
     p = length(tbl)

@@ -1,5 +1,5 @@
 """
-    ClusterGraphBelief{B<:Belief, F<:FamilyFactor, M<:MessageResidual}
+    ClusterGraphBelief{B<:AbstractBelief, F<:FamilyFactor, M<:MessageResidual}
 
 Structure to hold a vector of beliefs, with cluster beliefs coming first and
 sepset beliefs coming last. Fields:
@@ -23,7 +23,7 @@ Assumptions:
 - For a cluster belief, the cluster's nodes are stored in the belief's `metadata`.
 - For a sepset belief, its incident clusters' nodes are in the belief's metadata.
 """
-struct ClusterGraphBelief{B<:Belief, F<:FamilyFactor, M<:MessageResidual}
+struct ClusterGraphBelief{B<:AbstractBelief, F<:FamilyFactor, M<:MessageResidual}
     "vector of beliefs, cluster beliefs first and sepset beliefs last"
     belief::Vector{B}
     """vector of initial factors from the graphical model, one per cluster.
@@ -78,7 +78,7 @@ e.g. for factors (with data copied from cluster beliefs) and message residuals
 To construct the input vector of beliefs, see [`init_beliefs_allocate`](@ref)
 and [`init_beliefs_assignfactors!`](@ref)
 """
-function ClusterGraphBelief(beliefs::Vector{B}) where B<:Belief
+function ClusterGraphBelief(beliefs::Vector{B}) where B<:AbstractBelief
     i = findfirst(b -> b.type == bsepsettype, beliefs)
     nc = (isnothing(i) ? length(beliefs) : i - 1)
     all(beliefs[i].type == bclustertype for i in 1:nc) ||
@@ -222,7 +222,7 @@ function regularizebeliefs_bycluster!(beliefs::ClusterGraphBelief, cgraph::MetaG
     end
 end
 function regularizebeliefs_bycluster!(beliefs::ClusterGraphBelief{B},
-        cgraph::MetaGraph, clusterlab) where B<:Belief{T} where T
+        cgraph::MetaGraph, clusterlab) where B<:AbstractBelief{T} where T
     b = beliefs.belief
     cluster_to = b[clusterindex(clusterlab, beliefs)] # receiving-cluster
     ϵ = max(eps(T), maximum(abs, cluster_to.J)) # regularization constant
@@ -289,7 +289,7 @@ function regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief, cgraph::M
     end
 end
 function regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief{B},
-        cgraph::MetaGraph, node_symbol, node_ind) where B<:Belief{T} where T
+        cgraph::MetaGraph, node_symbol, node_ind) where B<:AbstractBelief{T} where T
     b = beliefs.belief
     sg, _ = nodesubtree(cgraph, node_symbol, node_ind)
     nv(sg) <= 1 && return nothing

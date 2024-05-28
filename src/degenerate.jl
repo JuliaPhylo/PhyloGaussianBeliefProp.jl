@@ -11,7 +11,7 @@ orthogonal (i.e. QᵀR = 0).
 Q is m x (m-k) and R is m x k, where 0 ≤ k ≤ m is the degrees of degeneracy.
 h and c are respectively m x 1 and k x 1 vectors.
 
-When k=0, a generalized belief reduces to the standard [`Belief`](@ref) (i.e. an
+When k=0, a generalized belief reduces to the standard [`CanonicalBelief`](@ref) (i.e. an
 exponential quadratic form) with canonical parameters (J₁=QΛQᵀ, h₁=Qh, g₁=g).
 
 Note that:
@@ -36,16 +36,19 @@ struct GeneralizedBelief{
     T<:Real,
     Vlabel<:AbstractVector,
     P<:AbstractMatrix{T},
-    V<:AbstractVector{T},M
+    V<:AbstractVector{T},
+    M,
 } <: AbstractBelief{T}
     "Integer label for nodes in the cluster"
-    nodelabel::Vlabel # StaticVector{N,Tlabel}
+    nodelabel::Vlabel
     "Total number of traits at each node"
     ntraits::Int
-    "Matrix inscope[i,j] is `false` if trait `i` at node `j` is / will be
+    """
+    Matrix inscope[i,j] is `false` if trait `i` at node `j` is / will be
     removed from scope, to avoid issues from 0 precision or infinite variance; or
     when there is no data for trait `i` below node `j` (in which case tracking
-    this variable is only good for prediction, not for learning parameters)."
+    this variable is only good for prediction, not for learning parameters).
+    """
     inscope::BitArray
     μ::V
     h::V
@@ -68,32 +71,27 @@ struct GeneralizedBelief{
     c::V
     cbuf::V
     type::BeliefType
-    "metadata, e.g. index in cluster graph, of type (M) `Symbol` for clusters or
-    Tuple{Symbol, Symbol} for edges"
+    """metadata, e.g. index in cluster graph, of type (M) `Symbol` for clusters or
+    Tuple{Symbol, Symbol} for edges"""
     metadata::M
 end
 
-# todo: violates DRY! Remove later. Use traits instead.
+showname(::GeneralizedBelief) = "generalized belief"
 function Base.show(io::IO, b::GeneralizedBelief)
-    disp = "generalized belief for " * (b.type == bclustertype ? "Cluster" : "SepSet") * " $(b.metadata),"
-    disp *= " $(ntraits(b)) traits × $(length(nodelabels(b))) nodes, dimension $(dimension(b)).\n"
-    disp *= "Node labels: "
-    print(io, disp)
-    print(io, nodelabels(b))
-    print(io, "\ntrait × node matrix of non-degenerate beliefs:\n")
-    show(io, inscope(b))
+    show_name_scope(io, b)
+    # todo: show major fields of b
     # print(io, "\nexponential quadratic belief, parametrized by\nμ: $(b.μ)\nh: $(b.h)\nJ: $(b.J)\ng: $(b.g[1])\n")
 end
 
 """
-    GeneralizedBelief(b::Belief)
+    GeneralizedBelief(b::CanonicalBelief)
 
-Constructor from a standard belief `b`.
+Constructor from a canonical belief `b`.
 
-Precision `b.J` is eigendecomposed into `Q*Λ*transpose(Q)`, where `Q` and `Λ`
+Precision `b.J` is eigendecomposed into `Q Λ transpose(Q)`, where `Q` and `Λ`
 are square with the same dimensions as `b.J`, and `Λ` is positive semidefinite.
 """
-function GeneralizedBelief(b::Belief{T,Vlabel,P,V,M}) where {T,Vlabel,P,V,M}
+function GeneralizedBelief(b::CanonicalBelief{T,Vlabel,P,V,M}) where {T,Vlabel,P,V,M}
     # J = SArray{Tuple{size(b.J)...}}(b.J) # `eigen` cannot be called on
     Q, Λ = LA.svd(b.J)
     m = size(b.J,1) # dimension
@@ -108,14 +106,14 @@ function GeneralizedBelief(b::Belief{T,Vlabel,P,V,M}) where {T,Vlabel,P,V,M}
 end
 
 """
-    GeneralizedBelief(b::Belief, R::AbstractMatrix)
+    GeneralizedBelief(b::CanonicalBelief, R::AbstractMatrix)
 
 Constructor from a standard belief `b` and a constraint matrix `R`.
 
 `R` is assumed to have the same number of rows as `b.R`, and all entries of
 `b.c[1:size(R)[2]]` are assumed to be 0.
 """
-function GeneralizedBelief(b::Belief{T,Vlabel,P,V,M}, R::AbstractMatrix{T}) where {T,Vlabel,P,V,M}
+function GeneralizedBelief(b::CanonicalBelief{T,Vlabel,P,V,M}, R::AbstractMatrix{T}) where {T,Vlabel,P,V,M}
     gb = GeneralizedBelief(b)
     m, k = size(R)
     gb.R[:,1:k] .= R # R should have the same no. of rows as gb.R

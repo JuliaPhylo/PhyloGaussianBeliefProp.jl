@@ -19,23 +19,15 @@ function Base.show(io::IO, b::FamilyFactor)
     print(io, "\nexponential quadratic belief, parametrized by\nh: $(b.h)\nJ: $(b.J)\ng: $(b.g[1])\n")
 end
 
-"""
-    FamilyFactor(belief::AbstractBelief{T}) where T
-
-Constructor to allocate memory for one family factor, with canonical parameters
-and metadata initialized to be a copy of those in `belief`.
-`FamilyFactor`s metadata are supposed to be symbols, so this constructor should
-fail if its input is a sepset belief, whose `metadata` is a Tuple of Symbols.
-"""
-function FamilyFactor(belief::AbstractBelief{T}) where T
-    h = deepcopy(belief.h)
-    J = deepcopy(belief.J)
-    g = deepcopy(belief.g)
-    FamilyFactor{T,typeof(J),typeof(h)}(h,J,g,belief.metadata)
-end
 
 """
-    Belief{T<:Real,Vlabel<:AbstractVector,P<:AbstractMatrix{T},V<:AbstractVector{T},M} <: AbstractBelief{T}
+    CanonicalBelief{
+        T<:Real,
+        Vlabel<:AbstractVector,
+        P<:AbstractMatrix{T},
+        V<:AbstractVector{T},
+        M,
+    } <: AbstractBelief{T}
 
 A "belief" is an exponential quadratic form, using the canonical parametrization:
 
@@ -73,12 +65,12 @@ Methods for a belief `b`:
 - `dimension(b)`: total dimension of the belief, that is, total number of traits
   in scope. Without any missing data, that would be ntraits × length of nodelabels.
 """
-struct Belief{
+struct CanonicalBelief{
     T<:Real,
     Vlabel<:AbstractVector,
     P<:AbstractMatrix{T},
     V<:AbstractVector{T},
-    M
+    M,
 } <: AbstractBelief{T}
     "Integer label for nodes in the cluster"
     nodelabel::Vlabel # StaticVector{N,Tlabel}
@@ -96,8 +88,10 @@ struct Belief{
     g::MVector{1,T}
     "belief type: cluster (node in cluster graph) or sepset (edge in cluster graph)"
     type::BeliefType
-    "metadata, e.g. index in cluster graph,
-    of type (M) `Symbol` for clusters or Tuple{Symbol,Symbol} for edges."
+    """
+    metadata, e.g. index in cluster graph,
+    of type (M) `Symbol` for clusters or Tuple{Symbol,Symbol} for edges.
+    """
     metadata::M
 end
 
@@ -107,25 +101,37 @@ inscope(b::AbstractBelief) = b.inscope
 nodedimensions(b::AbstractBelief) = map(sum, eachslice(inscope(b), dims=2))
 dimension(b::AbstractBelief)  = sum(inscope(b))
 
-function Base.show(io::IO, b::Belief)
-    disp = "belief for " * (b.type == bclustertype ? "Cluster" : "SepSet") * " $(b.metadata),"
+function show_name_scope(io::IO, b::AbstractBelief)
+    disp = showname(b) * " for "
+    disp *= (b.type == bclustertype ? "Cluster" : "SepSet") * " $(b.metadata),"
     disp *= " $(ntraits(b)) traits × $(length(nodelabels(b))) nodes, dimension $(dimension(b)).\n"
     disp *= "Node labels: "
     print(io, disp)
     print(io, nodelabels(b))
     print(io, "\ntrait × node matrix of non-degenerate beliefs:\n")
     show(io, inscope(b))
+end
+
+showname(::CanonicalBelief) = "canonical belief"
+function Base.show(io::IO, b::CanonicalBelief)
+    show_name_scope(io, b)
     print(io, "\nexponential quadratic belief, parametrized by\nμ: $(b.μ)\nh: $(b.h)\nJ: $(b.J)\ng: $(b.g[1])\n")
 end
 
 """
-    Belief(nodelabels, numtraits, inscope, belieftype, metadata, T=Float64)
+    CanonicalBelief(nodelabels, numtraits, inscope, belieftype, metadata, T=Float64)
 
 Constructor to allocate memory for one cluster, and initialize objects with 0s
 to initialize the belief with the constant function exp(0)=1.
 """
-function Belief(nl::AbstractVector{Tlabel}, numtraits::Integer,
-                inscope::BitArray, belief, metadata, T::Type=Float64) where Tlabel<:Integer
+function CanonicalBelief(
+    nl::AbstractVector{Tlabel},
+    numtraits::Integer,
+    inscope::BitArray,
+    belief,
+    metadata,
+    T::Type=Float64,
+) where Tlabel<:Integer
     nnodes = length(nl)
     nodelabels = SVector{nnodes}(nl)
     size(inscope) == (numtraits,nnodes) || error("inscope of the wrong size")
@@ -134,17 +140,17 @@ function Belief(nl::AbstractVector{Tlabel}, numtraits::Integer,
     h = MVector{cldim,T}(zero(T) for _ in 1:cldim)
     J = MMatrix{cldim,cldim,T}(zero(T) for _ in 1:(cldim*cldim))
     g = MVector{1,T}(0)
-    Belief{T,typeof(nodelabels),typeof(J),typeof(h),typeof(metadata)}(
+    CanonicalBelief{T,typeof(nodelabels),typeof(J),typeof(h),typeof(metadata)}(
         nodelabels,numtraits,inscope,μ,h,J,g,belief,metadata)
 end
 
 """
-    inscope_onenode(node_label, b:Belief)
+    inscope_onenode(node_label, b:AbstractBelief)
 
 AbstractVector: view of the row vector in `b`'s inscope matrix corresponding to
 node `node_label`, indicating whether a trait at that node is in scope or not.
 """
-function inscope_onenode(node_label, belief::Belief)
+function inscope_onenode(node_label, belief::AbstractBelief)
     node_j = findfirst(isequal(node_label), nodelabels(belief))
     return view(inscope(belief), :, node_j)
 end
@@ -276,8 +282,13 @@ Warnings: this function might need to be re-run to re-do allocation if
 - the model changed: with the root changed from fixed to random, see
   [`init_beliefs_allocate_atroot!`](@ref) in that case.
 """
-function init_beliefs_allocate(tbl::Tables.ColumnTable, taxa::AbstractVector,
-        net::HybridNetwork, clustergraph, model::EvolutionaryModel{T}) where T
+function init_beliefs_allocate(
+    tbl::Tables.ColumnTable,
+    taxa::AbstractVector,
+    net::HybridNetwork,
+    clustergraph,
+    model::EvolutionaryModel{T},
+) where T
     numtraits = length(tbl)
     nnodes = length(net.nodes_changed)
     nnodes > 0 ||
@@ -332,29 +343,48 @@ function init_beliefs_allocate(tbl::Tables.ColumnTable, taxa::AbstractVector,
         end
         return inscope
     end
-    beliefs = Belief{T}[]
+    beliefs = CanonicalBelief{T}[]
     for cllab in labels(clustergraph)
         nodeindices = clustergraph[cllab][2]
         inscope = build_inscope(nodeindices)
-        push!(beliefs, Belief(nodeindices, numtraits, inscope, bclustertype, cllab,T))
+        push!(beliefs, CanonicalBelief(nodeindices, numtraits, inscope, bclustertype, cllab,T))
     end
     for sslab in edge_labels(clustergraph)
         nodeindices = clustergraph[sslab...]
         inscope = build_inscope(nodeindices)
-        push!(beliefs, Belief(nodeindices, numtraits, inscope, bsepsettype, sslab,T))
+        push!(beliefs, CanonicalBelief(nodeindices, numtraits, inscope, bsepsettype, sslab,T))
     end
     return beliefs
 end
 
 """
-    init_factors_allocate(beliefs::AbstractVector{<:Belief}, nclusters::Integer)
+    FamilyFactor(belief::AbstractBelief{T}) where T
+
+Constructor to allocate memory for one family factor, with canonical parameters
+and metadata initialized to be a copy of those in `belief`.
+`FamilyFactor`s metadata are supposed to be symbols, so this constructor should
+fail if its input is a sepset belief, whose `metadata` is a Tuple of Symbols.
+"""
+function FamilyFactor(belief::CanonicalBelief{T}) where T
+    h = deepcopy(belief.h)
+    J = deepcopy(belief.J)
+    g = deepcopy(belief.g)
+    FamilyFactor{T,typeof(J),typeof(h)}(h,J,g,belief.metadata)
+end
+# todo: add constructor from GeneralizedBelief
+
+"""
+    init_factors_allocate(beliefs::AbstractVector{<:AbstractBelief}, nclusters::Integer)
 
 Vector of `nclusters` factors of type [`FamilyFactor`](@ref), whose canonical
 parameters and metadata are initialized to be a copy of those in `beliefs`.
 Assumption: `beliefs[1:nclusters]` are cluster beliefs, and
 `beliefs[nclusters+1:end]` (if any) are sepset beliefs. This is not checked.
 """
-function init_factors_allocate(beliefs::AbstractVector{B}, nclusters::Integer) where B<:Belief{T} where T
+function init_factors_allocate(
+    beliefs::AbstractVector{B},
+    nclusters::Integer
+) where B<:AbstractBelief{T} where T
     factors = FamilyFactor{T}[]
     for i in 1:nclusters
         push!(factors, FamilyFactor(beliefs[i]))
@@ -381,7 +411,12 @@ Assumptions:
 - beliefs were previously initialized with a model that had the same number of
   traits as the current `model`.
 """
-function init_beliefs_allocate_atroot!(beliefs, factors, messageresidual, model::EvolutionaryModel{T}) where T
+function init_beliefs_allocate_atroot!(
+    beliefs,
+    factors,
+    messageresidual,
+    model::EvolutionaryModel{T}
+) where T
     numtraits = dimension(model)
     fixedroot = isrootfixed(model)
     # root *not* in scope if fixed; else *in* scope bc we assume data below
@@ -392,7 +427,7 @@ function init_beliefs_allocate_atroot!(beliefs, factors, messageresidual, model:
         iscluster = be.type == bclustertype
         be_insc = be.inscope
         update_inscope!(be_insc, root_ind)
-        beliefs[i_b] = Belief(be.nodelabel, numtraits, be_insc, be.type, be.metadata, T)
+        beliefs[i_b] = CanonicalBelief(be.nodelabel, numtraits, be_insc, be.type, be.metadata, T)
         if iscluster # re-allocate the corresponding factor. if sepset: nothing to do
             factors[i_b] = FamilyFactor(beliefs[i_b])
         end
@@ -406,22 +441,27 @@ function init_beliefs_allocate_atroot!(beliefs, factors, messageresidual, model:
 end
 
 """
-    init_beliefs_reset!(beliefs::Vector{<:Belief})
+    init_beliefs_reset!(beliefs::Vector{<:AbstractBelief})
 
 Reset all beliefs (which can be cluster and/or sepset beliefs) to h=0, J=0, g=0 (μ unchanged).
 They can later be re-initialized for different model parameters and
 re-calibrated, without re-allocating memory.
 """
-function init_beliefs_reset!(beliefs::AbstractVector{B}) where B<:Belief{T} where T
+function init_beliefs_reset!(beliefs::AbstractVector{B}) where B<:CanonicalBelief{T} where T
     for be in beliefs
         be.h .= zero(T)
         be.J .= zero(T)
         be.g[1] = zero(T)
     end
 end
+# todo: create method when B<:GeneralizedBelief
 
 """
-    init_factors_frombeliefs!(factors, beliefs, checkmetadata::Bool=false)
+    init_factors_frombeliefs!(
+        factors,
+        beliefs::AbstractVector{<:CanonicalBelief},
+        checkmetadata::Bool=false
+    )
 
 Reset all `factors` by copying h,J,g from `beliefs`.
 Assumption: the cluster beliefs match the factors exactly: for a valid factor
@@ -431,7 +471,11 @@ index `i`, `beliefs[i]` is of cluster type and has the same dimension as
 Set `checkmetadata` to true to check that `beliefs[i]` and `factors[i]` have
 the same metadata.
 """
-function init_factors_frombeliefs!(factors, beliefs, checkmetadata::Bool=false)
+function init_factors_frombeliefs!(
+    factors,
+    beliefs::AbstractVector{B},
+    checkmetadata::Bool=false,
+) where B<:CanonicalBelief{T} where T
     for (fa,be) in zip(factors,beliefs)
         if checkmetadata
             fa.metadata == be.metadata ||
@@ -474,9 +518,12 @@ was assigned to.
 The `beliefs` vector is modified in place.
 """
 function init_beliefs_assignfactors!(
-        beliefs::Vector{<:Belief},
+        beliefs::AbstractVector{<:AbstractBelief},
         model::EvolutionaryModel,
-        tbl::Tables.ColumnTable, taxa::AbstractVector, prenodes::Vector{PN.Node})
+        tbl::Tables.ColumnTable,
+        taxa::AbstractVector,
+        prenodes::Vector{PN.Node},
+)
     init_beliefs_reset!(beliefs)
     numtraits = dimension(model)
     visited = falses(length(prenodes))
@@ -647,7 +694,10 @@ The sepset for edge `(label1,label2)` is associated with 2 messages, for the
 2 directions in which beliefs can be propagated along the edge. The keys for
 these messages are `(label1,label2)` and `(label2,label1)`.
 """
-function init_messageresidual_allocate(beliefs::Vector{B}, nclusters) where B<:Belief{T} where T<:Real
+function init_messageresidual_allocate(
+    beliefs::Vector{CanonicalBelief{T}},
+    nclusters,
+) where T<:Real
     messageresidual = Dict{Tuple{Symbol,Symbol}, MessageResidual{T}}()
     for j in (nclusters+1):length(beliefs)
         ssbe = beliefs[j] # sepset belief

@@ -14,7 +14,7 @@ end
 
 """
     getcholesky_μ(J::AbstractMatrix, h)
-    getcholesky_μ!(belief::Belief)
+    getcholesky_μ!(belief::AbstractBelief)
 
 Tuple `(Jchol, μ)` where `Jchol` is a cholesky representation of `J` or `belief.J`
 and `μ` is J⁻¹h, used to update `belief.μ` (by the second method).
@@ -25,7 +25,7 @@ function getcholesky_μ(J::AbstractMatrix, h)
     return (Jchol, μ)
 end
 @doc (@doc getcholesky_μ) getcholesky_μ!
-function getcholesky_μ!(b::Belief)
+function getcholesky_μ!(b::CanonicalBelief)
     (Jchol, μ) = getcholesky_μ(b.J, b.h)
     b.μ .= μ
     return (Jchol, μ)
@@ -59,8 +59,8 @@ end
 entropy(cluster::AbstractFactorBelief) = entropy(cluster.J)
 
 """
-    average_energy!(ref::Belief, target::AbstractFactorBelief)
-    average_energy!(ref::Belief, Jₜ, hₜ, gₜ)
+    average_energy!(ref::AbstractBelief, target::AbstractFactorBelief)
+    average_energy!(ref::AbstractBelief, Jₜ, hₜ, gₜ)
     average_energy(Jᵣ::Union{LA.Cholesky,PDMat}, μᵣ, Jₜ, hₜ, gₜ)
 
 Average energy (i.e. negative expected log) of a `target` canonical form with
@@ -89,10 +89,10 @@ target: C(x | Jₜ, hₜ, gₜ) = exp( - (1/2)x'Jₜx + hₜ'x + gₜ )
 With empty vectors and matrices (J's of dimension 0×0 and h's of length 0),
 the result is simply: - gₜ.
 """
-function average_energy!(ref::Belief, target::AbstractFactorBelief)
+function average_energy!(ref::AbstractBelief, target::AbstractFactorBelief)
     average_energy!(ref, target.J, target.h, target.g[1])
 end
-function average_energy!(ref::Belief, Jₜ, hₜ, gₜ)
+function average_energy!(ref::AbstractBelief, Jₜ, hₜ, gₜ)
     (Jᵣ, μᵣ) = getcholesky_μ!(ref)
     average_energy(Jᵣ, μᵣ, Jₜ, hₜ, gₜ)
 end
@@ -145,7 +145,7 @@ end
 negative [`factored_energy`](@ref) to approximate the negative log-likelihood.
 The approximation is exact on a clique tree after calibration.
 """
-function free_energy(beliefs::ClusterGraphBelief{B}) where B<:Belief{T} where T<:Real
+function free_energy(beliefs::ClusterGraphBelief{B}) where B<:AbstractBelief{T} where T<:Real
     b = beliefs.belief
     init_b = beliefs.factor
     nclu = nclusters(beliefs)

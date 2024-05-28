@@ -35,17 +35,17 @@ gb_x6 = PGBP.GeneralizedBelief(b_x6)
 
 #= Construct the belief directly because currently, clusters containing
 degenerate hybrids may have them removed from the scope =#
-b_x2H1 = PGBP.Belief([6, 5], 1, BitArray([0 1]),
+b_x2H1 = PGBP.CanonicalBelief([6, 5], 1, BitArray([0 1]),
     PGBP.bclustertype, :x2H1) # cluster :x2H1
 b_x2H1.J .= MMatrix{1,1}([1.0;;])
 b_x2H1.h .= MVector{1}([1.0])
 b_x2H1.g[1] = -0.5+log(1/sqrt(2π))
 gb_x2H1 = PGBP.GeneralizedBelief(b_x2H1)
-b_H1 = PGBP.Belief([5], 1, BitArray([1;;]), PGBP.bsepsettype,
+b_H1 = PGBP.CanonicalBelief([5], 1, BitArray([1;;]), PGBP.bsepsettype,
     (:x2H1, :H1x4x6)) # sepset (:x2H1, :H1x4x6)
 gb_H1 = PGBP.GeneralizedBelief(b_H1)
 
-b_H1x4x6 = PGBP.Belief([5, 4, 2], 1, BitArray([1 1 1]),
+b_H1x4x6 = PGBP.CanonicalBelief([5, 4, 2], 1, BitArray([1 1 1]),
     PGBP.bclustertype, :H1x4x6) # cluster :H1x4x6
 gb_H1x4x6 = PGBP.GeneralizedBelief(b_H1x4x6, [-1;0.5;0.5;;]) # assigned Dirac measure
 # todo: update constructor for fully degenerate generalized belief
