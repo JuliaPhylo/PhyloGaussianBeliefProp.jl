@@ -1,5 +1,5 @@
 """
-    generalizedBelief{T<:Real,Vlabel<:AbstractVector,P<:AbstractMatrix{T},V<:AbstractVector{T},M} <: AbstractBelief{T}
+    GeneralizedBelief{T<:Real,Vlabel<:AbstractVector,P<:AbstractMatrix{T},V<:AbstractVector{T},M} <: AbstractBelief{T}
 
 A *generalized* belief is an exponential quadratic form, multiplied by a Dirac
 measure:
@@ -32,7 +32,12 @@ buffers to reduce allocations during belief-update operations such as scope
 extension (for incoming messages) and division (of an outgoing message by a
 sepset belief).
 """
-struct generalizedBelief{T<:Real,Vlabel<:AbstractVector,P<:AbstractMatrix{T},V<:AbstractVector{T},M} <: AbstractBelief{T}
+struct GeneralizedBelief{
+    T<:Real,
+    Vlabel<:AbstractVector,
+    P<:AbstractMatrix{T},
+    V<:AbstractVector{T},M
+} <: AbstractBelief{T}
     "Integer label for nodes in the cluster"
     nodelabel::Vlabel # StaticVector{N,Tlabel}
     "Total number of traits at each node"
@@ -69,12 +74,7 @@ struct generalizedBelief{T<:Real,Vlabel<:AbstractVector,P<:AbstractMatrix{T},V<:
 end
 
 # todo: violates DRY! Remove later. Use traits instead.
-nodelabels(b::generalizedBelief) = b.nodelabel
-ntraits(b::generalizedBelief) = b.ntraits
-inscope(b::generalizedBelief) = b.inscope
-nodedimensions(b::generalizedBelief) = map(sum, eachslice(inscope(b), dims=2))
-dimension(b::generalizedBelief)  = sum(inscope(b))
-function Base.show(io::IO, b::generalizedBelief)
+function Base.show(io::IO, b::GeneralizedBelief)
     disp = "generalized belief for " * (b.type == bclustertype ? "Cluster" : "SepSet") * " $(b.metadata),"
     disp *= " $(ntraits(b)) traits × $(length(nodelabels(b))) nodes, dimension $(dimension(b)).\n"
     disp *= "Node labels: "
@@ -86,21 +86,21 @@ function Base.show(io::IO, b::generalizedBelief)
 end
 
 """
-    generalizedBelief(b::Belief)
+    GeneralizedBelief(b::Belief)
 
 Constructor from a standard belief `b`.
 
 Precision `b.J` is eigendecomposed into `Q*Λ*transpose(Q)`, where `Q` and `Λ`
 are square with the same dimensions as `b.J`, and `Λ` is positive semidefinite.
 """
-function generalizedBelief(b::Belief{T,Vlabel,P,V,M}) where {T,Vlabel,P,V,M}
+function GeneralizedBelief(b::Belief{T,Vlabel,P,V,M}) where {T,Vlabel,P,V,M}
     # J = SArray{Tuple{size(b.J)...}}(b.J) # `eigen` cannot be called on
     Q, Λ = LA.svd(b.J)
     m = size(b.J,1) # dimension
     k = MVector{1,Int64}(0) # 0 degrees of degeneracy
     R = MMatrix{m,m,T}(undef)
     c = MVector{m,T}(undef)
-    generalizedBelief{T,Vlabel,P,V,M}(
+    GeneralizedBelief{T,Vlabel,P,V,M}(
         b.nodelabel,b.ntraits,b.inscope,
         b.μ,transpose(Q)*b.h,similar(transpose(Q)*b.h),Q,similar(Q),Λ,similar(Λ),b.g,similar(b.g),
         k,similar(k),R,similar(R),c,similar(c),
@@ -108,15 +108,15 @@ function generalizedBelief(b::Belief{T,Vlabel,P,V,M}) where {T,Vlabel,P,V,M}
 end
 
 """
-    generalizedBelief(b::Belief, R::AbstractMatrix)
+    GeneralizedBelief(b::Belief, R::AbstractMatrix)
 
 Constructor from a standard belief `b` and a constraint matrix `R`.
 
 `R` is assumed to have the same number of rows as `b.R`, and all entries of
 `b.c[1:size(R)[2]]` are assumed to be 0.
 """
-function generalizedBelief(b::Belief{T,Vlabel,P,V,M}, R::AbstractMatrix{T}) where {T,Vlabel,P,V,M}
-    gb = generalizedBelief(b)
+function GeneralizedBelief(b::Belief{T,Vlabel,P,V,M}, R::AbstractMatrix{T}) where {T,Vlabel,P,V,M}
+    gb = GeneralizedBelief(b)
     m, k = size(R)
     gb.R[:,1:k] .= R # R should have the same no. of rows as gb.R
     gb.Q[:,1:(m-k)] .= LA.nullspace(transpose(R))
@@ -138,7 +138,7 @@ Note that:
 - the scope of this incoming message is extended within the buffer of `cluster_to`
 - the labels in `sepset` are assumed to be ordered as in `cluster_to`
 """
-function extend!(cluster_to::generalizedBelief, sepset::generalizedBelief)
+function extend!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     # indices in `cluster_to` inscope variables of `sepset` inscope variables
     upind = scopeindex(sepset, cluster_to)
     m2 = size(sepset.Q)[1]
@@ -183,7 +183,7 @@ Note that:
 - the incoming message is accessed from the buffer of `sepset`
 - the scope of this incoming message is extended within the buffer of `cluster_to`
 """
-function mult!(cluster_to::generalizedBelief, sepset::generalizedBelief)
+function mult!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     extend!(cluster_to, sepset) # extend scope of `sepset` within buffer of `cluster_to`
     # degrees of degeneracy
     k1 = cluster_to.k[1]
@@ -251,7 +251,7 @@ Note that:
 Its scope is assumed to be the same (this is not checked) as that of `sepset`.
 - the quotient of this division is stored in the buffer of `sepset`
 """
-function div!(sepset::generalizedBelief, cluster_from::generalizedBelief)
+function div!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
     # degrees of degeneracy
     k1 = cluster_from.kbuf[1]
     k2 = sepset.k[1]
@@ -315,7 +315,7 @@ Note that:
 - the resulting marginal / outgoing message is saved in the buffer of
 `cluster_from`
 """
-function marg!(cluster_from::generalizedBelief, keepind)
+function marg!(cluster_from::GeneralizedBelief, keepind)
     m = length(keepind)
     m1 = size(cluster_from.Q)[1]
     k1 = cluster_from.k[1]
@@ -360,7 +360,7 @@ function marg!(cluster_from::generalizedBelief, keepind)
 end
 
 """
-    integratebelief!(b::generalizedBelief)
+    integratebelief!(b::GeneralizedBelief)
 
 Return `(μ, g)`, where `μ` is the conditional mean of inscope nodes in `b`, and
 `g` is the normalization constant from integrating out all inscope nodes in `b`.
@@ -370,7 +370,7 @@ Note that:
 - `μ` is the mean estimate for the inscope nodes x if k=0, and for QQᵀx if k>0
 - it is assumed that QΛQᵀ is positive-definite (i.e. Λ has no 0-entries)
 """
-function integratebelief!(b::generalizedBelief)
+function integratebelief!(b::GeneralizedBelief)
     m = size(b.Q)[1]
     k = b.k[1]
     μ = view(b.Q,:,1:(m-k))*(view(b.h,1:(m-k)) ./ view(b.Λ,1:m-k))
@@ -391,9 +391,9 @@ Note that:
 `sepset`'s buffer
 """
 function propagate_belief!(
-    cluster_to::generalizedBelief,
-    sepset::generalizedBelief,
-    cluster_from::generalizedBelief
+    cluster_to::GeneralizedBelief,
+    sepset::GeneralizedBelief,
+    cluster_from::GeneralizedBelief
     )
     keepind = scopeindex(sepset, cluster_from)
     marg!(cluster_from, keepind)

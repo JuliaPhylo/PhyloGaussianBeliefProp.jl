@@ -1,8 +1,13 @@
 @enum BeliefType bclustertype=1 bsepsettype=2
 
-abstract type AbstractBelief{T} end
+abstract type AbstractFactorBelief{T} end
+abstract type AbstractBelief{T} <: AbstractFactorBelief{T} end
 
-struct FamilyFactor{T<:Real,P<:AbstractMatrix{T},V<:AbstractVector{T}} <: AbstractBelief{T}
+struct FamilyFactor{
+    T<:Real,
+    P<:AbstractMatrix{T},
+    V<:AbstractVector{T}
+} <: AbstractFactorBelief{T}
     h::V
     J::P
     g::MVector{1,T} # mutable
@@ -68,7 +73,13 @@ Methods for a belief `b`:
 - `dimension(b)`: total dimension of the belief, that is, total number of traits
   in scope. Without any missing data, that would be ntraits × length of nodelabels.
 """
-struct Belief{T<:Real,Vlabel<:AbstractVector,P<:AbstractMatrix{T},V<:AbstractVector{T},M} <: AbstractBelief{T}
+struct Belief{
+    T<:Real,
+    Vlabel<:AbstractVector,
+    P<:AbstractMatrix{T},
+    V<:AbstractVector{T},
+    M
+} <: AbstractBelief{T}
     "Integer label for nodes in the cluster"
     nodelabel::Vlabel # StaticVector{N,Tlabel}
     "Total number of traits at each node"
@@ -90,11 +101,11 @@ struct Belief{T<:Real,Vlabel<:AbstractVector,P<:AbstractMatrix{T},V<:AbstractVec
     metadata::M
 end
 
-nodelabels(b::Belief) = b.nodelabel
-ntraits(b::Belief) = b.ntraits
-inscope(b::Belief) = b.inscope
-nodedimensions(b::Belief) = map(sum, eachslice(inscope(b), dims=2))
-dimension(b::Belief)  = sum(inscope(b))
+nodelabels(b::AbstractBelief) = b.nodelabel
+ntraits(b::AbstractBelief) = b.ntraits
+inscope(b::AbstractBelief) = b.inscope
+nodedimensions(b::AbstractBelief) = map(sum, eachslice(inscope(b), dims=2))
+dimension(b::AbstractBelief)  = sum(inscope(b))
 
 function Base.show(io::IO, b::Belief)
     disp = "belief for " * (b.type == bclustertype ? "Cluster" : "SepSet") * " $(b.metadata),"
@@ -697,7 +708,7 @@ function iscalibrated_kl!(res::AbstractResidual{T}, atol=T(1e-5)) where T
 end
 
 """
-    residual_kldiv!(residual::AbstractResidual, sepset::AbstractBelief,
+    residual_kldiv!(residual::AbstractResidual, sepset::AbstractFactorBelief,
         canonicalparams::Tuple)
 
 Update `residual.kldiv` with the
@@ -738,7 +749,7 @@ message, which is *not* gₘ-gₛ because the stored beliefs are not normalized.
 See also: [`average_energy!`](@ref), which only requires the sepset belief
 to be positive definite.
 """
-function residual_kldiv!(res::AbstractResidual{T}, sepset::AbstractBelief{T}) where {T <: Real}
+function residual_kldiv!(res::AbstractResidual{T}, sepset::AbstractFactorBelief{T}) where {T <: Real}
     # isposdef returns true for empty matrices e.g. isposdef(Real[;;]) and isposdef(MMatrix{0,0}(Real[;;]))
     isempty(sepset.J) && return true
     (J0, μ0) = try getcholesky_μ!(sepset) # current (m): message that was passed

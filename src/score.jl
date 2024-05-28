@@ -34,7 +34,7 @@ end
 """
     entropy(J::Cholesky)
     entropy(J::AbstractMatrix)
-    entropy(belief::AbstractBelief)
+    entropy(belief::AbstractFactorBelief)
 
 Entropy of a multivariate Gaussian distribution with precision matrix `J`,
 assumed to be square and symmetric (not checked).
@@ -56,10 +56,10 @@ function entropy(J::AbstractMatrix{T}) where T<:Real
     n == 0 && return zero(T)
     (n * (T(log2π) + 1) - LA.logdet(LA.Symmetric(J))) / 2
 end
-entropy(cluster::AbstractBelief) = entropy(cluster.J)
+entropy(cluster::AbstractFactorBelief) = entropy(cluster.J)
 
 """
-    average_energy!(ref::Belief, target::AbstractBelief)
+    average_energy!(ref::Belief, target::AbstractFactorBelief)
     average_energy!(ref::Belief, Jₜ, hₜ, gₜ)
     average_energy(Jᵣ::Union{LA.Cholesky,PDMat}, μᵣ, Jₜ, hₜ, gₜ)
 
@@ -89,7 +89,7 @@ target: C(x | Jₜ, hₜ, gₜ) = exp( - (1/2)x'Jₜx + hₜ'x + gₜ )
 With empty vectors and matrices (J's of dimension 0×0 and h's of length 0),
 the result is simply: - gₜ.
 """
-function average_energy!(ref::Belief, target::AbstractBelief)
+function average_energy!(ref::Belief, target::AbstractFactorBelief)
     average_energy!(ref, target.J, target.h, target.g[1])
 end
 function average_energy!(ref::Belief, Jₜ, hₜ, gₜ)

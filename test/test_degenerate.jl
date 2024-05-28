@@ -24,14 +24,14 @@ ctb = PGBP.ClusterGraphBelief(b);
 # Set up beliefs / generalized beliefs
 ######################################
 b_x1x4 = b[PGBP.clusterindex(:x1x4, ctb)] # cluster :x1x4
-gb_x1x4 = PGBP.generalizedBelief(b_x1x4)
+gb_x1x4 = PGBP.GeneralizedBelief(b_x1x4)
 b_x4 = b[PGBP.sepsetindex(:x1x4, :H1x4x6, ctb)] # sepset (:x1x4, :H1x4x6)
-gb_x4 = PGBP.generalizedBelief(b_x4)
+gb_x4 = PGBP.GeneralizedBelief(b_x4)
 
 b_x3x6 = b[PGBP.clusterindex(:x3x6, ctb)] # cluster :x3x6
-gb_x3x6 = PGBP.generalizedBelief(b_x3x6)
+gb_x3x6 = PGBP.GeneralizedBelief(b_x3x6)
 b_x6 = b[PGBP.sepsetindex(:x3x6, :H1x4x6, ctb)] # sepset (:x3x6, :H1x4x6)
-gb_x6 = PGBP.generalizedBelief(b_x6)
+gb_x6 = PGBP.GeneralizedBelief(b_x6)
 
 #= Construct the belief directly because currently, clusters containing
 degenerate hybrids may have them removed from the scope =#
@@ -40,23 +40,23 @@ b_x2H1 = PGBP.Belief([6, 5], 1, BitArray([0 1]),
 b_x2H1.J .= MMatrix{1,1}([1.0;;])
 b_x2H1.h .= MVector{1}([1.0])
 b_x2H1.g[1] = -0.5+log(1/sqrt(2π))
-gb_x2H1 = PGBP.generalizedBelief(b_x2H1)
+gb_x2H1 = PGBP.GeneralizedBelief(b_x2H1)
 b_H1 = PGBP.Belief([5], 1, BitArray([1;;]), PGBP.bsepsettype,
     (:x2H1, :H1x4x6)) # sepset (:x2H1, :H1x4x6)
-gb_H1 = PGBP.generalizedBelief(b_H1)
+gb_H1 = PGBP.GeneralizedBelief(b_H1)
 
 b_H1x4x6 = PGBP.Belief([5, 4, 2], 1, BitArray([1 1 1]),
     PGBP.bclustertype, :H1x4x6) # cluster :H1x4x6
-gb_H1x4x6 = PGBP.generalizedBelief(b_H1x4x6, [-1;0.5;0.5;;]) # assigned Dirac measure
+gb_H1x4x6 = PGBP.GeneralizedBelief(b_H1x4x6, [-1;0.5;0.5;;]) # assigned Dirac measure
 # todo: update constructor for fully degenerate generalized belief
 Q = nullspace(transpose([-1;0.5;0.5;;]))
 gb_H1x4x6.Q[:,1:2] .= Q
 gb_H1x4x6.Λ[1:2] .= diag(transpose(Q)*b_H1x4x6.J*Q)
 b_x4x6 = b[PGBP.sepsetindex(:H1x4x6, :x4x6x0, ctb)] # sepset (:H1x4x6, :x4x6x0)
-gb_x4x6 = PGBP.generalizedBelief(b_x4x6)
+gb_x4x6 = PGBP.GeneralizedBelief(b_x4x6)
 
 b_x4x6x0 = b[PGBP.clusterindex(:x4x6x0, ctb)] # root cluster :x4x6x0
-gb_x4x6x0 = PGBP.generalizedBelief(b_x4x6x0)
+gb_x4x6x0 = PGBP.GeneralizedBelief(b_x4x6x0)
 
 ##############################################################
 # trivial marginalization (no nodes need to be integrated out)

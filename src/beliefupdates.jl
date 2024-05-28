@@ -22,7 +22,7 @@ function Base.showerror(io::IO, ex::BPPosDefException)
 end
 
 """
-    marginalizebelief(belief::AbstractBelief, keep_index)
+    marginalizebelief(belief::AbstractFactorBelief, keep_index)
     marginalizebelief(h,J,g, keep_index, beliefmetadata)
     marginalizebelief(h,J,g, keep_index, integrate_index, beliefmetadata)
 
@@ -45,7 +45,7 @@ In that case, an error of type [`BPPosDefException`](@ref) is thrown
 with a message about the `beliefmetadata`,
 which can be handled by downstream functions.
 """
-marginalizebelief(b::AbstractBelief, keepind) =
+marginalizebelief(b::AbstractFactorBelief, keepind) =
     marginalizebelief(b.h, b.J, b.g[1], keepind, b.metadata)
 function marginalizebelief(h,J,g::Real, keep_index, metadata)
     integrate_index = setdiff(1:length(h), keep_index)
