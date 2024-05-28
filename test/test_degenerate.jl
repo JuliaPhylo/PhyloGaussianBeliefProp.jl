@@ -29,7 +29,7 @@ b_x4 = b[PGBP.sepsetindex(:x1x4, :H1x4x6, ctb)] # sepset (:x1x4, :H1x4x6)
 gb_x4 = PGBP.generalizedBelief(b_x4)
 
 b_x3x6 = b[PGBP.clusterindex(:x3x6, ctb)] # cluster :x3x6
-gb_x3x6 = PGBP.generalizedBelief(b_x1x4)
+gb_x3x6 = PGBP.generalizedBelief(b_x3x6)
 b_x6 = b[PGBP.sepsetindex(:x3x6, :H1x4x6, ctb)] # sepset (:x3x6, :H1x4x6)
 gb_x6 = PGBP.generalizedBelief(b_x6)
 
@@ -61,9 +61,9 @@ gb_x4x6x0 = PGBP.generalizedBelief(b_x4x6x0)
 ##############################################################
 # trivial marginalization (no nodes need to be integrated out)
 ##############################################################
-PGBP.marg!(gb_x1x4, PGBP.scopeindex(b_x4, b_x1x4))
-PGBP.marg!(gb_x2H1, PGBP.scopeindex(b_H1, b_x2H1))
-PGBP.marg!(gb_x3x6, PGBP.scopeindex(b_x6, b_x3x6))
+PGBP.marg!(gb_x1x4, PGBP.scopeindex(gb_x4, gb_x1x4))
+PGBP.marg!(gb_x2H1, PGBP.scopeindex(gb_H1, gb_x2H1))
+PGBP.marg!(gb_x3x6, PGBP.scopeindex(gb_x6, gb_x3x6))
 @test gb_x1x4.Qbuf == gb_x1x4.Q
 @test gb_x1x4.kbuf == gb_x1x4.k
 @test gb_x1x4.hbuf == gb_x1x4.h
@@ -104,13 +104,13 @@ R = gb_H1x4x6.R[:,1:k]
 h = gb_H1x4x6.h[1:(m-k)]
 # h is not unique, though Qh is
 @test Q*h ≈ [1;1;1;;]
-@test gb_H1x4x6.g[1] == -4.2568155996140185 # -4.2568155996140185 == 3*(-0.5+log(1/sqrt(2π)))
+@test gb_H1x4x6.g[1] ≈ -4.2568155996140185 # 3*(-0.5+log(1/sqrt(2π)))
 
 #################
 # marginalization
 #################
 # send message to cluster :x4x6x0
-PGBP.marg!(gb_H1x4x6, PGBP.scopeindex(b_x4x6, b_H1x4x6))
+PGBP.marg!(gb_H1x4x6, PGBP.scopeindex(gb_x4x6, gb_H1x4x6))
 m = size(gb_x4x6.Q)[1] # message dimension
 @test m == 2
 k = gb_H1x4x6.kbuf[1] # message degrees of degeneracy
@@ -120,17 +120,39 @@ Q = gb_H1x4x6.Qbuf[1:(m-k),1:(m-k)]
 @test Q*Λ*transpose(Q) ≈ [5/4 1/4; 1/4 5/4]
 h = gb_H1x4x6.hbuf[1:(m-k)]
 @test Q*h ≈ [1.5, 1.5]
-@test gb_H1x4x6.gbuf[1] == -4.2568155996140185
+@test gb_H1x4x6.gbuf[1] ≈ -4.2568155996140185
 
-#####################################
-# normalization constant / likelihood
-#####################################
-# fully integrate belief of cluster :x4x6x0
+##################
+# full integration
+##################
+# integrate belief of cluster :x4x6x0
 PGBP.div!(gb_x4x6, gb_H1x4x6)
 PGBP.mult!(gb_x4x6x0, gb_x4x6)
-(μ,ll) = PGBP.integratebelief!(gb_x4x6x0)
+(μ, norm) = PGBP.integratebelief!(gb_x4x6x0)
 # K = [9 1; 1 9]/4; h = [3,3]/2; inv(K)*h # [0.6, 0.6]
-@test μ ≈ [0.6, 0.6]
+@test μ ≈ [0.6, 0.6] # posterior/conditional mean
 # sumg = 3*(-0.5+log(1/sqrt(2π))) + 2*log(1/sqrt(2π)) # -6.094692666023364
 # sumg - (logdet(K/2π) - transpose(h)*(K \ h))/2 # -4.161534555831068
-@test ll == -4.161534555831068
+@test norm ≈ -4.161534555831068 # normalization constant equal to likelihood
+
+#####################################################
+# propagate_belief! wrapper for elementary operations
+#####################################################
+# postorder traversal towards root cluster :x4x6x0
+PGBP.propagate_belief!(gb_H1x4x6, gb_x4, gb_x1x4)
+PGBP.propagate_belief!(gb_H1x4x6, gb_H1, gb_x2H1)
+PGBP.propagate_belief!(gb_H1x4x6, gb_x6, gb_x3x6)
+PGBP.propagate_belief!(gb_x4x6x0, gb_x4x6, gb_H1x4x6)
+(μ, norm) = PGBP.integratebelief!(gb_x4x6x0)
+@test μ ≈ [0.6, 0.6]
+@test norm ≈ -4.161534555831068
+# preorder traversal from root cluster :x4x6x0
+PGBP.propagate_belief!(gb_H1x4x6, gb_x4x6, gb_x4x6x0)
+PGBP.propagate_belief!(gb_x1x4, gb_x4, gb_H1x4x6)
+PGBP.propagate_belief!(gb_x2H1, gb_H1, gb_H1x4x6)
+PGBP.propagate_belief!(gb_x3x6, gb_x6, gb_H1x4x6)
+# posterior mean of degenerate hybrid
+(μ, norm) = PGBP.integratebelief!(gb_H1)
+# sum([0.5, 0.5] .* PGBP.integratebelief!(gb_x4x6)[1]) # 0.6
+@test μ ≈ [0.6]
+@test norm ≈ -4.161534555831068

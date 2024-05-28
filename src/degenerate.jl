@@ -153,14 +153,14 @@ function extend!(cluster_to::generalizedBelief, sepset::generalizedBelief)
     cluster_to.Qbuf[1:length(upind),1:(m2-k2)] .= view(sepset.Qbuf,:,1:(m2-k2)) # store Q in buffer
     m1 = size(cluster_to.Q)[1]
     perm = [upind;setdiff(1:m1,upind)]
-    cluster_to.Qbuf[perm,:] .= view(cluster_to.Qbuf,:,:) # permute
+    cluster_to.Qbuf[perm,:] .= cluster_to.Qbuf[:,:] # permute
     # copy sepset.Λbuf[1:(m2-k2)] to cluster_to.Λbuf
     cluster_to.Λbuf .= 0.0
     cluster_to.Λbuf[1:(m2-k2)] .= sepset.Λbuf[1:(m2-k2)]
     # extend sepset.Rbuf[:,1:k2] in cluster_to.Rbuf
     cluster_to.Rbuf[:,1:k2] .= 0.0
     cluster_to.Rbuf[1:length(upind),1:k2] .= view(sepset.Rbuf,:,1:k2)
-    cluster_to.Rbuf[perm,:] .= view(cluster_to.Rbuf,:,:) # permute
+    cluster_to.Rbuf[perm,:] .= cluster_to.Rbuf[:,:] # permute
     # extend sepset.hbuf[1:(m2-k2)] in cluster_to.hbuf
     cluster_to.hbuf .= 0.0
     cluster_to.hbuf[1:(m2-k2)] .= view(sepset.hbuf,1:(m2-k2))
@@ -329,7 +329,8 @@ function marg!(cluster_from::generalizedBelief, keepind)
     cluster_from.cbuf[1:k] .= (transpose(view(cluster_from.Rbuf,1:m,1:k))*R1*
         view(cluster_from.c,1:k1)) # update cbuf
     U = U.Q[:,findall(LA.diag(U.R) .!== 0.0)] # columnspace(Q_x)
-    V = LA.nullspace(U) # nullspace(Q_x)
+    # V = LA.nullspace(U) # nullspace(Q_x)
+    V = LA.nullspace(Q1)
     W = transpose(R1)*Q1
     if !isempty(W)
         W = LA.qr(W)
@@ -376,4 +377,27 @@ function integratebelief!(b::generalizedBelief)
     messageg = b.g[1] + (m*log(2π) - log(prod(view(b.Λ,1:(m-k)))) +
         sum(view(b.h,1:(m-k)) .^2 ./ view(b.Λ,1:(m-k))))/2
     return (μ, messageg)
+end
+
+"""
+    propagate_belief!(cluster_to, sepset, cluster_from, residual)
+
+Update the parameters of the generalized beliefs `cluster_to` and `sepset`, by
+marginalizing the generalized belief `cluster_from` to the scope of `sepset` and
+passing that message.
+
+Note that:
+- the "residual" (i.e. change in `sepset`'s parameters) can be accessed from
+`sepset`'s buffer
+"""
+function propagate_belief!(
+    cluster_to::generalizedBelief,
+    sepset::generalizedBelief,
+    cluster_from::generalizedBelief
+    )
+    keepind = scopeindex(sepset, cluster_from)
+    marg!(cluster_from, keepind)
+    div!(sepset, cluster_from)
+    mult!(cluster_to, sepset) # handles scope extension and matching
+    return
 end
