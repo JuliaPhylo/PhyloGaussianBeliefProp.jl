@@ -475,7 +475,7 @@ function init_factors_frombeliefs!(
     factors,
     beliefs::AbstractVector{B},
     checkmetadata::Bool=false,
-) where B<:CanonicalBelief{T} where T
+) where B<:CanonicalBelief
     for (fa,be) in zip(factors,beliefs)
         if checkmetadata
             fa.metadata == be.metadata ||

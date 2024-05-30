@@ -130,7 +130,6 @@ end
 
 Extend the scope of one generalized belief (`sepset`) to the scope of another
 (`cluster_to`) so that multiplication (see [`mult!`](@ref)) can be applied.
-
 Note that:
 - the incoming message is accessed from the buffer of `sepset`
 - the scope of this incoming message is extended within the buffer of `cluster_to`
@@ -239,66 +238,67 @@ end
 """
     div!(sepset, cluster_from)
 
-Divide two generalized beliefs.
+Divide two generalized beliefs. The dividend is accessed from the buffer of
+`cluster_from`, and the divisor is accessed from `sepset`.
 
-One generalized belief (`cluster_from`) is divided by the other (`sepset`). The
-parameters of `sepset` are updated by this division.
+The parameters of `sepset` are updated to those of the dividend (i.e. the message
+sent from `cluster_from`), and the parameters of `sepset`'s buffer are updated
+to those of the quotient (i.e. [`MessageResidual`](@ref)) from this division.
 
-Note that:
-- the numerator of this division is accessed from the buffer of `cluster_from`.
-Its scope is assumed to be the same (this is not checked) as that of `sepset`.
-- the quotient of this division is stored in the buffer of `sepset`
+Assumptions (not checked):
+- Both dividend and divisor are assumed to have matching scopes
+- cluster_from.kbuf[1] ≥  sepset.k[1] (i.e. the degrees of degeneracy for the
+divisor cannot exceed that of the dividend) for division to be well-defined
 """
 function div!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
     # degrees of degeneracy
     k1 = cluster_from.kbuf[1]
     k2 = sepset.k[1]
     # contraints
-    m = sum(sepset.inscope)
+    m = size(sepset.Q)[1]
     R1 = cluster_from.Rbuf[1:m,1:k1]
     R2 = sepset.R[:,1:k2]
     c1 = cluster_from.cbuf[1:k1]
     # precisions
     Q1 = cluster_from.Qbuf[1:m,1:(m-k1)]
-    Λ1 = LA.Diagonal(cluster_from.Λbuf[1:(m-k1)])
+    Λ1 = cluster_from.Λbuf[1:(m-k1)]
     Q2 = sepset.Q[:,1:(m-k2)]
-    Λ2 = LA.Diagonal(sepset.Λ[1:(m-k2)])
+    Λ2 = sepset.Λ[1:(m-k2)]
     # potentials
     h1 = cluster_from.hbuf[1:(m-k1)]
     h2 = sepset.h[1:(m-k2)]
 
-    ## compute quotient
-    k = k1-k2 # degrees of degeneracy for quotient
-    # save quotient.k to sepset.kbuf[1]
+    ## compute quotient and save parameters to sepset buffer
+    # degrees of degeneracy
+    k = k1-k2
+    k ≥ 0 || error("quotient cannot have negative degrees of degeneracy")
     sepset.kbuf[1] = k
-    # save quotient.R to sepset.Rbuf[:,1:k]
-    cluster_from.Q[1:m,(m-k1+1):(m+k)] .= R2 # use cluster_from.Q as a buffer for R2
-    sepset.Rbuf[:,1:k] .= LA.nullspace(view(cluster_from.Q,:,1:(m+k)))
-    # save quotient.c to sepset.cbuf[1:k]
+    # constraint
+    cluster_from.Q[1:m,(m-k1+1):(m-k)] = R2 # use cluster_from.Q as a buffer for R2
+    sepset.Rbuf[:,1:k] = LA.nullspace(view(cluster_from.Q,:,1:(m-k)))
     sepset.cbuf[1:k] = transpose(view(sepset.Rbuf,:,1:k))*R1*c1
-    # save quotient.Λ to sepset.Λbuf[1:(m-k1)]
-    Z, Λ, _ = LA.svd(Λ1-transpose(Q1)*Q2*Λ2*transpose(Q2)*Q1)
-    sepset.Λbuf[:] .= 0.0 # reset buffer
-    sepset.Λbuf[1:(m-k1)] .= Λ
-    # save quotient.Q to sepset.Qbuf[:,1:(m-k1+k2)]
-    sepset.Qbuf[:,1:(m-k1)] .= Q1*Z
-    sepset.Qbuf[:,(m-k1+1):(m+k)] .= R2
-    # save quotient.h to sepset.hbuf[1:(m1-k1+k2)]
+    # precision
+    Z, Λ = LA.svd(LA.Diagonal(Λ1)-transpose(Q1)*Q2*LA.Diagonal(Λ2)*transpose(Q2)*Q1)
+    sepset.Λbuf .= 0.0 # reset buffer
+    sepset.Λbuf[1:(m-k1)] = Λ
+    sepset.Qbuf[:,1:(m-k1)] = Q1*Z
+    sepset.Qbuf[:,(m-k1+1):(m-k)] = R2
+    # potential
     Q2tR1c1 = transpose(Q2)*R1*c1
-    Λ2Q2tR1c1 = Λ2*Q2tR1c1
-    sepset.hbuf[1:(m+k)] = (transpose(sepset.Qbuf[:,1:(m+k)]) *
-        (Q1*h1 - Q2*(h2 - Λ2*transpose(Q2)*R1*c1)))
-    # save quotient.g to sepset.gbuf[1]
-    sepset.gbuf[1] = (@. cluster_from.gbuf[1] - sepset.g[1] .-
-        transpose(h2-0.5*Λ2Q2tR1c1)*Q2tR1c1)[1]
+    Λ2Q2tR1c1 = Λ2.*Q2tR1c1
+    sepset.hbuf[1:(m-k)] = (transpose(view(sepset.Qbuf,:,1:(m-k))) *
+        (Q1*h1 - Q2*(h2 - Λ2Q2tR1c1)))
+    # normalization constant
+    sepset.gbuf[1] = cluster_from.gbuf[1] - sepset.g[1] -
+        (transpose(h2-0.5*Λ2Q2tR1c1)*Q2tR1c1)[1]
     
-    ## update sepset non-buffer fields
+    ## update sepset (non-buffer) parameters to those of the dividend
     sepset.k[1] = k1
     sepset.R[:,1:k1] = R1
     sepset.c[1:k1] = c1
-    sepset.Q[:,1:(m-k1)] .= Q1
-    sepset.Λ[1:(m-k1)] .= LA.diag(Λ1)
-    sepset.h[1:(m-k1)] .= h1
+    sepset.Q[:,1:(m-k1)] = Q1
+    sepset.Λ[1:(m-k1)] = Λ1
+    sepset.h[1:(m-k1)] = h1
     sepset.g[1] = cluster_from.gbuf[1]
     return
 end
