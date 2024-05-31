@@ -171,67 +171,76 @@ end
 """
     mult!(cluster_to, sepset)
 
-Multiply two generalized beliefs.
+Multiply two generalized beliefs, accessed from `cluster_to` and the buffer of
+`sepset`.
 
-One generalized belief (`sepset`) is multiplied into the other (`cluster_to`). The
-parameters of `cluster_to` are updated by this product.
-
-Note that:
-- the incoming message is accessed from the buffer of `sepset`
-- the scope of this incoming message is extended within the buffer of `cluster_to`
+The parameters of `sepset`'s buffer (i.e. the incoming message) are extended
+(and matched), within the buffer of `cluster_to`, to the scope of `cluster_to`'s
+parameters before multiplication is carried out. The parameters of `cluster_to`
+are updated to those of the product.
 """
 function mult!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
-    extend!(cluster_to, sepset) # extend scope of `sepset` within buffer of `cluster_to`
+    ## extend scope of incoming message and save parameters to cluster_to buffer
+    extend!(cluster_to, sepset)
+
     # degrees of degeneracy
     k1 = cluster_to.k[1]
-    k2 = cluster_to.kbuf[1] # extended sepset
+    k2 = cluster_to.kbuf[1]
     # contraints
     R = cluster_to.R
     R1 = R[:,1:k1]
-    R2 = cluster_to.Rbuf[:,1:k2] # Rbuf
+    R2 = cluster_to.Rbuf[:,1:k2]
     c = cluster_to.c
     c1 = c[1:k1]
-    c2 = cluster_to.cbuf[1:k2] # cbuf
+    c2 = cluster_to.cbuf[1:k2]
     # precisions
-    m1 = size(cluster_to.Q)[2]
+    m1 = size(cluster_to.Q)[1]
     Q1 = cluster_to.Q[:,1:(m1-k1)]
-    Λ1 = LA.Diagonal(cluster_to.Λ[1:(m1-k1)])
-    m2 = size(cluster_to.Qbuf)[2] # extended sepset
-    Q2 = cluster_to.Qbuf[:,1:(m2-k2)] # Qbuf
-    Λ2 = LA.Diagonal(cluster_to.Λbuf[1:(m2-k2)]) # Λbuf
+    Λ1 = cluster_to.Λ[1:(m1-k1)]
+    m2 = size(cluster_to.Qbuf)[1]
+    Q2 = cluster_to.Qbuf[:,1:(m2-k2)]
+    Λ2 = cluster_to.Λbuf[1:(m2-k2)]
     # potentials
     h = cluster_to.h
     h1 = h[1:(m1-k1)]
-    h2 = cluster_to.hbuf[1:(m2-k2)] # hbuf
-    # project onto R2 onto colsp(Q1), then orthonormalize by qr
-    V = LA.qr(Q1 * transpose(Q1) * R2)
-    V = V.Q[:,findall(LA.diag(V.R) .!== 0.0)]
+    h2 = cluster_to.hbuf[1:(m2-k2)]
+
+    ## compute product and save parameters to cluster_to
+    # constraint
+    V = LA.qr(Q1*transpose(Q1)*R2) # project R2 onto colsp(Q1)
+    V = V.Q[:,findall(LA.diag(V.R) .!== 0.0)] # orthonormal basis for colsp(Q1*Q1ᵀ*R2)
     Δk1 = size(V)[2] # increase in degrees of degeneracy
-    b = (transpose(R2)*V) \ (c2 - transpose(R2)*R1*c1)
-    # update c1
-    c[(k1+1):(k1+Δk1)] .= b
-    # update R1
-    R[:,(k1+1):(k1+Δk1)] .= V
-    # update degrees of degeneracy
-    cluster_to.k[1] += Δk1
+    R[:,(k1+1):(k1+Δk1)] = V
+    R2tV = transpose(R2)*V
+    if k2 == Δk1 # transpose(R2)*V is square
+        b = R2tV \ (c2 - transpose(R2)*R1*c1)
+        lgdet = 2*LA.logdet(R2tV)
+    else
+        VtR2R2tV = transpose(R2tV)*R2tV
+        b = (VtR2R2tV \ transpose(R2tV))*(c2 - transpose(R2)*R1*c1)
+        lgdet = LA.logdet(VtR2R2tV)
+    end
+    c[(k1+1):(k1+Δk1)] = b
+    # degrees of degeneracy
     k1 += Δk1
-    # for updating h and g (using new R1 and c1)
+    cluster_to.k[1] = k1
+    # for updating h and g (using new R1, c1, k1)
     Q1tVb = transpose(Q1)*V*b
-    Λ1Q1tVb = Λ1*Q1tVb
+    Λ1Q1tVb = Λ1.*Q1tVb
     Q2tR1c1 = transpose(Q2)*view(R,:,1:k1)*view(c,1:k1)
-    Λ2Q2tR1c1 = Λ2*Q2tR1c1
-    # update Λ1
+    Λ2Q2tR1c1 = Λ2.*Q2tR1c1
+    # precision
     U = LA.nullspace(transpose(view(R,:,1:k1)))
-    Z, Λ, _ = LA.svd(transpose(U)*(Q1*Λ1*transpose(Q1) + Q2*Λ2*transpose(Q2))*U)
-    # update Q1
-    cluster_to.Q[:,1:(m1-k1)] .= U*Z
-    cluster_to.Λ[1:(m1-k1)] .= Λ
-    # update h1
-    h[1:(m1-k1)] .= transpose(view(cluster_to.Q,:,1:(m1-k1)))*(Q1*(h1-Λ1Q1tVb) +
+    Z, Λ = LA.svd(transpose(U)*(Q1*LA.Diagonal(Λ1)*transpose(Q1) +
+        Q2*LA.Diagonal(Λ2)*transpose(Q2))*U)
+    cluster_to.Q[:,1:(m1-k1)] = U*Z
+    cluster_to.Λ[1:(m1-k1)] = Λ
+    # potential
+    h[1:(m1-k1)] = transpose(view(cluster_to.Q,:,1:(m1-k1)))*(Q1*(h1-Λ1Q1tVb) +
         Q2*(h2-Λ2Q2tR1c1))
-    # update g1
-    cluster_to.g[1] += (cluster_to.gbuf[1] + transpose(h1-0.5*Λ1Q1tVb)*Q1tVb +
-        transpose(h2-0.5*Λ2Q2tR1c1)*Q2tR1c1 - LA.logdet(transpose(R2)*V))[1]
+    # normalization constant
+    cluster_to.g[1] += cluster_to.gbuf[1] + transpose(h1-0.5*Λ1Q1tVb)*Q1tVb +
+        transpose(h2-0.5*Λ2Q2tR1c1)*Q2tR1c1 - 0.5*lgdet
     return
 end
 
@@ -255,9 +264,9 @@ function div!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
     k1 = cluster_from.kbuf[1]
     k2 = sepset.k[1]
     # contraints
-    m = size(sepset.Q)[1]
+    m = size(sepset.Q)[1] # m ≥ max(k1,k2)
     R1 = cluster_from.Rbuf[1:m,1:k1]
-    R2 = sepset.R[:,1:k2]
+    R2 = sepset.R[:,1:k2] # m x k2
     c1 = cluster_from.cbuf[1:k1]
     # precisions
     Q1 = cluster_from.Qbuf[1:m,1:(m-k1)]
@@ -290,7 +299,7 @@ function div!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
         (Q1*h1 - Q2*(h2 - Λ2Q2tR1c1)))
     # normalization constant
     sepset.gbuf[1] = cluster_from.gbuf[1] - sepset.g[1] -
-        (transpose(h2-0.5*Λ2Q2tR1c1)*Q2tR1c1)[1]
+        transpose(h2-0.5*Λ2Q2tR1c1)*Q2tR1c1
     
     ## update sepset (non-buffer) parameters to those of the dividend
     sepset.k[1] = k1
