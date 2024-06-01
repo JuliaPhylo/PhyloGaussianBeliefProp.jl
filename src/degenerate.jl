@@ -315,53 +315,60 @@ end
 """
     marg!(cluster_from, keep_index)
 
-Marginalize a generalized belief (`cluster_from`) by integrating out all
-variables at indices `keep_index`.
+Marginalize a generalized belief, accessed from `cluster_from`, by integrating
+out all variables at indices `keep_index`.
 
-Note that:
-- the resulting marginal / outgoing message is saved in the buffer of
-`cluster_from`
+The parameters of `cluster_from`'s buffer are updated to those of the marginal.
 """
 function marg!(cluster_from::GeneralizedBelief, keepind)
-    m = length(keepind)
+    mm = length(keepind) # dimension for marginal
     m1 = size(cluster_from.Q)[1]
-    k1 = cluster_from.k[1]
-    Q1 = cluster_from.Q[keepind,1:(m1-k1)]
-    R1 = cluster_from.R[keepind,1:k1]
-    Λ1 = LA.Diagonal(view(cluster_from.Λ,1:(m1-k1)))
-    U = LA.qr(Q1)
-    k = sum(LA.diag(U.R) .== 0.0) # degrees of degeneracy
-    cluster_from.kbuf[1] = k # update kbuf
-    cluster_from.Rbuf[1:m,1:k] .= view(U.Q,:,findall(LA.diag(U.R) .== 0.0)) # update Rbuf
-    cluster_from.cbuf[1:k] .= (transpose(view(cluster_from.Rbuf,1:m,1:k))*R1*
-        view(cluster_from.c,1:k1)) # update cbuf
-    U = U.Q[:,findall(LA.diag(U.R) .!== 0.0)] # columnspace(Q_x)
-    # V = LA.nullspace(U) # nullspace(Q_x)
-    V = LA.nullspace(Q1)
-    W = transpose(R1)*Q1
+    k = cluster_from.k[1] # k ≤ m1
+    Q1 = cluster_from.Q[keepind,1:(m1-k)] # mm x (m1-k)
+    R1 = cluster_from.R[keepind,1:k] # mm x k
+    Λ = LA.Diagonal(view(cluster_from.Λ,1:(m1-k))) # matrix, not vector
+    
+    ## compute marginal and save parameters to cluster_from buffer
+    # degrees of degeneracy (todo: set threshold for a zero singular value)
+    U1, S1, V1 = LA.svd(Q1; full=true) # U1: mm x mm, S1: min(mm,m1-k) x 1, V1: (m1-k) x (m1-k)
+    nonzeroind = findall(S1 .!= 0.0) # indices for non-zero singular values
+    zeroind = setdiff(1:(m1-k), nonzeroind) # indices for zero singular values
+    km = mm - length(nonzeroind)
+    cluster_from.kbuf[1] = km
+    # constraint
+    cluster_from.Rbuf[1:mm,1:km] = view(U1,:,setdiff(1:mm,nonzeroind)) # mm x km
+    cluster_from.cbuf[1:km] = transpose(view(cluster_from.Rbuf,1:mm,1:km))*R1*
+        view(cluster_from.c,1:k)
+    # precision
+    V = V1[:,zeroind] # nullspace(Q1): (m1-k) x (m1-k-mm+km)
+    W = transpose(R1)*Q1 # k x (m1-k)
     if !isempty(W)
+        # orthogonalize W is non-empty
+        # note: qr can be run if input matrix has col dim 0, but not row dim 0
         W = LA.qr(W)
-        W = W.Q[:,findall(LA.diag(W.R) .!== 0.0)] # columnspace(transpose(R_x)*Q_x)
+        W = W.Q[:,findall(LA.diag(W.R) .!== 0.0)]
     end
-    Q2 = cluster_from.Q[setdiff(1:m1,keepind),1:(m1-k1)]
-    R2 = cluster_from.R[setdiff(1:m1,keepind),1:k1]
-    F = transpose(W*((R2*W)\Q2))
-    G = (transpose(Q1)-F*transpose(R1))*U
-    S = V * ((transpose(V)*Λ1*V) \ transpose(V))
-    Z, Λ, _ = LA.svd(transpose(G)*(Λ1-Λ1*S*Λ1)*G)
-    cluster_from.Λbuf[1:(m-k)] .= Λ
-    cluster_from.Qbuf[1:m,1:(m-k)] .= U*Z
-    Fc1 = F*cluster_from.c[1:k1]
-    Λ1Fc1 = Λ1*Fc1
-    h1_Λ1Fc1 = cluster_from.h[1:(m1-k1)] - Λ1Fc1
-    cluster_from.hbuf[1:(m-k)] .= transpose(Z)*transpose(G)*(LA.I-Λ1*S)*(h1_Λ1Fc1)
-    cluster_from.gbuf[1] = (@. cluster_from.g[1] +
-        transpose(h1_Λ1Fc1+0.5*Λ1Fc1)*Fc1 + 0.5*transpose(h1_Λ1Fc1)*S*(h1_Λ1Fc1))[1]
-    if !isempty(transpose(V)*Λ1*V)
-        cluster_from.gbuf[1] -= 0.5*LA.logdet((1/2π)*transpose(V)*Λ1*V)[1]
+    Q2 = cluster_from.Q[setdiff(1:m1,keepind),1:(m1-k)] # (m1-mm) x (m1-k)
+    R2 = cluster_from.R[setdiff(1:m1,keepind),1:k] # (m1-mm) x k
+    F = transpose(W*((R2*W)\Q2)) # transpose(W(R2*W)⁺Q2): (m1-k) x k
+    G = (transpose(Q1)-F*transpose(R1))*view(U1,:,nonzeroind) # (m1-k) x (mm-km)
+    S = V*((transpose(V)*Λ*V) \ transpose(V)) # (m1-k) x (m1-k)
+    Z, Λm = LA.svd(transpose(G)*(Λ-Λ*S*Λ)*G)
+    cluster_from.Λbuf[1:(mm-km)] = Λm
+    cluster_from.Qbuf[1:mm,1:(mm-km)] = view(U1,:,nonzeroind)*Z
+    # potential
+    Fc = F*cluster_from.c[1:k] # (m1-k) x 1
+    ΛFc = Λ*Fc # (m1-k) x 1
+    h_ΛFc = cluster_from.h[1:(m1-k)] - ΛFc
+    cluster_from.hbuf[1:(mm-km)] = transpose(Z)*transpose(G)*(LA.I-Λ*S)*(h_ΛFc)
+    # normalization constant
+    cluster_from.gbuf[1] = cluster_from.g[1] + transpose(h_ΛFc+0.5*ΛFc)*Fc
+    if m1 != k # Λ: (m1-k) x (m1-k) not empty
+        # if Λ empty but V is not, then VᵀΛV defaults to a zero matrix with ∞ logdet!
+        cluster_from.gbuf[1] -= 0.5*LA.logdet((1/2π)*transpose(V)*Λ*V)
     end
-    if !isempty(R2*W)
-        cluster_from.gbuf[1] -= 0.5*LA.logdet(transpose(R2*W)*R2*W)[1]
+    if k > 0 # R2ᵀR2: k x k not empty
+        cluster_from.gbuf[1] -= 0.5*LA.logdet(transpose(R2*W)*R2*W)
     end
     return
 end
