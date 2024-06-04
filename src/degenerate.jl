@@ -128,42 +128,54 @@ end
 """
     extend!(cluster_to, sepset)
 
-Extend the scope of one generalized belief (`sepset`) to the scope of another
-(`cluster_to`) so that multiplication (see [`mult!`](@ref)) can be applied.
-Note that:
-- the incoming message is accessed from the buffer of `sepset`
-- the scope of this incoming message is extended within the buffer of `cluster_to`
-- the labels in `sepset` are assumed to be ordered as in `cluster_to`
+Extend (and match) the scope of one generalized belief (accessed from the buffer
+of `sepset`) to the scope of another (`cluster_to`) so that multiplication (see
+[`mult!`](@ref)) can be applied. The extended parameters are saved to the buffer
+of `cluster_to`.
 """
 function extend!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     # indices in `cluster_to` inscope variables of `sepset` inscope variables
     upind = scopeindex(sepset, cluster_to)
-    m2 = size(sepset.Q)[1]
-    k2 = sepset.kbuf[1]
-    # copy sepset.kbuf[1] to cluster_to.kbuf
-    cluster_to.kbuf[1] = k2
-    #= extend sepset.Qbuf[:,1:(m2-k2)] in cluster_to.Qbuf
-    Q is extended to P[Q 0; 0 I], where P is a permutation matrix (determined by
-    upind) and P*[QΛQᵀ 0; 0 0]*Pᵀ = (P*[Q 0; 0 I])*[Λ 0; 0 0]*([Q 0; 0 I]ᵀ*Pᵀ) =#
-    cluster_to.Qbuf .= 0.0 # reset buffer
-    cluster_to.Qbuf[LA.diagind(cluster_to.Qbuf)] .= 1.0 # 1s along the diagonal
-    cluster_to.Qbuf[1:length(upind),1:(m2-k2)] .= view(sepset.Qbuf,:,1:(m2-k2)) # store Q in buffer
+    #=
+    x,Q,Λ from sepset buffer are extended as follows:
+    (1) x is extended to Px', where x' is formed by stacking x on top of the
+    inscope variables of `cluster_to` that are not in x, and P is a permutation
+    matrix determined by `upind`
+    (2) Q is extended to Q' = P[Q 0; 0 I], where P is a permutation matrix
+    (3) Λ is extended to Λ' = [Λ 0; 0 0]
+    (4) R is extended to R' = P[R; 0]
+
+    - Px' matches the scope of `cluster_to`
+    - the additional rows and columns in Q',Λ',R' correspond to the variables
+    present in x but not x'
+    - Only Q,Λ,R, but not h,c need to be extended:
+        - (Px')ᵀQ'Λ'Q'ᵀ(Px') = xᵀQΛQᵀx
+        - hᵀQ'ᵀ(Px') = hᵀQᵀx
+        - R'ᵀ(Px') = Rᵀx
+    =#
     m1 = size(cluster_to.Q)[1]
-    perm = [upind;setdiff(1:m1,upind)]
-    cluster_to.Qbuf[perm,:] .= cluster_to.Qbuf[:,:] # permute
-    # copy sepset.Λbuf[1:(m2-k2)] to cluster_to.Λbuf
+    perm = [upind;setdiff(1:m1,upind)] # to permute rows
+    m2 = size(sepset.Q)[1]
+
+    # degrees of degeneracy
+    k2 = sepset.kbuf[1]
+    cluster_to.kbuf[1] = k2
+    # constraint
+    cluster_to.Rbuf[:,1:k2] .= 0.0 # reset buffer
+    cluster_to.Rbuf[1:m2,1:k2] = view(sepset.Rbuf,:,1:k2)
+    cluster_to.Rbuf[perm,:] = cluster_to.Rbuf[:,:] # permute rows of [R; 0]
+    cluster_to.cbuf[1:k2] = view(sepset.cbuf,1:k2)
+    # precision
+    cluster_to.Qbuf .= 0.0
+    cluster_to.Qbuf[LA.diagind(cluster_to.Qbuf)] .= 1.0 # 1s along the diagonal
+    cluster_to.Qbuf[1:m2,1:(m2-k2)] = view(sepset.Qbuf,:,1:(m2-k2)) # store Q in buffer
+    cluster_to.Qbuf[perm,:] = cluster_to.Qbuf[:,:] # permute rows of [Q 0; 0 I]
     cluster_to.Λbuf .= 0.0
-    cluster_to.Λbuf[1:(m2-k2)] .= sepset.Λbuf[1:(m2-k2)]
-    # extend sepset.Rbuf[:,1:k2] in cluster_to.Rbuf
-    cluster_to.Rbuf[:,1:k2] .= 0.0
-    cluster_to.Rbuf[1:length(upind),1:k2] .= view(sepset.Rbuf,:,1:k2)
-    cluster_to.Rbuf[perm,:] .= cluster_to.Rbuf[:,:] # permute
-    # extend sepset.hbuf[1:(m2-k2)] in cluster_to.hbuf
+    cluster_to.Λbuf[1:(m2-k2)] = sepset.Λbuf[1:(m2-k2)]
+    # potential
     cluster_to.hbuf .= 0.0
-    cluster_to.hbuf[1:(m2-k2)] .= view(sepset.hbuf,1:(m2-k2))
-    # copy sepset.cbuf[1:k2] to cluster_to.cbuf
-    cluster_to.cbuf[1:k2] .= view(sepset.cbuf,1:k2)
-    # copy sepset.gbuf[1] to cluster_to.gbuf
+    cluster_to.hbuf[1:(m2-k2)] = view(sepset.hbuf,1:(m2-k2))
+    # normalization constant
     cluster_to.gbuf[1] = sepset.gbuf[1]
     return
 end
@@ -175,9 +187,9 @@ Multiply two generalized beliefs, accessed from `cluster_to` and the buffer of
 `sepset`.
 
 The parameters of `sepset`'s buffer (i.e. the incoming message) are extended
-(and matched), within the buffer of `cluster_to`, to the scope of `cluster_to`'s
-parameters before multiplication is carried out. The parameters of `cluster_to`
-are updated to those of the product.
+(see [`extend!`](@ref)) to the scope of `cluster_to`'s parameters before
+multiplication is carried out. The parameters of `cluster_to` are updated to
+those of the product.
 """
 function mult!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     ## extend scope of incoming message and save parameters to cluster_to buffer
@@ -376,17 +388,24 @@ end
 """
     integratebelief!(b::GeneralizedBelief)
 
-Return `(μ, g)`, where `μ` is the conditional mean of inscope nodes in `b`, and
-`g` is the normalization constant from integrating out all inscope nodes in `b`.
+Return `(μ, messageg)` from integrating generalized belief `b`, parametrized as:
+𝒟(x;Q,R,Λ,h,c,g) = C(Qᵀx;Λ,h,g)⋅δ(Rᵀx-c). `μ` is the mean of QQᵀx, where x
+denotes the inscope nodes in `b`. `messageg` is the normalization constant for
+C(Qᵀx;Λ,h,g) (from integrating out Qᵀx).
 
-Note that:
-- `b` does not necessarily have k=0 degrees of degeneracy
-- `μ` is the mean estimate for the inscope nodes x if k=0, and for QQᵀx if k>0
-- it is assumed that QΛQᵀ is positive-definite (i.e. Λ has no 0-entries)
+If `b` has 0 degrees of degeneracy (i.e. `b.k[1] == 0`), then this is equivalent
+to integrating the canonical belief C(x;QΛQᵀ,Qh,g), e.g. `μ` equals E[x].
+
+Assumptions (not checked):
+- Λ has no 0-entries, so that C(Qᵀx;Λ,h,g) is normalizable
 """
 function integratebelief!(b::GeneralizedBelief)
     m = size(b.Q)[1]
     k = b.k[1]
+    #= 𝒟(x;Q,R,Λ,h,c,g) = exp(-xᵀ(QΛQᵀ)x/2+(Qh)ᵀx+g)⋅δ(Rᵀx-c)
+    Take Qᵀx ∼ 𝒩(Λ⁻¹h,Λ⁻¹):
+    (1) μ = E[QQᵀx] = QΛ⁻¹h
+    (2) messageg = ∫C(Qᵀx;Λ,h,g)d(Qᵀx) = exp(g)⋅exp(log|2πΛ⁻¹| - hᵀΛ⁻¹h)/2) =#
     μ = view(b.Q,:,1:(m-k))*(view(b.h,1:(m-k)) ./ view(b.Λ,1:m-k))
     messageg = b.g[1] + (m*log(2π) - log(prod(view(b.Λ,1:(m-k)))) +
         sum(view(b.h,1:(m-k)) .^2 ./ view(b.Λ,1:(m-k))))/2
@@ -400,9 +419,8 @@ Update the parameters of the generalized beliefs `cluster_to` and `sepset`, by
 marginalizing the generalized belief `cluster_from` to the scope of `sepset` and
 passing that message.
 
-Note that:
-- the "residual" (i.e. change in `sepset`'s parameters) can be accessed from
-`sepset`'s buffer
+The "residual" (i.e. change in `sepset`'s parameters) can be accessed from
+`sepset`'s buffer.
 """
 function propagate_belief!(
     cluster_to::GeneralizedBelief,
