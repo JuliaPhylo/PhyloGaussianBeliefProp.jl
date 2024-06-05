@@ -126,12 +126,16 @@ function GeneralizedBelief(b::CanonicalBelief{T,Vlabel,P,V,M}, R::AbstractMatrix
 end
 
 """
-    extend!(cluster_to, sepset)
+    extend!(cluster_to::GeneralizedBelief, sepset)
+    extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
 
 Extend (and match) the scope of one generalized belief (accessed from the buffer
 of `sepset`) to the scope of another (`cluster_to`) so that multiplication (see
 [`mult!`](@ref)) can be applied. The extended parameters are saved to the buffer
 of `cluster_to`.
+
+The second method applies when the belief to be extended is a canonical belief,
+with parameters (ΔJ, Δh, Δg), instead of a generalized one.
 """
 function extend!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     # indices in `cluster_to` inscope variables of `sepset` inscope variables
@@ -156,7 +160,6 @@ function extend!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     m1 = size(cluster_to.Q)[1]
     perm = [upind;setdiff(1:m1,upind)] # to permute rows
     m2 = size(sepset.Q)[1]
-
     # degrees of degeneracy
     k2 = sepset.kbuf[1]
     cluster_to.kbuf[1] = k2
@@ -168,7 +171,7 @@ function extend!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     # precision
     cluster_to.Qbuf .= 0.0
     cluster_to.Qbuf[LA.diagind(cluster_to.Qbuf)] .= 1.0 # 1s along the diagonal
-    cluster_to.Qbuf[1:m2,1:(m2-k2)] = view(sepset.Qbuf,:,1:(m2-k2)) # store Q in buffer
+    cluster_to.Qbuf[1:m2,1:(m2-k2)] = view(sepset.Qbuf,:,1:(m2-k2))
     cluster_to.Qbuf[perm,:] = cluster_to.Qbuf[:,:] # permute rows of [Q 0; 0 I]
     cluster_to.Λbuf .= 0.0
     cluster_to.Λbuf[1:(m2-k2)] = sepset.Λbuf[1:(m2-k2)]
@@ -179,9 +182,33 @@ function extend!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     cluster_to.gbuf[1] = sepset.gbuf[1]
     return
 end
+function extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
+    m1 = size(cluster_to.Q)[1]
+    perm = [upind;setdiff(1:m1,upind)]
+    m2 = size(ΔJ)[1]
+    # degrees of degeneracy
+    cluster_to.kbuf[1] = 0
+    # cluster_to.Rbuf, cluster_to.cbuf not updated since constraint is irrelevant
+    # precision
+    Q, Λ = LA.svd(ΔJ)
+    cluster_to.Qbuf .= 0.0
+    cluster_to.Qbuf[LA.diagind(cluster_to.Qbuf)] .= 1.0
+    cluster_to.Qbuf[1:m2,1:m2] = Q
+    cluster_to.Qbuf[perm,:] = cluster_to.Qbuf[:,:]
+    cluster_to.Λbuf .= 0.0
+    cluster_to.Λbuf[1:m2] = Λ
+    # potential
+    cluster_to.hbuf .= 0.0
+    cluster_to.hbuf[1:m2] = Q*Δh
+    # normalization constant
+    cluster_to.gbuf[1] = Δg
+    return
+end
 
 """
-    mult!(cluster_to, sepset)
+    mult!(cluster_to::GeneralizedBelief, sepset)
+    mult!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
+    mult!(cluster_to::GeneralizedBelief)
 
 Multiply two generalized beliefs, accessed from `cluster_to` and the buffer of
 `sepset`.
@@ -190,11 +217,26 @@ The parameters of `sepset`'s buffer (i.e. the incoming message) are extended
 (see [`extend!`](@ref)) to the scope of `cluster_to`'s parameters before
 multiplication is carried out. The parameters of `cluster_to` are updated to
 those of the product.
+
+The second method applies when the belief associated with `sepset` is a
+canonical belief, with parameters (ΔJ, Δh, Δg), instead of a generalized one.
+The third method is called by the first and second, and performs multiplication
+directly on the generalized beliefs in `cluster_to`.
 """
 function mult!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     ## extend scope of incoming message and save parameters to cluster_to buffer
     extend!(cluster_to, sepset)
-
+    ## multiply the beliefs (non-buffer and buffer) in cluster_to
+    mult!(cluster_to)
+end
+function mult!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
+    extend!(cluster_to, upind, Δh, ΔJ, Δg)
+    mult!(cluster_to)
+    # cluster_to.h[upind] .+= residual.Δh
+    # cluster_to[upind,upind] .+= residual.ΔJ
+    # cluster_to.g[1] += g - sepset.g[1]
+end
+function mult!(cluster_to::GeneralizedBelief)
     # degrees of degeneracy
     k1 = cluster_to.k[1]
     k2 = cluster_to.kbuf[1]
@@ -257,7 +299,8 @@ function mult!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
 end
 
 """
-    div!(sepset, cluster_from)
+    div!(sepset::GeneralizedBelief, cluster_from)
+    div!(sepset::CanonicalBelief, h, J, g)
 
 Divide two generalized beliefs. The dividend is accessed from the buffer of
 `cluster_from`, and the divisor is accessed from `sepset`.
@@ -265,6 +308,9 @@ Divide two generalized beliefs. The dividend is accessed from the buffer of
 The parameters of `sepset` are updated to those of the dividend (i.e. the message
 sent from `cluster_from`), and the parameters of `sepset`'s buffer are updated
 to those of the quotient (i.e. [`MessageResidual`](@ref)) from this division.
+
+The second method applies when the dividend is a canonical belief, with
+parameters (ΔJ, Δh, Δg), instead of a generalized one.
 
 Assumptions (not checked):
 - Both dividend and divisor are assumed to have matching scopes
@@ -322,6 +368,15 @@ function div!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
     sepset.h[1:(m-k1)] = h1
     sepset.g[1] = cluster_from.gbuf[1]
     return
+end
+function div!(sepset::CanonicalBelief, h, J, g)
+    Δh = h .- sepset.h
+    ΔJ = J .- sepset.J
+    Δg = g - sepset.g[1]
+    sepset.h[:] = h
+    sepset.J[:] = J
+    sepset.g[1] = g
+    return Δh, ΔJ, Δg
 end
 
 """
@@ -413,7 +468,8 @@ function integratebelief!(b::GeneralizedBelief)
 end
 
 """
-    propagate_belief!(cluster_to, sepset, cluster_from, residual)
+    propagate_belief!(cluster_to, sepset, cluster_from)
+    propagate_belief!(cluster_to, sepset, cluster_from, keepind)
 
 Update the parameters of the generalized beliefs `cluster_to` and `sepset`, by
 marginalizing the generalized belief `cluster_from` to the scope of `sepset` and
@@ -421,15 +477,58 @@ passing that message.
 
 The "residual" (i.e. change in `sepset`'s parameters) can be accessed from
 `sepset`'s buffer.
+
+The second method dispatches on the types of `cluster_to`, `sepset`,
+`cluster_from`. There are 3 scenarios:
+(1) `sepset` is a generalized belief, in which case both `cluster_to` and
+`cluster_from` must be generalized beliefs
+(2a,b) `sepset` is a canonical belief, in which case one (but not both) of
+`cluster_to` or `cluster_from` is a generalized belief
 """
+function propagate_belief!(
+    cluster_to::AbstractBelief,
+    sepset::AbstractBelief,
+    cluster_from::AbstractBelief
+    )
+    propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
+        cluster_from::AbstractBelief, scopeindex(sepset, cluster_from))
+end
 function propagate_belief!(
     cluster_to::GeneralizedBelief,
     sepset::GeneralizedBelief,
-    cluster_from::GeneralizedBelief
+    cluster_from::GeneralizedBelief,
+    keepind
     )
-    keepind = scopeindex(sepset, cluster_from)
     marg!(cluster_from, keepind)
     div!(sepset, cluster_from)
     mult!(cluster_to, sepset) # handles scope extension and matching
+    return
+end
+function propagate_belief!(
+    cluster_to::GeneralizedBelief,
+    sepset::CanonicalBelief,
+    cluster_from::CanonicalBelief,
+    keepind
+    )
+    h, J, g = marginalizebelief(cluster_from, keepind)
+    Δh, ΔJ, Δg = div!(sepset, h, J, g)
+    mult!(cluster_to, scopeindex(sepset, cluster_to), Δh, ΔJ, Δg)
+    return
+end
+function propagate_belief!(
+    cluster_to::CanonicalBelief,
+    sepset::CanonicalBelief,
+    cluster_from::GeneralizedBelief,
+    keepind
+    )
+    marg!(cluster_from, keepind)
+    Q = cluster_from.Qbuf
+    J = Q*LA.Diagonal(cluster_from.Λbuf)*transpose(Q)
+    h = Q*cluster_from.hbuf
+    Δh, ΔJ, Δg = div!(sepset, h, J, cluster_from.gbuf[1])
+    upind = scopeindex(sepset, cluster_to)
+    cluster_to.h[upind] .+= Δh
+    cluster_to.J[upind,upind] .+= ΔJ
+    cluster_to.g[1] += Δg
     return
 end
