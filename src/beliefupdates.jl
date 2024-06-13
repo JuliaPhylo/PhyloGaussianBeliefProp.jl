@@ -22,9 +22,9 @@ function Base.showerror(io::IO, ex::BPPosDefException)
 end
 
 """
-    marginalizebelief(belief::AbstractFactorBelief, keep_index)
-    marginalizebelief(h,J,g, keep_index, beliefmetadata)
-    marginalizebelief(h,J,g, keep_index, integrate_index, beliefmetadata)
+    marginalize(belief::AbstractFactorBelief, keep_index)
+    marginalize(h,J,g, keep_index, beliefmetadata)
+    marginalize(h,J,g, keep_index, integrate_index, beliefmetadata)
 
 Canonical form (h,J,g) of the input belief, after all variables except those at
 indices `keep_index` have been integrated out. If we use `I` and `S` subscripts
@@ -45,13 +45,13 @@ In that case, an error of type [`BPPosDefException`](@ref) is thrown
 with a message about the `beliefmetadata`,
 which can be handled by downstream functions.
 """
-marginalizebelief(b::AbstractFactorBelief, keepind) =
-    marginalizebelief(b.h, b.J, b.g[1], keepind, b.metadata)
-function marginalizebelief(h,J,g::Real, keep_index, metadata)
+marginalize(b::AbstractFactorBelief, keepind) =
+    marginalize(b.h, b.J, b.g[1], keepind, b.metadata)
+function marginalize(h,J,g::Real, keep_index, metadata)
     integrate_index = setdiff(1:length(h), keep_index)
-    marginalizebelief(h,J,g, keep_index, integrate_index, metadata)
+    marginalize(h,J,g, keep_index, integrate_index, metadata)
 end
-function marginalizebelief(h,J,g::Real, keep_index, integrate_index, metadata)
+function marginalize(h,J,g::Real, keep_index, integrate_index, metadata)
     isempty(integrate_index) && return (h,J,g)
     ni = length(integrate_index)
     Ji = view(J, integrate_index, integrate_index)
@@ -142,7 +142,7 @@ end
 
 Absorb evidence from a leaf, given in `col[rowindex]` of each column in the table,
 then marginalizes out any variable for a missing trait at that leaf.
-See [`absorbevidence!`](@ref) and [`marginalizebelief`](@ref).
+See [`absorbevidence!`](@ref) and [`marginalize`](@ref).
 Warning:
 The leaf traits are assumed to correspond to the first variables in `h` (and `J`),
 as is output by [`factor_treeedge`](@ref).
@@ -152,7 +152,7 @@ function absorbleaf!(h,J,g, rowindex, tbl)
     h,J,g,missingindices = absorbevidence!(h,J,g, 1:length(datavalues), datavalues)
     if !isempty(missingindices)
         @debug "leaf data $(join(datavalues,',')), J=$(round.(J, digits=2)), will integrate at index $(join(missingindices,','))"
-        h,J,g = marginalizebelief(h,J,g, setdiff(1:length(h), missingindices), missingindices, "leaf row $rowindex")
+        h,J,g = marginalize(h,J,g, setdiff(1:length(h), missingindices), missingindices, "leaf row $rowindex")
     end
     return h,J,g
 end
@@ -170,7 +170,7 @@ The change in sepset belief (`Δh` and `ΔJ`: new - old) is stored in `residual`
 Propagating a belief requires the `cluster_from` belief to have a
 non-degenerate `J_I`: submatrix of `J` for the indices to be integrated out.
 Problems arise if this submatrix has one or more 0 eigenvalues, or infinite values
-(see [`marginalizebelief`](@ref)).
+(see [`marginalize`](@ref)).
 If so, a [`BPPosDefException`](@ref) is returned **but not thrown**.
 Downstream functions should try & catch these failures, and decide how to proceed.
 See [`regularizebeliefs_bycluster!`](@ref) to reduce the prevalence of degeneracies.
@@ -197,10 +197,10 @@ function propagate_belief!(
 )
     # 1. compute message: marginalize cluster_from to variables in sepset
     #    requires cluster_from.J[I,I] to be invertible, I = indices other than `keepind`
-    #    marginalizebelief sends BPPosDefException otherwise.
+    #    marginalize sends BPPosDefException otherwise.
     # `keepind` can be empty (e.g. if `cluster_from` is entirely "clamped")
     keepind = scopeindex(sepset, cluster_from)
-    h,J,g = try marginalizebelief(cluster_from, keepind)
+    h,J,g = try marginalize(cluster_from, keepind)
     catch ex
         isa(ex, BPPosDefException) && return ex # output the exception: not thrown
         rethrow(ex) # exception thrown if other than BPPosDefException
@@ -210,12 +210,12 @@ function propagate_belief!(
     residual.ΔJ .= J .- sepset.J
     # 2. extend message to scope of cluster_to and propagate
     upind = scopeindex(sepset, cluster_to) # indices to be updated
-    view(cluster_to.h, upind)        .+= residual.Δh
-    view(cluster_to.J, upind, upind) .+= residual.ΔJ
+    cluster_to.h[upind]        .+= residual.Δh
+    cluster_to.J[upind, upind] .+= residual.ΔJ
     cluster_to.g[1]                   += g  - sepset.g[1]
     # 3. update sepset belief
-    sepset.h   .= h
-    sepset.J   .= J
+    sepset.h[:]   = h
+    sepset.J[:]   = J
     sepset.g[1] = g
     return nothing
 end

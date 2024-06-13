@@ -108,7 +108,7 @@ end
 """
     GeneralizedBelief(b::CanonicalBelief, R::AbstractMatrix)
 
-Constructor from a standard belief `b` and a constraint matrix `R`.
+Constructor from a canonical belief `b` and a constraint matrix `R`.
 
 `R` is assumed to have the same number of rows as `b.R`, and all entries of
 `b.c[1:size(R)[2]]` are assumed to be 0.
@@ -380,7 +380,7 @@ function div!(sepset::CanonicalBelief, h, J, g)
 end
 
 """
-    marg!(cluster_from, keep_index)
+    marginalize!(cluster_from, keep_index)
 
 Marginalize a generalized belief, accessed from `cluster_from`, by integrating
 out all variables at indices `keep_index`.
@@ -478,8 +478,8 @@ passing that message.
 The "residual" (i.e. change in `sepset`'s parameters) can be accessed from
 `sepset`'s buffer.
 
-The second method dispatches on the types of `cluster_to`, `sepset`,
-`cluster_from`. There are 3 scenarios:
+The second method is called by the first, and dispatches on the types of
+`cluster_to`, `sepset`, `cluster_from`. There are 3 cases:
 (1) `sepset` is a generalized belief, in which case both `cluster_to` and
 `cluster_from` must be generalized beliefs
 (2a,b) `sepset` is a canonical belief, in which case one (but not both) of
@@ -488,8 +488,8 @@ The second method dispatches on the types of `cluster_to`, `sepset`,
 function propagate_belief!(
     cluster_to::AbstractBelief,
     sepset::AbstractBelief,
-    cluster_from::AbstractBelief
-    )
+    cluster_from::AbstractBelief,
+)
     propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
         cluster_from::AbstractBelief, scopeindex(sepset, cluster_from))
 end
@@ -498,7 +498,7 @@ function propagate_belief!(
     sepset::GeneralizedBelief,
     cluster_from::GeneralizedBelief,
     keepind
-    )
+)
     marg!(cluster_from, keepind)
     div!(sepset, cluster_from)
     mult!(cluster_to, sepset) # handles scope extension and matching
@@ -509,8 +509,8 @@ function propagate_belief!(
     sepset::CanonicalBelief,
     cluster_from::CanonicalBelief,
     keepind
-    )
-    h, J, g = marginalizebelief(cluster_from, keepind)
+)
+    h, J, g = marginalize(cluster_from, keepind)
     Δh, ΔJ, Δg = div!(sepset, h, J, g)
     mult!(cluster_to, scopeindex(sepset, cluster_to), Δh, ΔJ, Δg)
     return
@@ -520,7 +520,7 @@ function propagate_belief!(
     sepset::CanonicalBelief,
     cluster_from::GeneralizedBelief,
     keepind
-    )
+)
     marg!(cluster_from, keepind)
     Q = cluster_from.Qbuf
     J = Q*LA.Diagonal(cluster_from.Λbuf)*transpose(Q)
