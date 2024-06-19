@@ -1,7 +1,7 @@
 # Installation
 
 For information on how to install Julia and PhyloNetworks, see
-[here](https://crsl4.github.io/PhyloNetworks.jl/dev/man/installation/#Installation).
+[here](https://JuliaPhylo.github.io/PhyloNetworks.jl/dev/man/installation/#Installation).
 PhyloGaussianBeliefProp depends on PhyloNetworks.
 
 To install [PhyloGaussianBeliefProp](https://github.com/JuliaPhylo/PhyloGaussianBeliefProp.jl)
