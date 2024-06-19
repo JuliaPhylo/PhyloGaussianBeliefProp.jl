@@ -18,7 +18,7 @@ pkg> add PhyloGaussianBeliefProp
 ```
 
 In this manual, we will also use
-[PhyloNetworks](https://github.com/crsl4/PhyloNetworks.jl) and other packages,
+[PhyloNetworks](https://github.com/JuliaPhylo/PhyloNetworks.jl) and other packages,
 to be installed similarly, here in package mode:
 ```
 pkg> add PhyloNetworks

@@ -131,7 +131,7 @@ all of the parents' indices are listed after the node (their child) index.
 A given node and its parents is called a "node family".
 
 **Warning**: `net` is assumed preordered, see [`preprocessnet!`](@ref) and
-[`PhyloNetworks.preorder!`](https://crsl4.github.io/PhyloNetworks.jl/latest/lib/public/#PhyloNetworks.preorder!)).
+[`PhyloNetworks.preorder!`](https://JuliaPhylo.github.io/PhyloNetworks.jl/latest/lib/public/#PhyloNetworks.preorder!)).
 """
 function nodefamilies(net::HybridNetwork)
     T = vgraph_eltype(net)
@@ -162,7 +162,7 @@ Tuple `(ispreserving, isfamily_incluster)`:
     contains at least 1 true value.
 
 **Warning**: assumes that `net` is preordered, see
-[`PhyloNetworks.preorder!`](https://crsl4.github.io/PhyloNetworks.jl/latest/lib/public/#PhyloNetworks.preorder!)).
+[`PhyloNetworks.preorder!`](https://JuliaPhylo.github.io/PhyloNetworks.jl/latest/lib/public/#PhyloNetworks.preorder!)).
 
 See also [`nodefamilies`](@ref) to get node families.
 """

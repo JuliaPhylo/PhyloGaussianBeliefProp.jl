@@ -11,7 +11,7 @@
 [Julia](http://julialang.org) package for the analysis of Gaussian models on
 phylogenetic networks and admixture graphs
 using belief propagation (aka message passing).
-It depends on utilities from [PhyloNetworks](https://github.com/crsl4/PhyloNetworks.jl).
+It depends on utilities from [PhyloNetworks](https://github.com/JuliaPhylo/PhyloNetworks.jl).
 
 ## Citing
 
