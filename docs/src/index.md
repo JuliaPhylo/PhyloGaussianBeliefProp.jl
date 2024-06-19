@@ -4,7 +4,7 @@ CurrentModule = PhyloGaussianBeliefProp
 
 # PhyloGaussianBeliefProp
 
-[PhyloGaussianBeliefProp](https://github.com/cecileane/PhyloGaussianBeliefProp.jl)
+[PhyloGaussianBeliefProp](https://github.com/JuliaPhylo/PhyloGaussianBeliefProp.jl)
 is a [Julia](http://julialang.org) package for the analysis of Gaussian models on
 phylogenetic networks using belief propagation (aka message passing).
 

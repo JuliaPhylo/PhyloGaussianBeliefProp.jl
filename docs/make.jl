@@ -14,7 +14,7 @@ makedocs(;
         mathengine=Documenter.KaTeX(),
         prettyurls=get(ENV, "CI", "false") == "true",
         size_threshold = 600 * 2^10, size_threshold_warn = 500 * 2^10, # 600 KiB
-        canonical="https://cecileane.github.io/PhyloGaussianBeliefProp.jl/stable/",
+        canonical="https://JuliaPhylo.github.io/PhyloGaussianBeliefProp.jl/stable/",
         edit_link="main",
         assets=String["assets/citations.css"],
     ),
@@ -38,7 +38,7 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/cecileane/PhyloGaussianBeliefProp.jl.git",
+    repo="github.com/JuliaPhylo/PhyloGaussianBeliefProp.jl.git",
     push_preview=true,
     devbranch="main",
 )
