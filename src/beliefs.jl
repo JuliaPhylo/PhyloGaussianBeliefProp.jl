@@ -356,8 +356,8 @@ function allocatebeliefs(
         inscope = falses(numtraits, length(set_nodeindices))
         for (i,i_node) in enumerate(set_nodeindices)
             node = prenodes[i_node]
-            (node.leaf || (isdegenerate(node) && unscope(node))) && continue
-            fixedroot && i_node==1 && continue # keep 'false' at the root if fixed
+            (node.leaf || (i_node == 1) && fixedroot) && continue # keep 'false' at the root if fixed
+            isdegenerate(node) && unscope(node) && continue # todo: remove
             inscope[:,i] = view(hasdata,:,i_node)
         end
         return inscope
@@ -610,7 +610,7 @@ end
 """
     assignfactors!(beliefs,
                    evolutionarymodel, columntable, taxa,
-                   cluster2nodes)
+                   nodevector_preordered, cluster2nodes)
 
 Initialize cluster beliefs prior to belief propagation, by assigning each factor
 to one cluster. Sepset beliefs are reset to 1.
@@ -640,6 +640,7 @@ function assignfactors!(
 ) where B <: AbstractBelief{T} where T
     init_beliefs_reset!(beliefs)
     numtraits = dimension(model)
+    node2belief = zeros(Int, length(prenodes)) # node preorder index → belief index
     for (ci, nfs) in enumerate(cluster2nodes) # cluster `ci`
         be = beliefs[ci]
         for (nf, nfinscope) in nfs # node family `nf` assigned to `ci`
@@ -647,6 +648,7 @@ function assignfactors!(
             # `nf[nfinscope]`::Tuple of inscope nodes
             nfsize = length(nf)
             ch = prenodes[nf[1]] # child node
+            node2belief[nf[1]] = ci
             # todo: use function barrier
             if nfsize == 1
                 nf[1] == 1 || error("only the root node can belong to a family of size 1")
@@ -687,6 +689,7 @@ function assignfactors!(
             be.g[1] += g
         end
     end
+    return node2belief
 end
 
 """

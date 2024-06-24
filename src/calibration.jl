@@ -174,7 +174,8 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     function score(θ) # θ: unconstrained parameters, e.g. log(σ2)
         model = evomodelfun(params_original(mod, θ)...)
         # reset beliefs based on factors from new model parameters
-        init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
+        assignfactors!(beliefs.belief, model, tbl, taxa, prenodes, beliefs.cluster2nodes)
+        # init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
         # no need to reset factors: free_energy not used on a clique tree
         init_messagecalibrationflags_reset!(beliefs, false)
         propagate_1traversal_postorder!(beliefs, spt...)
@@ -270,7 +271,8 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
     mod = evomodelfun(evomodelparams...) # model with starting values
     function score(θ)
         model = evomodelfun(params_original(mod, θ)...)
-        init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
+        assignfactors!(beliefs.belief, model, tbl, taxa, prenodes, beliefs.cluster2nodes)
+        # init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
         init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
         init_messagecalibrationflags_reset!(beliefs)
         regularizebeliefs_bycluster!(beliefs, cgraph)
