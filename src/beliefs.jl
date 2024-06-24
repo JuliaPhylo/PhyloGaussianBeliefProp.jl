@@ -307,22 +307,17 @@ function allocatebeliefs(
     can be removed when the evidence is absorbed
     =#
     clusterlabs = labels(clustergraph) # same order as cluster beliefs
-    cluster2nodes = [Vector{T1}[] for _ in 1:length(clusterlabs)]
+    cluster2nodes = [Tuple{Tuple{Vararg{T1}},BitVector}[] for _ in 1:length(clusterlabs)]
     hasdata = falses(numtraits, nnodes)
     for i_node in reverse(1:length(prenodes))
         node = prenodes[i_node]
         nodelab = node.name
-        i_row = findfirst(isequal(nodelab), taxa)
-        if !isnothing(i_row) # the node has data: it should be a tip!
-            node.leaf || error("A node with data is internal, should be a leaf")
+        if node.leaf
+            i_row = findfirst(isequal(nodelab), taxa)
+            isnothing(i_row) && error("tip $nodelab in network without any data")
             for v in 1:numtraits
-                hasdata[v,i_node] = !missing(tbl[v][i_row])
+                hasdata[v,i_node] = !ismissing(tbl[v][i_row])
             end
-        end
-        if node.leaf # todo: use `any` and `||` instead?
-            all(!hasdata[v,i_node] for v in 1:numtraits) &&
-                @error("tip $nodelab in network without any data")
-            continue
         end
         i_parents = Int[] # preorder indices of parent nodes, sorted in postorder
         for e in node.edge
@@ -340,11 +335,15 @@ function allocatebeliefs(
             end
         end
         all(!hasdata[v,i_node] for v in 1:numtraits) &&
-            @error("internal node $nodelab without any data below")
+            (node.leaf ? @error("tip $nodelab in network without any data") :
+                         @error("internal node $nodelab without any data below"))
         nodefamily = (i_node, i_parents...)
+        nfinscope = trues(length(nodefamily)) # inscope nodes in `nodefamily`
+        (node.leaf || (i_node == 1) && fixedroot) && (nfinscope[1] = false)
+        fixedroot && (1 ∈ i_parents) && (nfinscope[end] = false)
         i_b = findfirst(cl -> issubset(nodefamily, clustergraph[cl][2]), clusterlabs)
         isnothing(i_b) && error("no cluster containing the node family for $(node.number).")
-        push!(cluster2nodes[i_b], nodefamily)
+        push!(cluster2nodes[i_b], (nodefamily, nfinscope))
     end
     #= next: create a belief for each cluster and sepset. inscope =
     'has partial information and non-degenerate variance or precision?' =
@@ -372,12 +371,12 @@ function allocatebeliefs(
     for cllab in clusterlabs
         nodeindices = clustergraph[cllab][2]
         inscope = build_inscope(nodeindices)
-        push!(beliefs, CanonicalBelief(nodeindices, numtraits, inscope, bclustertype, cllab, T))
+        push!(beliefs, CanonicalBelief(nodeindices, numtraits, inscope, bclustertype, cllab, T2))
     end
     for sslab in edge_labels(clustergraph)
         nodeindices = clustergraph[sslab...]
         inscope = build_inscope(nodeindices)
-        push!(beliefs, CanonicalBelief(nodeindices, numtraits, inscope, bsepsettype, ))
+        push!(beliefs, CanonicalBelief(nodeindices, numtraits, inscope, bsepsettype, sslab, T2))
     end
     return beliefs, cluster2nodes
 end
@@ -636,41 +635,49 @@ function assignfactors!(
     model::EvolutionaryModel,
     tbl::Tables.ColumnTable,
     taxa::AbstractVector,
+    prenodes::Vector{PN.Node},
     cluster2nodes,
 ) where B <: AbstractBelief{T} where T
     init_beliefs_reset!(beliefs)
     numtraits = dimension(model)
-    for (ci, nfs) in enumerate(cluster2nodes) # loop through clusters
+    for (ci, nfs) in enumerate(cluster2nodes) # cluster `ci`
         be = beliefs[ci]
-        for nf in nfs # loop through node families
-            # nf: (child, parents...)
+        for (nf, nfinscope) in nfs # node family `nf` assigned to `ci`
+            # `nf`: (child, parents...); `nfinscope`::BitVector
+            # `nf[nfinscope]`::Tuple of inscope nodes
             nfsize = length(nf)
-            ch = nf[1]
+            ch = prenodes[nf[1]] # child node
             # todo: use function barrier
             if nfsize == 1
+                nf[1] == 1 || error("only the root node can belong to a family of size 1")
+                # root is inscope iff root is not fixed (i.e. isrootfixed(model) == false)
+                nfinscope[1] || continue 
                 h,J,g = factor_root(model)
-            elseif nfsize == 2
-                h,J,g = factor_treeedge(model, getparentedge(ch))
             else
-                pae = PN.Edge[]
-                for e in ch.edge
-                    getchild(e) === ch && push!(pae, e) 
+                if nfsize == 2
+                    h,J,g = factor_treeedge(model, getparentedge(ch))
+                else
+                    pae = PN.Edge[]
+                    for e in ch.edge
+                        getchild(e) === ch && push!(pae, e)
+                    end
+                    h,J,g = factor_hybridnode(model, pae) 
                 end
-                h,J,g = factor_hybridnode(model, pae)
+                # absorb evidence (assume that only at leaves or root)
+                if !nfinscope[1] # ch.leaf == true
+                    i_datarow = findfirst(isequal(ch.name), taxa)
+                    h,J,g = absorbleaf!(h,J,g, i_datarow, tbl)
+                end
+                if !all(nfinscope[2:end]) # node's parents include a fixed root
+                    rootindex = (length(h) - numtraits + 1):length(h)
+                    h,J,g = absorbevidence!(h,J,g, rootindex, rootpriormeanvector(model))
+                end
             end
-            # absorb evidence
-            if ch.leaf
-                i_datarow = findfirst(isequal(isequal(ch.name)), taxa)
-                h,J,g = absorbleaf!(h,J,g, i_datarow, tbl)
-            end
-            if isrootfixed(model) && 1 ∈ nf # the node's parents include the root
-                rootindex = (length(h) - numtraits + 1):length(h)
-                h,J,g = absorbevidence!(h,J,g, rootindex, rootpriormean(model))
-            end
-            # marginalize out variables not in scope
-            factorind = scopeindex(nf, be)
-            if length(factorind) != numtraits * length(nf)
-                var_inscope = view(inscope(be), :, indexin(nf, nodelabels(be)))
+            i_inscope = nf[nfinscope]
+            factorind = scopeindex(i_inscope, be)
+            # marginalize out variables not in scope, e.g. bc no data below
+            if length(factorind) != numtraits * length(i_inscope)
+                var_inscope = view(inscope(be), :, indexin(i_inscope, nodelabels(be)))
                 keep_index = LinearIndices(var_inscope)[var_inscope]
                 h,J,g = marginalize(h,J,g, keep_index, be.metadata)
             end
