@@ -492,6 +492,8 @@ function FamilyFactor(belief::CanonicalBelief{T}) where T
     FamilyFactor{T,typeof(J),typeof(h)}(h,J,g,belief.metadata)
 end
 # todo: add constructor from GeneralizedBelief
+#= todo: why `FamilyFactor` since this is not necessarily the density for a node
+family? Rename this `ClusterFactor`? =#
 
 """
     init_factors_allocate(beliefs::AbstractVector{<:AbstractBelief}, nclusters::Integer)
@@ -505,9 +507,11 @@ function init_factors_allocate(
     beliefs::AbstractVector{B},
     nclusters::Integer
 ) where B<:AbstractBelief{T} where T
-    factors = FamilyFactor{T}[]
+    # factors = FamilyFactor{T}[]
+    factors = Vector{FamilyFactor}(undef, nclusters)
     for i in 1:nclusters
-        push!(factors, FamilyFactor(beliefs[i]))
+        # push!(factors, FamilyFactor(beliefs[i]))
+        factors[i] = FamilyFactor(beliefs[i])
     end
     return factors
 end
@@ -519,7 +523,7 @@ Update the scope and re-allocate memory for cluster & sepset `beliefs`, `factors
 and `messageresiduals` to include or exclude the root,
 depending on whether the root variable is random or fixed in `model`.
 To change the dimension of canonical parameters μ,h,J, new memory is allocated
-and initilized to 0.
+and initialized to 0.
 This function can be used to update beliefs when the root model changes from
 fixed to non-fixed or vice-versa.
 It re-allocates less memory than [`init_beliefs_allocate`](@ref) (which would
@@ -535,7 +539,8 @@ function init_beliefs_allocate_atroot!(
     beliefs,
     factors,
     messageresidual,
-    model::EvolutionaryModel{T}
+    model::EvolutionaryModel{T},
+    cluster2nodes,
 ) where T
     numtraits = dimension(model)
     fixedroot = isrootfixed(model)
@@ -550,6 +555,10 @@ function init_beliefs_allocate_atroot!(
         beliefs[i_b] = CanonicalBelief(be.nodelabel, numtraits, be_insc, be.type, be.metadata, T)
         if iscluster # re-allocate the corresponding factor. if sepset: nothing to do
             factors[i_b] = FamilyFactor(beliefs[i_b])
+            for (nf, nfinscope) in cluster2nodes[i_b]
+                # if node family contains root node, then update whether it is inscope
+                (nf[end] == 1) && (nfinscope[end] = !fixedroot)
+            end 
         end
         issepset = beliefs[i_b].type == bsepsettype
         if issepset # re-allocate the corresponding messages for sepsets

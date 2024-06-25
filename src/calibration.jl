@@ -274,7 +274,7 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
         assignfactors!(beliefs.belief, model, tbl, taxa, prenodes, beliefs.cluster2nodes)
         # init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
         init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
-        init_messagecalibrationflags_reset!(beliefs)
+        init_messagecalibrationflags_reset!(beliefs, true)
         regularizebeliefs_bycluster!(beliefs, cgraph)
         calibrate!(beliefs, sch, maxiter, auto=true)
         return free_energy(beliefs)[3] # to be minimized
@@ -349,8 +349,10 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
     end
     ## calibrate beliefs using infinite root and identity rate variance
     calibrationparams = evomodelfun(LA.diagm(ones(p)), zeros(p), LA.diagm(repeat([Inf], p)))
-    init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual, calibrationparams) # in case root status changed
-    node2belief = init_beliefs_assignfactors!(beliefs.belief, calibrationparams, tbl, taxa, prenodes)
+    init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual,
+        calibrationparams, beliefs.cluster2nodes) # in case root status changed
+    node2belief = assignfactors!(beliefs.belief, calibrationparams, tbl, taxa, prenodes, beliefs.cluster2nodes)
+    # node2belief = init_beliefs_assignfactors!(beliefs.belief, calibrationparams, tbl, taxa, prenodes)
     # no need to reset factors: free_energy not used on a clique tree
     init_messagecalibrationflags_reset!(beliefs, false)
     calibrate!(beliefs, [spt])
@@ -428,8 +430,9 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
     bestmodel = evomodelfun(bestθ...)
     ## Get associated likelihood
     loglikscore = NaN
-    init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual, bestmodel)
-    init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
+    init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual, bestmodel, beliefs.cluster2nodes)
+    # init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
+    assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes, beliefs.cluster2nodes)
     init_messagecalibrationflags_reset!(beliefs, false)
     calibrate!(beliefs, [spt])
     _, loglikscore = integratebelief!(beliefs, rootj)
