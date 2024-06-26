@@ -116,12 +116,12 @@ Constructor from a canonical belief `b` and a constraint matrix `R`.
 function GeneralizedBelief(b::CanonicalBelief{T,Vlabel,P,V,M}, R::AbstractMatrix{T}) where {T,Vlabel,P,V,M}
     gb = GeneralizedBelief(b)
     m, k = size(R)
-    gb.R[:,1:k] .= R # R should have the same no. of rows as gb.R
-    gb.Q[:,1:(m-k)] .= LA.nullspace(transpose(R))
-    gb.Λ[1:(m-k)] .= LA.diag(transpose(view(gb.Q,:,1:(m-k)))*b.J*view(gb.Q,:,1:(m-k)))
-    gb.h[1:(m-k)] .= transpose(view(gb.Q,:,1:(m-k)))*b.h
+    gb.R[:,1:k] = R # R should have the same no. of rows as gb.R
+    gb.Q[:,1:(m-k)] = LA.nullspace(transpose(R))
+    gb.Λ[1:(m-k)] = LA.diag(transpose(view(gb.Q,:,1:(m-k)))*b.J*view(gb.Q,:,1:(m-k)))
+    gb.h[1:(m-k)] = transpose(view(gb.Q,:,1:(m-k)))*b.h
     gb.k[1] = k
-    gb.c[:,1:k] .= 0
+    gb.c[:,1:k] = 0
     gb
 end
 

@@ -265,11 +265,11 @@ end
     allocatebeliefs(tbl, taxa, nodevector_preordered, clustergraph,
                      evolutionarymodel)
 
-Return tuple `(beliefs, cluster2nodes)`.
+Return tuple `(beliefs, cluster2fams)`.
 `beliefs` is a vector of beliefs, initialized to the constant function exp(0)=1,
 one for each cluster then one for each sepset in `clustergraph`.
-`cluster2nodes` is a vector that maps each cluster to the node families that are
-assigned to it. E.g. `cluster2nodes[i]` is a vector of tuples, where each tuple
+`cluster2fams` is a vector that maps each cluster to the node families that are
+assigned to it. E.g. `cluster2fams[i]` is a vector of tuples, where each tuple
 contains the preorder indices for a node family, e.g. (child, parent1, ...).
 
 `tbl` is used to know which leaf in `net` has data for which trait, so as to
@@ -307,7 +307,9 @@ function allocatebeliefs(
     can be removed when the evidence is absorbed
     =#
     clusterlabs = labels(clustergraph) # same order as cluster beliefs
-    cluster2nodes = [Tuple{Tuple{Vararg{T1}},BitVector}[] for _ in 1:length(clusterlabs)]
+    cluster2fams = [
+        (Vector{Tuple{Tuple{Vararg{T1}}, BitVector, Bool}}(undef, 0), false)
+        for _ in clusterlabs]
     hasdata = falses(numtraits, nnodes)
     for i_node in reverse(1:length(prenodes))
         node = prenodes[i_node]
@@ -320,9 +322,11 @@ function allocatebeliefs(
             end
         end
         i_parents = Int[] # preorder indices of parent nodes, sorted in postorder
-        for e in node.edge
+        degen = node.hybrid & true # flag if node is degenerate hybrid
+        for e in node.edge 
             ch = getchild(e)
             if ch === node # parent edge
+                degen && (e.length > 0) && (degen = false)
                 pi = findfirst(n -> n===getparent(e), prenodes) # parent index
                 ii = findfirst(i_parents .< pi) # i_parents is reverse-sorted
                 if isnothing(ii) ii = length(i_parents) + 1; end
@@ -343,7 +347,8 @@ function allocatebeliefs(
         fixedroot && (1 ∈ i_parents) && (nfinscope[end] = false)
         i_b = findfirst(cl -> issubset(nodefamily, clustergraph[cl][2]), clusterlabs)
         isnothing(i_b) && error("no cluster containing the node family for $(node.number).")
-        push!(cluster2nodes[i_b], (nodefamily, nfinscope))
+        push!(cluster2fams[i_b][1], (nodefamily, nfinscope, degen))
+        !cluster2fams[i_b][2] && degen && (cluster2fams[i_b][2] = degen)
     end
     #= next: create a belief for each cluster and sepset. inscope =
     'has partial information and non-degenerate variance or precision?' =
@@ -362,23 +367,34 @@ function allocatebeliefs(
         end
         return inscope
     end
-    #= todo:
-    check if a belief contains a degenerate hybrid node family
-        - if so, assign a generalized belief
-        - otherwise, assign a canonical belief
-    =#
-    beliefs = CanonicalBelief{T2}[]
-    for cllab in clusterlabs
+    beliefs = AbstractBelief{T2}[]
+    for (i_b, cllab) in enumerate(clusterlabs)
         nodeindices = clustergraph[cllab][2]
         inscope = build_inscope(nodeindices)
-        push!(beliefs, CanonicalBelief(nodeindices, numtraits, inscope, bclustertype, cllab, T2))
+        b = CanonicalBelief(nodeindices, numtraits, inscope, bclustertype, cllab, T2)
+        #= if cluster belief contains a degenerate hybrid node family, then assign
+        a generalized belief, else assign a canonical belief =#
+        if cluster2fams[i_b][2]
+            push!(beliefs, GeneralizedBelief(b))
+        else
+            push!(beliefs, b)
+        end
     end
-    for sslab in edge_labels(clustergraph)
-        nodeindices = clustergraph[sslab...]
+    for (cllab1, cllab2) in edge_labels(clustergraph)
+        nodeindices = clustergraph[cllab1, cllab2]
         inscope = build_inscope(nodeindices)
-        push!(beliefs, CanonicalBelief(nodeindices, numtraits, inscope, bsepsettype, sslab, T2))
+        b = CanonicalBelief(nodeindices, numtraits, inscope, bsepsettype,
+            (cllab1, cllab2), T2)
+        #= if either of the adjacent cluster beliefs are generalized, then assign
+        a generalized belief, else assign a canonical belief =#
+        if (cluster2fams[code_for(clustergraph, cllab1)][2] ||
+            cluster2fams[code_for(clustergraph, cllab2)][2])
+            push!(beliefs, GeneralizedBelief(b))
+        else
+            push!(beliefs, b)
+        end
     end
-    return beliefs, cluster2nodes
+    return beliefs, cluster2fams
 end
 
 """
@@ -540,7 +556,7 @@ function init_beliefs_allocate_atroot!(
     factors,
     messageresidual,
     model::EvolutionaryModel{T},
-    cluster2nodes,
+    cluster2fams,
 ) where T
     numtraits = dimension(model)
     fixedroot = isrootfixed(model)
@@ -555,7 +571,7 @@ function init_beliefs_allocate_atroot!(
         beliefs[i_b] = CanonicalBelief(be.nodelabel, numtraits, be_insc, be.type, be.metadata, T)
         if iscluster # re-allocate the corresponding factor. if sepset: nothing to do
             factors[i_b] = FamilyFactor(beliefs[i_b])
-            for (nf, nfinscope) in cluster2nodes[i_b]
+            for (nf, nfinscope, _) in cluster2fams[i_b][1]
                 # if node family contains root node, then update whether it is inscope
                 (nf[end] == 1) && (nfinscope[end] = !fixedroot)
             end 
@@ -576,7 +592,7 @@ Reset all beliefs (which can be cluster and/or sepset beliefs) to h=0, J=0, g=0 
 They can later be re-initialized for different model parameters and
 re-calibrated, without re-allocating memory.
 """
-function init_beliefs_reset!(beliefs::AbstractVector{B}) where B<:CanonicalBelief{T} where T
+function init_beliefs_reset!(beliefs::AbstractVector{B}) where B<:AbstractBelief{T} where T
     for be in beliefs
         be.h .= zero(T)
         be.J .= zero(T)
@@ -604,7 +620,7 @@ function init_factors_frombeliefs!(
     factors,
     beliefs::AbstractVector{B},
     checkmetadata::Bool=false,
-) where B<:CanonicalBelief
+) where B <: AbstractBelief
     for (fa,be) in zip(factors,beliefs)
         if checkmetadata
             fa.metadata == be.metadata ||
@@ -619,7 +635,7 @@ end
 """
     assignfactors!(beliefs,
                    evolutionarymodel, columntable, taxa,
-                   nodevector_preordered, cluster2nodes)
+                   nodevector_preordered, cluster2fams)
 
 Initialize cluster beliefs prior to belief propagation, by assigning each factor
 to one cluster. Sepset beliefs are reset to 1.
@@ -645,14 +661,14 @@ function assignfactors!(
     tbl::Tables.ColumnTable,
     taxa::AbstractVector,
     prenodes::Vector{PN.Node},
-    cluster2nodes,
+    cluster2fams,
 ) where B <: AbstractBelief{T} where T
     init_beliefs_reset!(beliefs)
     numtraits = dimension(model)
     node2belief = zeros(Int, length(prenodes)) # node preorder index → belief index
-    for (ci, nfs) in enumerate(cluster2nodes) # cluster `ci`
+    for (ci, nfs) in enumerate(cluster2fams) # cluster `ci`
         be = beliefs[ci]
-        for (nf, nfinscope) in nfs # node family `nf` assigned to `ci`
+        for (nf, nfinscope, _) in nfs[1] # node family `nf` assigned to `ci`
             # `nf`: (child, parents...); `nfinscope`::BitVector
             # `nf[nfinscope]`::Tuple of inscope nodes
             nfsize = length(nf)
@@ -910,7 +926,7 @@ The sepset for edge `(label1,label2)` is associated with 2 messages, for the
 these messages are `(label1,label2)` and `(label2,label1)`.
 """
 function init_messageresidual_allocate(
-    beliefs::Vector{CanonicalBelief{T}},
+    beliefs::Vector{AbstractBelief{T}},
     nclusters,
 ) where T<:Real
     messageresidual = Dict{Tuple{Symbol,Symbol}, MessageResidual{T}}()

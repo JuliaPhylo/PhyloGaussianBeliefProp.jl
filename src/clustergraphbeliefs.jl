@@ -43,7 +43,7 @@ struct ClusterGraphBelief{B<:AbstractBelief, F<:FamilyFactor, M<:MessageResidual
     "dictionary: message labels (cluster_to, cluster_from) => residual information"
     messageresidual::Dict{Tuple{Symbol,Symbol}, M}
     "vector: cluster index => node families"
-    cluster2nodes::Vector{Vector{Tuple{Tuple{Vararg{T}},BitVector}}} where T <: Integer
+    cluster2fams::Vector{Tuple{Vector{Tuple{Tuple{Vararg{T}},BitVector,Bool}}, Bool}} where T <: Integer
 end
 nbeliefs(obj::ClusterGraphBelief) = length(obj.belief)
 nclusters(obj::ClusterGraphBelief) = obj.nclusters
@@ -81,7 +81,8 @@ To construct the input vector of beliefs, see [`init_beliefs_allocate`](@ref)
 and [`init_beliefs_assignfactors!`](@ref)
 """
 function ClusterGraphBelief(beliefs::Vector{B},
-        cluster2nodes::Vector{Vector{Tuple{Tuple{Vararg{T}},BitVector}}}) where B<:AbstractBelief where T<:Integer
+    cluster2fams::Vector{Tuple{Vector{Tuple{Tuple{Vararg{T}},BitVector,Bool}}, Bool}}
+) where B<:AbstractBelief where T<:Integer
     i = findfirst(b -> b.type == bsepsettype, beliefs)
     nc = (isnothing(i) ? length(beliefs) : i - 1)
     all(beliefs[i].type == bclustertype for i in 1:nc) ||
@@ -92,7 +93,7 @@ function ClusterGraphBelief(beliefs::Vector{B},
     sdict = get_sepsetindexdictionary(beliefs, nc)
     mr = init_messageresidual_allocate(beliefs, nc)
     factors = init_factors_allocate(beliefs, nc)
-    return ClusterGraphBelief{B,eltype(factors),valtype(mr)}(beliefs,factors,nc,cdict,sdict,mr,cluster2nodes)
+    return ClusterGraphBelief{B,eltype(factors),valtype(mr)}(beliefs,factors,nc,cdict,sdict,mr,cluster2fams)
 end
 
 function get_clusterindexdictionary(beliefs, nclusters)
