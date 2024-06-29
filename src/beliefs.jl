@@ -668,7 +668,7 @@ function assignfactors!(
     node2belief = zeros(Int, length(prenodes)) # node preorder index → belief index
     for (ci, nfs) in enumerate(cluster2fams) # cluster `ci`
         be = beliefs[ci]
-        for (nf, nfinscope, _) in nfs[1] # node family `nf` assigned to `ci`
+        for (nf, nfinscope, degen) in nfs[1] # node family `nf` assigned to `ci`
             # `nf`: (child, parents...); `nfinscope`::BitVector
             # `nf[nfinscope]`::Tuple of inscope nodes
             nfsize = length(nf)
@@ -688,7 +688,8 @@ function assignfactors!(
                     for e in ch.edge
                         getchild(e) === ch && push!(pae, e)
                     end
-                    h,J,g = factor_hybridnode(model, pae) 
+                    # non-degenerate hybrid factor
+                    !degen && ((h,J,g) = factor_hybridnode(model, pae))
                 end
                 # absorb evidence (assume that only at leaves or root)
                 if !nfinscope[1] # ch.leaf == true
@@ -736,9 +737,26 @@ function assignfactors!(
                 h,J,g = marginalize(h,J,g, keep_index, be.metadata)
             end
             # multiply into cluster belief
-            be.h[factorind] .+= h
-            be.J[factorind,factorind] .+= J
-            be.g[1] += g
+            if isa(be, CanonicalBelief)
+                be.h[factorind] .+= h
+                be.J[factorind,factorind] .+= J
+                be.g[1] += g
+            else # GeneralizedBelief
+                if degen # degenerate factor
+                    R = -ones(length(i_inscope),1)
+                    for (i, i_node) in enumerate(i_inscope) # parent nodes
+                        for e in prenodes[i_node].edge
+                            if getchild(e) === ch
+                                R[i,1] = e.gamma
+                                break
+                            end
+                        end
+                    end
+                    mult!(be, factorind, R)
+                else
+                    mult!(be, factorind, h, J, g)
+                end
+            end
         end
     end
     return node2belief

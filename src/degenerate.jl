@@ -121,7 +121,7 @@ function GeneralizedBelief(b::CanonicalBelief{T,Vlabel,P,V,M}, R::AbstractMatrix
     gb.Λ[1:(m-k)] = LA.diag(transpose(view(gb.Q,:,1:(m-k)))*b.J*view(gb.Q,:,1:(m-k)))
     gb.h[1:(m-k)] = transpose(view(gb.Q,:,1:(m-k)))*b.h
     gb.k[1] = k
-    gb.c[:,1:k] = 0
+    gb.c[1:k] .= 0
     gb
 end
 
@@ -204,6 +204,30 @@ function extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
     cluster_to.gbuf[1] = Δg
     return
 end
+function extend!(cluster_to::GeneralizedBelief, upind, R)
+    # todo: checks that R is valid
+    m1 = size(cluster_to.Q)[1]
+    perm = [upind;setdiff(1:m1,upind)]
+    m2, k2 = size(R)
+    # degrees of degeneracy
+    cluster_to.kbuf[1] = k2
+    # constraint
+    cluster_to.Rbuf[:,1:k2] .= 0
+    cluster_to.Rbuf[1:m2,1:k2] = R
+    cluster_to.Rbuf[perm,:] = cluster_to.Rbuf[:,:]
+    cluster_to.cbuf[1:k2] .= 0
+    # precision
+    cluster_to.Qbuf .= 0
+    cluster_to.Qbuf[LA.diagind(cluster_to.Qbuf)] .= 1.0
+    cluster_to.Qbuf[1:m2,1:(m2-k2)] = LA.nullspace(transpose(R))
+    cluster_to.Qbuf[perm,:] = cluster_to.Qbuf[:,:]
+    cluster_to.Λbuf .= 0
+    # potential
+    cluster_to.hbuf .= 0
+    # normalization constant
+    cluster_to.gbuf[1] = 0
+    return  
+end
 
 """
     mult!(cluster_to::GeneralizedBelief, sepset)
@@ -235,6 +259,10 @@ function mult!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
     # cluster_to.h[upind] .+= residual.Δh
     # cluster_to[upind,upind] .+= residual.ΔJ
     # cluster_to.g[1] += g - sepset.g[1]
+end
+function mult!(cluster_to::GeneralizedBelief, upind, R)
+    extend!(cluster_to, upind, R)
+    mult!(cluster_to)
 end
 function mult!(cluster_to::GeneralizedBelief)
     # degrees of degeneracy
