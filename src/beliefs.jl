@@ -703,6 +703,33 @@ function assignfactors!(
             i_inscope = nf[nfinscope]
             factorind = scopeindex(i_inscope, be)
             # marginalize out variables not in scope, e.g. bc no data below
+            #=
+            Note: marginalizing out variables from a factor if these variables
+            have no data below does not always work!
+            E.g. Consider a bivariate trait (X,Y) evolving on a single branch
+            according to BM with no correlation between X and Y. The states of
+            the child node and parent node are respectively (x1,y1) and (x2,y2).
+            The precision parameter of the factor for this tree-edge could be:
+                                x1: [1   0  -1   0;
+                                y1:  0   1   0  -1;
+                                x2: -1   0   1   0;
+                                y2:  0  -1   0   1]
+            This can be rearranged as:
+                                y1: [1  -1   0   0;
+                                y2: -1   1   0   0;
+                                x1:  0   0   1  -1;
+                                x2:  0   0  -1   1]
+            If there is no data for Y below this branch, then we attempt to
+            marginalize y1 and y2 out of the factor. But this is not possible
+            since the submatrix y1: [1  -1; is not full-rank.
+                                y2: -1   1]
+            
+            An alternative could be the approach in "Fast likelihood calculation
+            ..." (Mitov et al. 2019) for transforming the factor to account for
+            non-existing traits, which can always produce a valid factor, except
+            that there is a little arbitrariness in how the transformation is
+            defined.
+            =#
             if length(factorind) != numtraits * length(i_inscope)
                 var_inscope = view(inscope(be), :, indexin(i_inscope, nodelabels(be)))
                 keep_index = LinearIndices(var_inscope)[var_inscope]
