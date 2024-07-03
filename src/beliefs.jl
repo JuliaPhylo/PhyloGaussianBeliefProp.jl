@@ -308,7 +308,7 @@ function allocatebeliefs(
     =#
     clusterlabs = labels(clustergraph) # same order as cluster beliefs
     cluster2fams = [
-        (Vector{Tuple{Tuple{Vararg{T1}}, BitVector, Bool}}(undef, 0), false)
+        (Vector{Tuple{Tuple{Vararg{T1}}, BitVector, Bool}}(undef, 0), falses(1))
         for _ in clusterlabs]
     hasdata = falses(numtraits, nnodes)
     for i_node in reverse(1:length(prenodes))
@@ -348,7 +348,7 @@ function allocatebeliefs(
         i_b = findfirst(cl -> issubset(nodefamily, clustergraph[cl][2]), clusterlabs)
         isnothing(i_b) && error("no cluster containing the node family for $(node.number).")
         push!(cluster2fams[i_b][1], (nodefamily, nfinscope, degen))
-        !cluster2fams[i_b][2] && degen && (cluster2fams[i_b][2] = degen)
+        !cluster2fams[i_b][2][1] && degen && (cluster2fams[i_b][2][1] = degen)
     end
     #= next: create a belief for each cluster and sepset. inscope =
     'has partial information and non-degenerate variance or precision?' =
@@ -362,7 +362,7 @@ function allocatebeliefs(
         for (i,i_node) in enumerate(set_nodeindices)
             node = prenodes[i_node]
             (node.leaf || (i_node == 1) && fixedroot) && continue # keep 'false' at the root if fixed
-            isdegenerate(node) && unscope(node) && continue # todo: remove
+            # isdegenerate(node) && unscope(node) && continue # todo: remove
             inscope[:,i] = view(hasdata,:,i_node)
         end
         return inscope
@@ -374,7 +374,7 @@ function allocatebeliefs(
         b = CanonicalBelief(nodeindices, numtraits, inscope, bclustertype, cllab, T2)
         #= if cluster belief contains a degenerate hybrid node family, then assign
         a generalized belief, else assign a canonical belief =#
-        if cluster2fams[i_b][2]
+        if cluster2fams[i_b][2][1]
             push!(beliefs, GeneralizedBelief(b))
         else
             push!(beliefs, b)
@@ -385,10 +385,10 @@ function allocatebeliefs(
         inscope = build_inscope(nodeindices)
         b = CanonicalBelief(nodeindices, numtraits, inscope, bsepsettype,
             (cllab1, cllab2), T2)
-        #= if either of the adjacent cluster beliefs are generalized, then assign
+        #= if both of the adjacent cluster beliefs are generalized, then assign
         a generalized belief, else assign a canonical belief =#
-        if (cluster2fams[code_for(clustergraph, cllab1)][2] ||
-            cluster2fams[code_for(clustergraph, cllab2)][2])
+        if (cluster2fams[code_for(clustergraph, cllab1)][2][1] &&
+            cluster2fams[code_for(clustergraph, cllab2)][2][1])
             push!(beliefs, GeneralizedBelief(b))
         else
             push!(beliefs, b)
@@ -594,10 +594,15 @@ re-calibrated, without re-allocating memory.
 """
 function init_beliefs_reset!(beliefs::AbstractVector{B}) where B<:AbstractBelief{T} where T
     for be in beliefs
-        be.h .= zero(T)
-        be.J .= zero(T)
-        be.g[1] = zero(T)
+        init_belief_reset!(be)
     end
+    return nothing
+end
+function init_belief_reset!(be::CanonicalBelief{T}) where T
+    be.h .= zero(T)
+    be.J .= zero(T)
+    be.g[1] = zero(T)
+    return nothing
 end
 # todo: create method when B<:GeneralizedBelief
 
@@ -744,10 +749,10 @@ function assignfactors!(
             else # GeneralizedBelief
                 if degen # degenerate factor
                     R = -ones(length(i_inscope),1)
-                    for (i, i_node) in enumerate(i_inscope) # parent nodes
+                    for (i, i_node) in enumerate(i_inscope[2:end]) # parent nodes
                         for e in prenodes[i_node].edge
                             if getchild(e) === ch
-                                R[i,1] = e.gamma
+                                R[i+1,1] = e.gamma
                                 break
                             end
                         end
@@ -977,9 +982,20 @@ function init_messageresidual_allocate(
     messageresidual = Dict{Tuple{Symbol,Symbol}, MessageResidual{T}}()
     for j in (nclusters+1):length(beliefs)
         ssbe = beliefs[j] # sepset belief
-        (clustlab1, clustlab2) = ssbe.metadata
-        messageresidual[(clustlab1, clustlab2)] = MessageResidual(ssbe.J, ssbe.h)
-        messageresidual[(clustlab2, clustlab1)] = MessageResidual(ssbe.J, ssbe.h)
+        (clustlab1, clustlab2) = ssbe.metadata      
+        if isa(ssbe, CanonicalBelief)
+            messageresidual[(clustlab1, clustlab2)] = MessageResidual(ssbe.J, ssbe.h)
+            messageresidual[(clustlab2, clustlab1)] = MessageResidual(ssbe.J, ssbe.h)
+        else
+            isa(ssbe, GeneralizedBelief) || error() # todo: error message
+            k1 = ssbe.k[1]
+            m1 = size(ssbe.Q)[1]
+            J = view(ssbe.Q,:,1:(m1-k1))*LA.Diagonal(view(ssbe.Λ,1:(m1-k1)))*
+                transpose(view(ssbe.Q,:,1:(m1-k1)))
+            h = view(ssbe.Q,:,1:(m1-k1))*view(ssbe.h,1:(m1-k1))
+            messageresidual[(clustlab1, clustlab2)] = MessageResidual(J, h)
+            messageresidual[(clustlab2, clustlab1)] = MessageResidual(J, h)
+        end
     end
     return messageresidual
 end

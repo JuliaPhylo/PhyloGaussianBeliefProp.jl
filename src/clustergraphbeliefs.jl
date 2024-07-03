@@ -43,7 +43,7 @@ struct ClusterGraphBelief{B<:AbstractBelief, F<:FamilyFactor, M<:MessageResidual
     "dictionary: message labels (cluster_to, cluster_from) => residual information"
     messageresidual::Dict{Tuple{Symbol,Symbol}, M}
     "vector: cluster index => node families"
-    cluster2fams::Vector{Tuple{Vector{Tuple{Tuple{Vararg{T}},BitVector,Bool}}, Bool}} where T <: Integer
+    cluster2fams::Vector{Tuple{Vector{Tuple{Tuple{Vararg{T}},BitVector,Bool}}, BitVector}} where T <: Integer
 end
 nbeliefs(obj::ClusterGraphBelief) = length(obj.belief)
 nclusters(obj::ClusterGraphBelief) = obj.nclusters
@@ -81,7 +81,7 @@ To construct the input vector of beliefs, see [`init_beliefs_allocate`](@ref)
 and [`init_beliefs_assignfactors!`](@ref)
 """
 function ClusterGraphBelief(beliefs::Vector{B},
-    cluster2fams::Vector{Tuple{Vector{Tuple{Tuple{Vararg{T}},BitVector,Bool}}, Bool}}
+    cluster2fams::Vector{Tuple{Vector{Tuple{Tuple{Vararg{T}},BitVector,Bool}}, BitVector}}
 ) where B<:AbstractBelief where T<:Integer
     i = findfirst(b -> b.type == bsepsettype, beliefs)
     nc = (isnothing(i) ? length(beliefs) : i - 1)

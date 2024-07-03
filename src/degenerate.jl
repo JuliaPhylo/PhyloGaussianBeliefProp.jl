@@ -125,6 +125,36 @@ function GeneralizedBelief(b::CanonicalBelief{T,Vlabel,P,V,M}, R::AbstractMatrix
     gb
 end
 
+function FamilyFactor(belief::GeneralizedBelief{T}) where T
+    k1 = belief.k[1]
+    m1 = size(belief.Q)[1]
+    J = view(belief.Q,:,1:(m1-k1))*LA.Diagonal(view(belief.Λ,1:(m1-k1)))*
+        transpose(view(belief.Q,:,1:(m1-k1)))
+    h = view(belief.Q,:,1:(m1-k1))*view(belief.h,1:(m1-k1))
+    g = deepcopy(belief.g)
+    FamilyFactor{T,typeof(J),typeof(h)}(h,J,g,belief.metadata)
+end
+
+function init_belief_reset!(be::GeneralizedBelief)
+    be.h .= 0
+    be.hbuf .= 0 
+    be.Q .= 0
+    be.Qbuf .= 0
+    be.Q[:,:] += LA.I
+    be.Qbuf[:,:] += LA.I
+    be.Λ .= 0
+    be.Λbuf .= 0
+    be.g[1] = 0
+    be.gbuf[1] = 0
+    be.k[1] = 0
+    be.kbuf[1] = 0
+    # be.R
+    # be.Rbuf
+    # be.c
+    # be.cbuf
+    return nothing
+end
+
 """
     extend!(cluster_to::GeneralizedBelief, sepset)
     extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
@@ -296,7 +326,7 @@ function mult!(cluster_to::GeneralizedBelief)
     R2tV = transpose(R2)*V
     if k2 == Δk1 # transpose(R2)*V is square
         b = R2tV \ (c2 - transpose(R2)*R1*c1)
-        lgdet = 2*LA.logdet(R2tV)
+        lgdet = 2*LA.logabsdet(R2tV)[1] # equivalent to (log(abs(det(...))), sign(det(...)))
     else
         VtR2R2tV = transpose(R2tV)*R2tV
         b = (VtR2R2tV \ transpose(R2tV))*(c2 - transpose(R2)*R1*c1)
@@ -396,6 +426,14 @@ function div!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
     sepset.h[1:(m-k1)] = h1
     sepset.g[1] = cluster_from.gbuf[1]
     return
+end
+function div!(sepset::CanonicalBelief, cluster_from::GeneralizedBelief)
+    k1 = cluster_from.kbuf[1]
+    m = size(sepset.J)[1]
+    Q = cluster_from.Qbuf[1:m,1:(m-k1)]
+    J = Q*LA.Diagonal(view(cluster_from.Λbuf,1:(m-k1)))*transpose(Q)
+    h = Q*view(cluster_from.hbuf,1:(m-k1))
+    return div!(sepset, h, J, cluster_from.gbuf[1])
 end
 function div!(sepset::CanonicalBelief, h, J, g)
     Δh = h .- sepset.h
@@ -517,6 +555,7 @@ function propagate_belief!(
     cluster_to::AbstractBelief,
     sepset::AbstractBelief,
     cluster_from::AbstractBelief,
+    residual::AbstractResidual,
 )
     propagate_belief!(cluster_to::AbstractBelief, sepset::AbstractBelief,
         cluster_from::AbstractBelief, scopeindex(sepset, cluster_from))
@@ -525,8 +564,8 @@ function propagate_belief!(
     cluster_to::GeneralizedBelief,
     sepset::GeneralizedBelief,
     cluster_from::GeneralizedBelief,
-    keepind
-)
+    keepind::Vector{T},
+) where T <: Integer
     marg!(cluster_from, keepind)
     div!(sepset, cluster_from)
     mult!(cluster_to, sepset) # handles scope extension and matching
@@ -536,8 +575,8 @@ function propagate_belief!(
     cluster_to::GeneralizedBelief,
     sepset::CanonicalBelief,
     cluster_from::CanonicalBelief,
-    keepind
-)
+    keepind::Vector{T},
+) where T <: Integer
     h, J, g = marginalize(cluster_from, keepind)
     Δh, ΔJ, Δg = div!(sepset, h, J, g)
     mult!(cluster_to, scopeindex(sepset, cluster_to), Δh, ΔJ, Δg)
@@ -547,13 +586,10 @@ function propagate_belief!(
     cluster_to::CanonicalBelief,
     sepset::CanonicalBelief,
     cluster_from::GeneralizedBelief,
-    keepind
-)
+    keepind::Vector{T}
+) where T <: Integer
     marg!(cluster_from, keepind)
-    Q = cluster_from.Qbuf
-    J = Q*LA.Diagonal(cluster_from.Λbuf)*transpose(Q)
-    h = Q*cluster_from.hbuf
-    Δh, ΔJ, Δg = div!(sepset, h, J, cluster_from.gbuf[1])
+    Δh, ΔJ, Δg = div!(sepset, cluster_from)
     upind = scopeindex(sepset, cluster_to)
     cluster_to.h[upind] .+= Δh
     cluster_to.J[upind,upind] .+= ΔJ

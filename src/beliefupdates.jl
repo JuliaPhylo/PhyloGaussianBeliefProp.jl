@@ -96,7 +96,8 @@ function integratebelief!(b::AbstractBelief)
     return (μ,g)
 end
 function integratebelief(h,J,g)
-    Ji = PDMat(J) # fails if cholesky fails, e.g. if J=0
+    # Ji = PDMat(J) # fails if cholesky fails, e.g. if J=0
+    Ji = PDMat(LA.Symmetric(J)) # todo: discuss if we want to coerce J to be Symmetric
     integratebelief(h,Ji,g)
 end
 function integratebelief(h,J::Union{LA.Cholesky{T},PDMat{T}},g::T) where T<:Real
@@ -190,9 +191,9 @@ See [`regularizebeliefs_bycluster!`](@ref) to reduce the prevalence of degenerac
   of `sepset` are included in each cluster.
 """
 function propagate_belief!(
-    cluster_to::AbstractBelief,
-    sepset::AbstractBelief,
-    cluster_from::AbstractBelief,
+    cluster_to::CanonicalBelief,
+    sepset::CanonicalBelief,
+    cluster_from::CanonicalBelief,
     residual::AbstractResidual
 )
     # 1. compute message: marginalize cluster_from to variables in sepset

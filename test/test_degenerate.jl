@@ -16,9 +16,15 @@ ct = PGBP.clustergraph!(net, PGBP.Cliquetree());
 m = PGBP.UnivariateBrownianMotion(1,0);
 df = DataFrame(taxon=tipLabels(net), x=[1.0, 1.0, 1.0]);
 tbl_x = columntable(select(df, :x));
-b = PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, ct, m);
-PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed);
-ctb = PGBP.ClusterGraphBelief(b);
+# b = PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, ct, m);
+# PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed);
+#=
+`init_beliefs_allocate` and `init_beliefs_assignfactors!` refactored to
+`allocatebeliefs` and `assignfactors!`
+=#
+b, c2f = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m);
+PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, c2f);
+ctb = PGBP.ClusterGraphBelief(b, c2f);
 
 ######################################
 # Set up beliefs / generalized beliefs
@@ -139,20 +145,36 @@ PGBP.mult!(gb_x4x6x0, gb_x4x6)
 # propagate_belief! wrapper for elementary operations
 #####################################################
 # postorder traversal towards root cluster :x4x6x0
-PGBP.propagate_belief!(gb_H1x4x6, gb_x4, gb_x1x4)
-PGBP.propagate_belief!(gb_H1x4x6, gb_H1, gb_x2H1)
-PGBP.propagate_belief!(gb_H1x4x6, gb_x6, gb_x3x6)
-PGBP.propagate_belief!(gb_x4x6x0, gb_x4x6, gb_H1x4x6)
+PGBP.propagate_belief!(gb_H1x4x6, gb_x4, gb_x1x4, PGBP.scopeindex(gb_x4, gb_x1x4))
+PGBP.propagate_belief!(gb_H1x4x6, gb_H1, gb_x2H1, PGBP.scopeindex(gb_H1, gb_x2H1))
+PGBP.propagate_belief!(gb_H1x4x6, gb_x6, gb_x3x6, PGBP.scopeindex(gb_x6, gb_x3x6))
+PGBP.propagate_belief!(gb_x4x6x0, gb_x4x6, gb_H1x4x6, PGBP.scopeindex(gb_x4x6, gb_H1x4x6))
 (μ, norm) = PGBP.integratebelief!(gb_x4x6x0)
 @test μ ≈ [0.6, 0.6]
 @test norm ≈ -4.161534555831068
 # preorder traversal from root cluster :x4x6x0
-PGBP.propagate_belief!(gb_H1x4x6, gb_x4x6, gb_x4x6x0)
-PGBP.propagate_belief!(gb_x1x4, gb_x4, gb_H1x4x6)
-PGBP.propagate_belief!(gb_x2H1, gb_H1, gb_H1x4x6)
-PGBP.propagate_belief!(gb_x3x6, gb_x6, gb_H1x4x6)
+PGBP.propagate_belief!(gb_H1x4x6, gb_x4x6, gb_x4x6x0, PGBP.scopeindex(gb_x4x6, gb_x4x6x0))
+PGBP.propagate_belief!(gb_x1x4, gb_x4, gb_H1x4x6, PGBP.scopeindex(gb_x4, gb_H1x4x6))
+PGBP.propagate_belief!(gb_x2H1, gb_H1, gb_H1x4x6, PGBP.scopeindex(gb_H1, gb_H1x4x6))
+PGBP.propagate_belief!(gb_x3x6, gb_x6, gb_H1x4x6, PGBP.scopeindex(gb_x6, gb_H1x4x6))
 # posterior mean of degenerate hybrid
 (μ, norm) = PGBP.integratebelief!(gb_H1)
 # sum([0.5, 0.5] .* PGBP.integratebelief!(gb_x4x6)[1]) # 0.6
+@test μ ≈ [0.6]
+@test norm ≈ -4.161534555831068
+
+###################################################
+# Test refactored allocation and assignment methods
+###################################################
+# `be` is assigned both non-deterministic and deterministic factors
+PGBP.assignfactors!(be, m, tbl_x, df.taxon, net.nodes_changed, c2f);
+# `ctbe` contains a mix of CanonicalBeliefs and GeneralizedBeliefs
+ctbe = PGBP.ClusterGraphBelief(be, c2f);
+sched = PGBP.spanningtrees_clusterlist(ct, net.nodes_changed);
+PGBP.calibrate!(ctbe, sched)
+(μ, norm) = PGBP.integratebelief!(be[PGBP.sepsetindex(:x4x6x0, :H1x4x6, ctbe)])
+@test μ ≈ [0.6, 0.6]
+@test norm ≈ -4.161534555831068
+(μ, norm) = PGBP.integratebelief!(be[PGBP.sepsetindex(:x2H1, :H1x4x6, ctbe)])
 @test μ ≈ [0.6]
 @test norm ≈ -4.161534555831068
