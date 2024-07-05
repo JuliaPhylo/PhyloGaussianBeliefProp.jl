@@ -67,9 +67,9 @@ gb_x4x6x0 = PGBP.GeneralizedBelief(b_x4x6x0)
 ##############################################################
 # trivial marginalization (no nodes need to be integrated out)
 ##############################################################
-PGBP.marg!(gb_x1x4, PGBP.scopeindex(gb_x4, gb_x1x4))
-PGBP.marg!(gb_x2H1, PGBP.scopeindex(gb_H1, gb_x2H1))
-PGBP.marg!(gb_x3x6, PGBP.scopeindex(gb_x6, gb_x3x6))
+PGBP.marginalize!(gb_x1x4, PGBP.scopeindex(gb_x4, gb_x1x4))
+PGBP.marginalize!(gb_x2H1, PGBP.scopeindex(gb_H1, gb_x2H1))
+PGBP.marginalize!(gb_x3x6, PGBP.scopeindex(gb_x6, gb_x3x6))
 @test gb_x1x4.Qbuf == gb_x1x4.Q
 @test gb_x1x4.kbuf == gb_x1x4.k
 @test gb_x1x4.hbuf == gb_x1x4.h
@@ -79,9 +79,9 @@ PGBP.marg!(gb_x3x6, PGBP.scopeindex(gb_x6, gb_x3x6))
 ##########################################################
 # trivial division (sepset beliefs are constant initially)
 ##########################################################
-PGBP.div!(gb_x4, gb_x1x4)
-PGBP.div!(gb_H1, gb_x2H1)
-PGBP.div!(gb_x6, gb_x3x6)
+PGBP.divide!(gb_x4, gb_x1x4)
+PGBP.divide!(gb_H1, gb_x2H1)
+PGBP.divide!(gb_x6, gb_x3x6)
 @test gb_x4.Qbuf == gb_x4.Q
 @test gb_x4.kbuf == gb_x4.k
 @test gb_x4.hbuf == gb_x4.h
@@ -98,7 +98,7 @@ PGBP.mult!(gb_H1x4x6, gb_x6)
 
 m = size(gb_H1x4x6.Q)[1] # cluster dimension
 @test m == 3
-k = gb_H1x4x6.k[1] # degrees of degeneracy
+k = gb_H1x4x6.k[1] # constraint rank
 @test k == 1
 Q = gb_H1x4x6.Q[:,1:(m-k)]
 Λ = Diagonal(gb_H1x4x6.Λ[1:(m-k)])
@@ -116,10 +116,10 @@ h = gb_H1x4x6.h[1:(m-k)]
 # marginalization
 #################
 # send message to cluster :x4x6x0
-PGBP.marg!(gb_H1x4x6, PGBP.scopeindex(gb_x4x6, gb_H1x4x6))
+PGBP.marginalize!(gb_H1x4x6, PGBP.scopeindex(gb_x4x6, gb_H1x4x6))
 m = size(gb_x4x6.Q)[1] # message dimension
 @test m == 2
-k = gb_H1x4x6.kbuf[1] # message degrees of degeneracy
+k = gb_H1x4x6.kbuf[1] # message constraint rank
 @test k == 0
 Q = gb_H1x4x6.Qbuf[1:(m-k),1:(m-k)]
 Λ = Diagonal(gb_H1x4x6.Λbuf[1:(m-k)])
@@ -132,7 +132,7 @@ h = gb_H1x4x6.hbuf[1:(m-k)]
 # full integration
 ##################
 # integrate belief of cluster :x4x6x0
-PGBP.div!(gb_x4x6, gb_H1x4x6)
+PGBP.divide!(gb_x4x6, gb_H1x4x6)
 PGBP.mult!(gb_x4x6x0, gb_x4x6)
 (μ, norm) = PGBP.integratebelief!(gb_x4x6x0)
 # K = [9 1; 1 9]/4; h = [3,3]/2; inv(K)*h # [0.6, 0.6]
@@ -166,6 +166,7 @@ PGBP.propagate_belief!(gb_x3x6, gb_x6, gb_H1x4x6, PGBP.scopeindex(gb_x6, gb_H1x4
 ###################################################
 # Test refactored allocation and assignment methods
 ###################################################
+be, c2f = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m);
 # `be` is assigned both non-deterministic and deterministic factors
 PGBP.assignfactors!(be, m, tbl_x, df.taxon, net.nodes_changed, c2f);
 # `ctbe` contains a mix of CanonicalBeliefs and GeneralizedBeliefs

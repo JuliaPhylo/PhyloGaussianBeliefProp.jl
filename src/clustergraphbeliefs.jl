@@ -1,5 +1,5 @@
 """
-    ClusterGraphBelief{B<:AbstractBelief, F<:FamilyFactor, M<:MessageResidual}
+    ClusterGraphBelief{B<:AbstractBelief, F<:ClusterFactor, M<:MessageResidual}
 
 Structure to hold a vector of beliefs, with cluster beliefs coming first and
 sepset beliefs coming last. Fields:
@@ -23,7 +23,7 @@ Assumptions:
 - For a cluster belief, the cluster's nodes are stored in the belief's `metadata`.
 - For a sepset belief, its incident clusters' nodes are in the belief's metadata.
 """
-struct ClusterGraphBelief{B<:AbstractBelief, F<:FamilyFactor, M<:MessageResidual}
+struct ClusterGraphBelief{B<:AbstractBelief, F<:ClusterFactor, M<:MessageResidual}
     "vector of beliefs, cluster beliefs first and sepset beliefs last"
     belief::Vector{B}
     """vector of initial factors from the graphical model, one per cluster.

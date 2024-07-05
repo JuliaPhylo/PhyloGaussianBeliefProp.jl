@@ -3,7 +3,7 @@
 abstract type AbstractFactorBelief{T} end
 abstract type AbstractBelief{T} <: AbstractFactorBelief{T} end
 
-struct FamilyFactor{
+struct ClusterFactor{
     T<:Real,
     P<:AbstractMatrix{T},
     V<:AbstractVector{T}
@@ -14,11 +14,10 @@ struct FamilyFactor{
     "metadata, e.g. index of cluster in cluster graph"
     metadata::Symbol # because clusters have metadata of type Symbol
 end
-function Base.show(io::IO, b::FamilyFactor)
+function Base.show(io::IO, b::ClusterFactor)
     print(io, "factor for node family" * " $(b.metadata)")
     print(io, "\nexponential quadratic belief, parametrized by\nh: $(b.h)\nJ: $(b.J)\ng: $(b.g[1])\n")
 end
-
 
 """
     CanonicalBelief{
@@ -29,41 +28,46 @@ end
         M,
     } <: AbstractBelief{T}
 
-A "belief" is an exponential quadratic form, using the canonical parametrization:
+A canonical belief is an exponential quadratic form with canonical parameters J, h, g
+(see [`MvNormalCanon{T,P,V}`](https://juliastats.org/Distributions.jl/stable/multivariate/#Distributions.MvNormalCanon)
+in Distributions.jl):
 
-    C(x | J,h,g) = exp( -(1/2)x'Jx + h'x + g )
+    C(x | J,h,g) = exp(-(1/2)xᵀJx + hᵀx + g)
 
-It is a *normalized* distribution density if
+If J is positive-definite (i.e. J ≻ 0), then C(x | J,h,g) can be interpreted as a
+non-degenerate, though possibly unnormalized, distribution density for x.
 
-    g = - (1/2) (log(2πΣ) + μ'Jμ)
-      = - entropy of normalized distribution + (1/2) dim(μ) - (1/2) μ'Jμ.
+# Fields
+- `μ::V`: mean (of x); well-defined only when J ≻ 0; not always updated
+- `h::V`: potential; interpretable as Jμ when J ≻ 0
+- `J::P`: precision; interpretable as inv(Σ), where Σ is the variance of x, when J ≻ 0
+- `g::MVector{1,T}`: `g[1]` is interpretable as the normalization constant for the belief
+when J ≻ 0
 
-- μ is the mean, of type V (stored but typically not updated)
-- h = inv(Σ)μ is the potential, also of type V,
-- Σ is the variance matrix (not stored)
-- J = inv(Σ) is the precision matrix, of type P
-- g is a scalar to get the unnormalized belief: of type `MVector{1,T}` to be mutable.
+    The belief is normalized if:
 
-See `MvNormalCanon{T,P,V}` in
-[Distributions.jl](https://juliastats.org/Distributions.jl/stable/multivariate/#Distributions.MvNormalCanon)
+            g = - (1/2) (log(2πΣ) + μ'Jμ)
+            = - entropy of normalized distribution + (1/2) dim(μ) - (1/2) μ'Jμ.
 
-Other fields are used to track which cluster or edge the belief corresponds to,
-and which traits of which variables are in scope:
-- `nodelabel` of type `Vlabel`
-- `ntraits`
-- `inscope`
-- `type`: cluster or sepset
-- `metadata` of type `M`: `Symbol` for clusters, `Tuple{Symbol,Symbol}` for sepsets.
+Other fields used to track which cluster or edge the belief corresponds to, and
+which traits of which nodes are in scope:
+- `nodelabel::Vlabel`: vector of labels (e.g. preorder indices) for nodes from the phylogeny
+that this belief corresponds to (i.e. whose traits distribution it describes)
+- `ntraits::Integer`: maximum number of traits per node
+- `inscope::BitArray`: matrix of booleans (row i: trait i, column j: node j) indicating
+which traits are present for which nodes
+- `type::BeliefType`: cluster or sepset
+- `metadata::M`: index (in the cluster graph) of the cluster or sepset that this belief
+corresponds to (e.g. ::Symbol for a cluster, ::Tuple{Symbol,Symbol} for a sepset)
 
-Methods for a belief `b`:
-- `nodelabels(b)`: vector of node labels, of type `Vlabel`, e.g. Int8 if nodes
-  are labelled by their preorder index in the original phylogeny
-- `ntraits(b)`: number of traits (dimension of the random variable x above)
-- `inscope(b)`: matrix of booleans (trait i in row i and and node j in column j)
+# Methods
+- `nodelabels(b)`: `b.nodelabel`
+- `ntraits(b)`: `b.ntraits`
+- `inscope(b)`: `b.inscope`, a `ntraits(b)`×`nodelabels(b)` matrix
 - `nodedimensions(b)`: vector of integers, with jth value giving the dimension
   (number of traits in scope) of node j.
 - `dimension(b)`: total dimension of the belief, that is, total number of traits
-  in scope. Without any missing data, that would be ntraits × length of nodelabels.
+  in scope. Without any missing data, that would be `ntraits(b)`*`nodelabels(b)`.
 """
 struct CanonicalBelief{
     T<:Real,
@@ -95,29 +99,6 @@ struct CanonicalBelief{
     metadata::M
 end
 
-nodelabels(b::AbstractBelief) = b.nodelabel
-ntraits(b::AbstractBelief) = b.ntraits
-inscope(b::AbstractBelief) = b.inscope
-nodedimensions(b::AbstractBelief) = map(sum, eachslice(inscope(b), dims=2))
-dimension(b::AbstractBelief)  = sum(inscope(b))
-
-function show_name_scope(io::IO, b::AbstractBelief)
-    disp = showname(b) * " for "
-    disp *= (b.type == bclustertype ? "Cluster" : "SepSet") * " $(b.metadata),"
-    disp *= " $(ntraits(b)) traits × $(length(nodelabels(b))) nodes, dimension $(dimension(b)).\n"
-    disp *= "Node labels: "
-    print(io, disp)
-    print(io, nodelabels(b))
-    print(io, "\ntrait × node matrix of non-degenerate beliefs:\n")
-    show(io, inscope(b))
-end
-
-showname(::CanonicalBelief) = "canonical belief"
-function Base.show(io::IO, b::CanonicalBelief)
-    show_name_scope(io, b)
-    print(io, "\nexponential quadratic belief, parametrized by\nμ: $(b.μ)\nh: $(b.h)\nJ: $(b.J)\ng: $(b.g[1])\n")
-end
-
 """
     CanonicalBelief(nodelabels, numtraits, inscope, belieftype, metadata, T=Float64)
 
@@ -142,6 +123,175 @@ function CanonicalBelief(
     g = MVector{1,T}(0)
     CanonicalBelief{T,typeof(nodelabels),typeof(J),typeof(h),typeof(metadata)}(
         nodelabels,numtraits,inscope,μ,h,J,g,belief,metadata)
+end
+
+"""
+    GeneralizedBelief{
+        T<:Real,
+        Vlabel<:AbstractVector,
+        P<:AbstractMatrix{T},
+        V<:AbstractVector{T},
+        M,
+    } <: AbstractBelief{T}
+     
+A generalized belief is the product of an exponential quadratic form and a Dirac measure
+(generalizing the [`CanonicalBelief`](@ref)) with generalized parameters Q, R, Λ, h, c, g:
+
+    𝒟(x | Q,R,Λ,h,c,g) = exp(-(1/2)xᵀ(QΛQᵀ)x + (Qh)ᵀx + g) • δ(Rᵀx - c)
+    
+For m-dimensional x (i.e. x ∈ ℝᵐ), [Q R] is assumed to be m × m orthonormal
+(i.e. [Q R]ᵀ[Q R] = Iₘ) such that Q and R are orthogonal (i.e. QᵀR = 0).
+
+Generally, Q is m × (m-k) and R is m × k, where 0 ≤ k ≤ m. We refer to R as the constraint
+matrix (R represents linear dependencies among the variables of x) and to k as the
+constraint rank. Λ is (m-k) × (m-k) diagonal, h and c are respectively m × 1 and k × 1, and
+g is scalar.
+
+When k=0, a generalized belief is equivalent to a canonical belief with canonical parameters
+J₁=QΛQᵀ, h₁=Qh, g₁=g.
+
+# Fields
+- `μ::V`: m × 1, where `μ[1:(m-k)]` stores (QΛQᵀ)⁻¹Qh = QΛ⁻¹h, the mean of x; well-defined
+only when QΛQᵀ is positive-definite (i.e. Q is square and Λ has no zero-entries on its
+diagonal); not always updated
+- `h::V`: m × 1 vector, where `h[1:(m-k)]` stores generalized parameter h. Note that is
+**not** the potential for a canonical belief.
+- `Q::P`: m × m matrix, where `Q[:,1:(m-k)]` stores generalized parameter Q
+- `Λ::V`: m × 1 vector, where `Diagonal(Λ[1:(m-k)])` gives generalized parameter Λ
+- `g::MVector{1,T}`: `g[1]` stores the generalized parameter g
+- `k::MVector{1,T}`: `k[1]` stores the constraint rank k
+- `R::P`: m × m matrix, where `R[:,1:k]` stores the generalized parameter R (i.e. the
+constraint matrix)
+- `c::V`: m × 1 matrix, where `c[1:k]` stores the the generalized parameter c
+
+`hmsg`, `Qmsg`, `Λmsg`, `gmsg`, `kmsg`, `Rmsg`, `cmsg` are matrices/vectors of the same
+dimensions as `h`, `Q`, `Λ`, `g`, `k`, `R`, `c` and are meant to store (1) the outgoing
+message for a sending cluster, (2) the incoming message for a receiving cluster, or (3) the
+message quotient (from dividing an outgoing message by a sepset belief) for a mediating
+sepset. We refer to these as the *message fields* of the generalized belief.
+
+Other fields (defined identically as for [`CanonicalBelief`](@ref)) used to track which
+cluster or edge the belief corresponds to, and which traits of which nodes are in scope:
+- `nodelabel::Vlabel`
+- `ntraits::Integer`
+- `inscope::BitArray`
+- `type::BeliefType`
+- `metadata::M`
+"""
+struct GeneralizedBelief{
+    T<:Real,
+    Vlabel<:AbstractVector,
+    P<:AbstractMatrix{T},
+    V<:AbstractVector{T},
+    M,
+} <: AbstractBelief{T}
+    "Integer label for nodes in the cluster"
+    nodelabel::Vlabel
+    "Total number of traits at each node"
+    ntraits::Int
+    """
+    Matrix inscope[i,j] is `false` if trait `i` at node `j` is / will be
+    removed from scope, to avoid issues from 0 precision or infinite variance; or
+    when there is no data for trait `i` below node `j` (in which case tracking
+    this variable is only good for prediction, not for learning parameters).
+    """
+    inscope::BitArray
+    μ::V
+    h::V
+    hmsg::V
+    "eigenbasis for precision"
+    Q::P
+    Qmsg::P
+    "eigenvalues of precision"
+    Λ::V
+    Λmsg::V
+    g::MVector{1,T}
+    gmsg::MVector{1,T}
+    "constraint rank"
+    k::MVector{1,Int64}
+    kmsg::MVector{1,Int64}
+    "constraint matrix: linear dependencies among inscope variables"
+    R::P
+    Rmsg::P
+    "offset"
+    c::V
+    cmsg::V
+    type::BeliefType
+    """metadata, e.g. index in cluster graph, of type (M) `Symbol` for clusters or
+    Tuple{Symbol, Symbol} for edges"""
+    metadata::M
+end
+
+"""
+    GeneralizedBelief(b::CanonicalBelief)
+
+Constructor from a canonical belief `b`.
+
+Precision `b.J` is eigendecomposed into `Q Λ transpose(Q)`, where `Q` and `Λ`
+are square with the same dimensions as `b.J`, and `Λ` is positive semidefinite.
+"""
+function GeneralizedBelief(b::CanonicalBelief{T,Vlabel,P,V,M}) where {T,Vlabel,P,V,M}
+    # J = SArray{Tuple{size(b.J)...}}(b.J) # `eigen` cannot be called on
+    Q, Λ = LA.svd(b.J)
+    m = size(b.J,1) # dimension
+    k = MVector{1,Int64}(0) # constraint rank 0
+    R = MMatrix{m,m,T}(undef)
+    c = MVector{m,T}(undef)
+    GeneralizedBelief{T,Vlabel,P,V,M}(
+        b.nodelabel,b.ntraits,b.inscope,
+        b.μ,transpose(Q)*b.h,similar(transpose(Q)*b.h),Q,similar(Q),Λ,similar(Λ),b.g,similar(b.g),
+        k,similar(k),R,similar(R),c,similar(c),
+        b.type,b.metadata)
+end
+
+"""
+    GeneralizedBelief(b::CanonicalBelief, R::AbstractMatrix)
+
+Constructor from a canonical belief `b` and a constraint matrix `R`.
+
+`R` is assumed to have the same number of rows as `b.R`, and all entries of
+`b.c[1:size(R)[2]]` are assumed to be 0.
+"""
+function GeneralizedBelief(b::CanonicalBelief{T,Vlabel,P,V,M}, R::AbstractMatrix{T}) where {T,Vlabel,P,V,M}
+    gb = GeneralizedBelief(b)
+    m, k = size(R)
+    gb.R[:,1:k] = R # R should have the same no. of rows as gb.R
+    gb.Q[:,1:(m-k)] = LA.nullspace(transpose(R))
+    gb.Λ[1:(m-k)] = LA.diag(transpose(view(gb.Q,:,1:(m-k)))*b.J*view(gb.Q,:,1:(m-k)))
+    gb.h[1:(m-k)] = transpose(view(gb.Q,:,1:(m-k)))*b.h
+    gb.k[1] = k
+    gb.c[1:k] .= 0
+    gb
+end
+
+nodelabels(b::AbstractBelief) = b.nodelabel
+ntraits(b::AbstractBelief) = b.ntraits
+inscope(b::AbstractBelief) = b.inscope
+nodedimensions(b::AbstractBelief) = map(sum, eachslice(inscope(b), dims=2))
+dimension(b::AbstractBelief) = sum(inscope(b))
+
+function show_name_scope(io::IO, b::AbstractBelief)
+    disp = showname(b) * " for "
+    disp *= (b.type == bclustertype ? "Cluster" : "SepSet") * " $(b.metadata),"
+    disp *= " $(ntraits(b)) traits × $(length(nodelabels(b))) nodes, dimension $(dimension(b)).\n"
+    disp *= "Node labels: "
+    print(io, disp)
+    print(io, nodelabels(b))
+    print(io, "\ntrait × node matrix of non-degenerate beliefs:\n")
+    show(io, inscope(b))
+end
+
+showname(::CanonicalBelief) = "canonical belief"
+function Base.show(io::IO, b::CanonicalBelief)
+    show_name_scope(io, b)
+    print(io, "\nexponential quadratic belief, parametrized by\nμ: $(b.μ)\nh: $(b.h)\nJ: $(b.J)\ng: $(b.g[1])\n")
+end
+
+showname(::GeneralizedBelief) = "generalized belief"
+function Base.show(io::IO, b::GeneralizedBelief)
+    show_name_scope(io, b)
+    # todo: show major fields of b
+    # print(io, "\nexponential quadratic belief, parametrized by\nμ: $(b.μ)\nh: $(b.h)\nJ: $(b.J)\ng: $(b.g[1])\n")
 end
 
 """
@@ -494,27 +644,33 @@ function init_beliefs_allocate(
 end
 
 """
-    FamilyFactor(belief::AbstractBelief{T}) where T
+    ClusterFactor(belief::AbstractBelief{T}) where T
 
 Constructor to allocate memory for one family factor, with canonical parameters
 and metadata initialized to be a copy of those in `belief`.
-`FamilyFactor`s metadata are supposed to be symbols, so this constructor should
+`ClusterFactor`s metadata are supposed to be symbols, so this constructor should
 fail if its input is a sepset belief, whose `metadata` is a Tuple of Symbols.
 """
-function FamilyFactor(belief::CanonicalBelief{T}) where T
+function ClusterFactor(belief::CanonicalBelief{T}) where T
     h = deepcopy(belief.h)
     J = deepcopy(belief.J)
     g = deepcopy(belief.g)
-    FamilyFactor{T,typeof(J),typeof(h)}(h,J,g,belief.metadata)
+    ClusterFactor{T,typeof(J),typeof(h)}(h,J,g,belief.metadata)
 end
-# todo: add constructor from GeneralizedBelief
-#= todo: why `FamilyFactor` since this is not necessarily the density for a node
-family? Rename this `ClusterFactor`? =#
+function ClusterFactor(belief::GeneralizedBelief{T}) where T
+    k1 = belief.k[1]
+    m1 = size(belief.Q)[1]
+    J = view(belief.Q,:,1:(m1-k1))*LA.Diagonal(view(belief.Λ,1:(m1-k1)))*
+        transpose(view(belief.Q,:,1:(m1-k1)))
+    h = view(belief.Q,:,1:(m1-k1))*view(belief.h,1:(m1-k1))
+    g = deepcopy(belief.g)
+    ClusterFactor{T,typeof(J),typeof(h)}(h,J,g,belief.metadata)
+end
 
 """
     init_factors_allocate(beliefs::AbstractVector{<:AbstractBelief}, nclusters::Integer)
 
-Vector of `nclusters` factors of type [`FamilyFactor`](@ref), whose canonical
+Vector of `nclusters` factors of type [`ClusterFactor`](@ref), whose canonical
 parameters and metadata are initialized to be a copy of those in `beliefs`.
 Assumption: `beliefs[1:nclusters]` are cluster beliefs, and
 `beliefs[nclusters+1:end]` (if any) are sepset beliefs. This is not checked.
@@ -524,10 +680,10 @@ function init_factors_allocate(
     nclusters::Integer
 ) where B<:AbstractBelief{T} where T
     # factors = FamilyFactor{T}[]
-    factors = Vector{FamilyFactor}(undef, nclusters)
+    factors = Vector{ClusterFactor}(undef, nclusters)
     for i in 1:nclusters
         # push!(factors, FamilyFactor(beliefs[i]))
-        factors[i] = FamilyFactor(beliefs[i])
+        factors[i] = ClusterFactor(beliefs[i])
     end
     return factors
 end
@@ -570,7 +726,7 @@ function init_beliefs_allocate_atroot!(
         update_inscope!(be_insc, root_ind)
         beliefs[i_b] = CanonicalBelief(be.nodelabel, numtraits, be_insc, be.type, be.metadata, T)
         if iscluster # re-allocate the corresponding factor. if sepset: nothing to do
-            factors[i_b] = FamilyFactor(beliefs[i_b])
+            factors[i_b] = ClusterFactor(beliefs[i_b])
             for (nf, nfinscope, _) in cluster2fams[i_b][1]
                 # if node family contains root node, then update whether it is inscope
                 (nf[end] == 1) && (nfinscope[end] = !fixedroot)
@@ -604,7 +760,25 @@ function init_belief_reset!(be::CanonicalBelief{T}) where T
     be.g[1] = zero(T)
     return nothing
 end
-# todo: create method when B<:GeneralizedBelief
+function init_belief_reset!(be::GeneralizedBelief)
+    be.h .= 0
+    be.hmsg .= 0 
+    be.Q .= 0
+    be.Qmsg .= 0
+    be.Q[:,:] += LA.I
+    be.Qmsg[:,:] += LA.I
+    be.Λ .= 0
+    be.Λmsg .= 0
+    be.g[1] = 0
+    be.gmsg[1] = 0
+    be.k[1] = 0
+    be.kmsg[1] = 0
+    # be.R
+    # be.Rmsg
+    # be.c
+    # be.cmsg
+    return nothing
+end
 
 """
     init_factors_frombeliefs!(
