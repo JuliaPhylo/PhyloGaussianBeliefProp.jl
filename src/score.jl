@@ -30,6 +30,19 @@ function getcholesky_μ!(b::CanonicalBelief)
     b.μ .= μ
     return (Jchol, μ)
 end
+function getcholesky_μ!(b::CanonicalBelief)
+    (Jchol, μ) = getcholesky_μ(b.J, b.h)
+    b.μ .= μ
+    return (Jchol, μ)
+end
+function getcholesky_μ!(b::GeneralizedBelief)
+    (b.k[1] == 0) || error("belief is degenerate")
+    μ = view(b.Q,:,:)*(view(b.h,:) ./ view(b.Λ,:))
+    b.μ[:] = μ
+    up = qr(Diagonal(sqrt.(b.Λ))*transpose(b.Q)).R # upper triangular
+    Jchol = PDMat(Cholesky(LA.UpperTriangular(up)))
+    return (Jchol, μ)
+end
 
 """
     entropy(J::Cholesky)
@@ -49,14 +62,18 @@ and extended to Gaussian distributions in Distributions.jl around
 function entropy(J::Union{LA.Cholesky{T},PDMat{T}}) where T<:Real
     n = size(J,2)
     n == 0 && return zero(T)
-    (n * (T(log2π) + 1) - LA.logdet(J)) / 2
+    return (n * (T(log2π) + 1) - LA.logdet(J)) / 2
 end
 function entropy(J::AbstractMatrix{T}) where T<:Real
     n = size(J,2)
     n == 0 && return zero(T)
-    (n * (T(log2π) + 1) - LA.logdet(LA.Symmetric(J))) / 2
+    return (n * (T(log2π) + 1) - LA.logdet(LA.Symmetric(J))) / 2
 end
-entropy(cluster::AbstractFactorBelief) = entropy(cluster.J)
+entropy(factor::AbstractFactorBelief) = entropy(factor.J)
+function entropy(belief::GeneralizedBelief)
+    (b.k[1] == 0) || error("belief is degenerate")
+    return view(belief.Q,:,:)*LA.Diagonal(view(belief.Λ,:))*transpose(view(belief.Q.:,:))
+end
 
 """
     average_energy!(ref::AbstractBelief, target::AbstractFactorBelief)
@@ -90,16 +107,19 @@ With empty vectors and matrices (J's of dimension 0×0 and h's of length 0),
 the result is simply: - gₜ.
 """
 function average_energy!(ref::AbstractBelief, target::AbstractFactorBelief)
-    average_energy!(ref, target.J, target.h, target.g[1])
+    return average_energy!(ref, target.J, target.h, target.g[1])
+end
+function average_energy!(ref::AbstractBelief, target::GeneralizedBelief)
+    error("average_energy! not implemented for type $(typeof(target))")
 end
 function average_energy!(ref::AbstractBelief, Jₜ, hₜ, gₜ)
     (Jᵣ, μᵣ) = getcholesky_μ!(ref)
-    average_energy(Jᵣ, μᵣ, Jₜ, hₜ, gₜ)
+    return average_energy(Jᵣ, μᵣ, Jₜ, hₜ, gₜ)
 end
 @doc (@doc average_energy!) average_energy
 function average_energy(Jᵣ::Union{LA.Cholesky,PDMat}, μᵣ, Jₜ, hₜ, gₜ)
     isempty(Jₜ) && return -gₜ # dot(x,A,x) fails on empty x & A
-    (LA.tr(Jᵣ \ Jₜ) + LA.dot(μᵣ, Jₜ, μᵣ)) / 2 - LA.dot(hₜ, μᵣ) - gₜ
+    return (LA.tr(Jᵣ \ Jₜ) + LA.dot(μᵣ, Jₜ, μᵣ)) / 2 - LA.dot(hₜ, μᵣ) - gₜ
 end
 
 """

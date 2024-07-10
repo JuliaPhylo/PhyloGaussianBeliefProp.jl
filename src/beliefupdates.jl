@@ -45,7 +45,7 @@ In that case, an error of type [`BPPosDefException`](@ref) is thrown
 with a message about the `beliefmetadata`,
 which can be handled by downstream functions.
 """
-marginalize(b::AbstractFactorBelief, keepind) =
+marginalize(b::CanonicalBelief, keepind) =
     marginalize(b.h, b.J, b.g[1], keepind, b.metadata)
 function marginalize(h,J,g::Real, keep_index, metadata)
     integrate_index = setdiff(1:length(h), keep_index)
@@ -53,8 +53,16 @@ function marginalize(h,J,g::Real, keep_index, metadata)
 end
 function marginalize(h,J,g::Real, keep_index, integrate_index, metadata)
     isempty(integrate_index) && return (h,J,g)
-    ni = length(integrate_index)
     Ji = view(J, integrate_index, integrate_index)
+    Ji = try PDMat(Ji) # re-binds Ji; fails if not positive definite, e.g. Ji=0
+    catch pdmat_ex
+        if isa(pdmat_ex, LA.PosDefException)
+            ex = BPPosDefException("belief $metadata, integrating $(integrate_index)", pdmat_ex.info)
+            throw(ex)
+        else
+            rethrow(pdmat_ex)
+        end
+    end
     Jk  = view(J, keep_index, keep_index)
     Jki = view(J, keep_index, integrate_index)
     hi = view(h, integrate_index)
@@ -64,19 +72,10 @@ function marginalize(h,J,g::Real, keep_index, integrate_index, metadata)
     if all(isapprox.(Ji, 0, atol=ϵ)) && all(isapprox.(hi, 0, atol=ϵ)) && all(isapprox.(Jki, 0, atol=ϵ))
         return (hk, Jk, g)
     end
-    Ji = try # re-binds Ji
-        PDMat(Ji) # fails if non positive definite, e.g. Ji=0
-    catch pdmat_ex
-        if isa(pdmat_ex, LA.PosDefException)
-            ex = BPPosDefException("belief $metadata, integrating $(integrate_index)", pdmat_ex.info)
-            throw(ex)
-        else
-            rethrow(pdmat_ex)
-        end
-    end
     messageJ = Jk - X_invA_Xt(Ji, Jki) # Jk - Jki Ji^{-1} Jki' without inv(Ji)
     μi = Ji \ hi
     messageh = hk - Jki * μi
+    ni = length(integrate_index)
     messageg = g + (ni*log2π - LA.logdet(Ji) + LA.dot(hi, μi))/2
     return (messageh, messageJ, messageg)
 end
@@ -171,16 +170,20 @@ end
 function integratebelief!(b::GeneralizedBelief)
     m = size(b.Q)[1]
     k = b.k[1]
-    #= 𝒟(x;Q,R,Λ,h,c,g) = exp(-xᵀ(QΛQᵀ)x/2+(Qh)ᵀx+g)⋅δ(Rᵀx-c)
+    #=
+    𝒟(x;Q,R,Λ,h,c,g) = exp(-xᵀ(QΛQᵀ)x/2+(Qh)ᵀx+g)⋅δ(Rᵀx-c)
     Take Qᵀx ∼ 𝒩(Λ⁻¹h,Λ⁻¹):
     (1) μ = E[QQᵀx] = QΛ⁻¹h
-    (2) messageg = ∫C(Qᵀx;Λ,h,g)d(Qᵀx) = exp(g)⋅exp(log|2πΛ⁻¹| + hᵀΛ⁻¹h)/2) =#
+    (2) norm = ∫C(Qᵀx;Λ,h,g)d(Qᵀx) = exp(g)⋅exp(log|2πΛ⁻¹| + hᵀΛ⁻¹h)/2)
+    =#
     # todo: check that b.Λ[1:(m-k)] has no 0-entries so that C(Qᵀx;Λ,h,g) is normalizable
+
+    any(view(b.Λ,1:(m-k)) .== 0) && error("belief is not normalizable")
     μ = view(b.Q,:,1:(m-k))*(view(b.h,1:(m-k)) ./ view(b.Λ,1:m-k))
-    messageg = b.g[1] + (m*log(2π) - log(prod(view(b.Λ,1:(m-k)))) +
+    norm = b.g[1] + (m*log(2π) - log(prod(view(b.Λ,1:(m-k)))) +
         sum(view(b.h,1:(m-k)) .^2 ./ view(b.Λ,1:(m-k))))/2
     b.μ[1:(m-k)] = μ
-    return (μ, messageg)
+    return (μ, norm)
 end
 function integratebelief(h,J,g)
     # Ji = PDMat(J) # fails if cholesky fails, e.g. if J=0
@@ -263,7 +266,7 @@ function extend!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     # indices in `cluster_to` inscope variables of `sepset` inscope variables
     upind = scopeindex(sepset, cluster_to)
     #=
-    x,Q,Λ from sepset buffer are extended as follows:
+    x,Q,Λ from sepset message are extended as follows:
     (1) x is extended to Px', where x' is formed by stacking x on top of the
     inscope variables of `cluster_to` that are not in x, and P is a permutation
     matrix determined by `upind`
@@ -286,7 +289,7 @@ function extend!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     k2 = sepset.kmsg[1]
     cluster_to.kmsg[1] = k2
     # constraint
-    cluster_to.Rmsg[:,1:k2] .= 0.0 # reset buffer
+    cluster_to.Rmsg[:,1:k2] .= 0.0 # reset
     cluster_to.Rmsg[1:m2,1:k2] = view(sepset.Rmsg,:,1:k2)
     cluster_to.Rmsg[perm,:] = cluster_to.Rmsg[:,:] # permute rows of [R; 0]
     cluster_to.cmsg[1:k2] = view(sepset.cmsg,1:k2)
@@ -302,7 +305,7 @@ function extend!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     cluster_to.hmsg[1:(m2-k2)] = view(sepset.hmsg,1:(m2-k2))
     # constant
     cluster_to.gmsg[1] = sepset.gmsg[1]
-    return
+    return nothing
 end
 function extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
     m1 = size(cluster_to.Q)[1]
@@ -324,10 +327,10 @@ function extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
     cluster_to.hmsg[1:m2] = Q*Δh
     # constant
     cluster_to.gmsg[1] = Δg
-    return
+    return nothing
 end
 function extend!(cluster_to::GeneralizedBelief, upind, R)
-    # todo: checks that R is valid
+    # todo: check that R is valid (e.g. is a contrast associated with a hybrid family?)
     m1 = size(cluster_to.Q)[1]
     perm = [upind;setdiff(1:m1,upind)]
     m2, k2 = size(R)
@@ -348,7 +351,7 @@ function extend!(cluster_to::GeneralizedBelief, upind, R)
     cluster_to.hmsg .= 0
     # constant
     cluster_to.gmsg[1] = 0
-    return  
+    return nothing
 end
 
 """
@@ -490,19 +493,19 @@ function divide!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
     h1 = cluster_from.hmsg[1:(m-k1)]
     h2 = sepset.h[1:(m-k2)]
 
-    ## compute quotient and save parameters to sepset buffer
+    ## compute quotient and save parameters to sepset message
     # constraint rank
     k = k1-k2
     k ≥ 0 || error("quotient cannot have negative constraint rank")
     sepset.kmsg[1] = k
     # constraint
-    cluster_from.Q[1:m,(m-k1+1):(m-k)] = R2 # use cluster_from.Q as a buffer for R2
+    cluster_from.Q[1:m,(m-k1+1):(m-k)] = R2 # store R2 in extra space of cluster_from.Q
     sepset.Rmsg[:,1:k] = LA.nullspace(view(cluster_from.Q,:,1:(m-k)))
     sepset.cmsg[1:k] = transpose(view(sepset.Rmsg,:,1:k))*R1*c1
     # precision
     ZΛZt = LA.Diagonal(Λ1)-transpose(Q1)*Q2*LA.Diagonal(Λ2)*transpose(Q2)*Q1
     Z, Λ = LA.svd(ZΛZt)
-    sepset.Λmsg .= 0.0 # reset buffer
+    sepset.Λmsg .= 0.0 # reset
     sepset.Λmsg[1:(m-k1)] = Λ
     sepset.Qmsg[:,1:(m-k1)] = Q1*Z
     sepset.Qmsg[:,(m-k1+1):(m-k)] = R2
@@ -515,12 +518,12 @@ function divide!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
     sepset.gmsg[1] = cluster_from.gmsg[1] - sepset.g[1] -
         transpose(h2-0.5*Λ2Q2tR1c1)*Q2tR1c1
 
-    ## residual parameters: Qh, QΛQᵀ, g
+    ## quotient canonical parameters: Qh, QΛQᵀ, g
     Δh = view(sepset.Qmsg,:,1:(m-k))*view(sepset.hmsg,1:(m-k))
     ΔJ = Q1*ZΛZt*transpose(Q1)
     Δg = sepset.gmsg[1]
     
-    ## update sepset (non-buffer) parameters to those of the dividend
+    ## update sepset (non-message) parameters to those of the dividend
     sepset.k[1] = k1
     sepset.R[:,1:k1] = R1
     sepset.c[1:k1] = c1
@@ -598,7 +601,11 @@ function propagate_belief!(
     cluster_from::AbstractBelief,
     residual::AbstractResidual,
 )
-    Δh, ΔJ, _ = propagate_belief!(cluster_to, sepset, cluster_from)
+    Δh, ΔJ, _ = try propagate_belief!(cluster_to, sepset, cluster_from)
+    catch ex
+        isa(ex, BPPosDefException) && return ex # output the exception: not thrown
+        rethrow(ex) # exception thrown if other than BPPosDefException
+    end
     # update residual
     residual.Δh[:] = Δh
     residual.ΔJ[:] = ΔJ
@@ -613,11 +620,7 @@ function propagate_belief!(
     #    requires cluster_from.J[I,I] to be invertible, I = indices other than `keepind`
     #    marginalize sends BPPosDefException otherwise.
     # `keepind` can be empty (e.g. if `cluster_from` is entirely "clamped")
-    h, J, g = try marginalize(cluster_from, scopeindex(sepset, cluster_from))
-    catch ex
-        isa(ex, BPPosDefException) && return ex # output the exception: not thrown
-        rethrow(ex) # exception thrown if other than BPPosDefException
-    end
+    h, J, g = marginalize(cluster_from, scopeindex(sepset, cluster_from))
     # 2. calculate residual and update sepset belief
     Δh, ΔJ, Δg = divide!(sepset, h, J, g)
     # 3. extend message to scope of cluster_to and propagate

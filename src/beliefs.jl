@@ -646,7 +646,7 @@ end
 """
     ClusterFactor(belief::AbstractBelief{T}) where T
 
-Constructor to allocate memory for one family factor, with canonical parameters
+Constructor to allocate memory for one cluster factor, with canonical parameters
 and metadata initialized to be a copy of those in `belief`.
 `ClusterFactor`s metadata are supposed to be symbols, so this constructor should
 fail if its input is a sepset belief, whose `metadata` is a Tuple of Symbols.
