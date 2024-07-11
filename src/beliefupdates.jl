@@ -22,7 +22,7 @@ function Base.showerror(io::IO, ex::BPPosDefException)
 end
 
 """
-    marginalize(belief::AbstractFactorBelief, keep_index)
+    marginalize(belief::AbstractFactor, keep_index)
     marginalize(h,J,g, keep_index, beliefmetadata)
     marginalize(h,J,g, keep_index, integrate_index, beliefmetadata)
 
@@ -45,8 +45,9 @@ In that case, an error of type [`BPPosDefException`](@ref) is thrown
 with a message about the `beliefmetadata`,
 which can be handled by downstream functions.
 """
-marginalize(b::CanonicalBelief, keepind) =
-    marginalize(b.h, b.J, b.g[1], keepind, b.metadata)
+marginalize(b::AbstractFactor, keepind) = marginalize(b.h, b.J, b.g[1], keepind, b.metadata)
+marginalize(b::GeneralizedBelief, keepind) =
+    error("marginalize not implemented for b of type $(typeof(b))")
 function marginalize(h,J,g::Real, keep_index, metadata)
     integrate_index = setdiff(1:length(h), keep_index)
     marginalize(h,J,g, keep_index, integrate_index, metadata)

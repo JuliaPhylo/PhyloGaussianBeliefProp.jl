@@ -14,7 +14,7 @@ end
 
 """
     getcholesky_μ(J::AbstractMatrix, h)
-    getcholesky_μ!(belief::AbstractBelief)
+    getcholesky_μ!(belief::AbstractFactor)
 
 Tuple `(Jchol, μ)` where `Jchol` is a cholesky representation of `J` or `belief.J`
 and `μ` is J⁻¹h, used to update `belief.μ` (by the second method).
@@ -25,12 +25,7 @@ function getcholesky_μ(J::AbstractMatrix, h)
     return (Jchol, μ)
 end
 @doc (@doc getcholesky_μ) getcholesky_μ!
-function getcholesky_μ!(b::CanonicalBelief)
-    (Jchol, μ) = getcholesky_μ(b.J, b.h)
-    b.μ .= μ
-    return (Jchol, μ)
-end
-function getcholesky_μ!(b::CanonicalBelief)
+function getcholesky_μ!(b::AbstractFactor)
     (Jchol, μ) = getcholesky_μ(b.J, b.h)
     b.μ .= μ
     return (Jchol, μ)
@@ -47,7 +42,7 @@ end
 """
     entropy(J::Cholesky)
     entropy(J::AbstractMatrix)
-    entropy(belief::AbstractFactorBelief)
+    entropy(belief::AbstractFactor)
 
 Entropy of a multivariate Gaussian distribution with precision matrix `J`,
 assumed to be square and symmetric (not checked).
@@ -69,14 +64,14 @@ function entropy(J::AbstractMatrix{T}) where T<:Real
     n == 0 && return zero(T)
     return (n * (T(log2π) + 1) - LA.logdet(LA.Symmetric(J))) / 2
 end
-entropy(factor::AbstractFactorBelief) = entropy(factor.J)
-function entropy(belief::GeneralizedBelief)
-    (b.k[1] == 0) || error("belief is degenerate")
-    return view(belief.Q,:,:)*LA.Diagonal(view(belief.Λ,:))*transpose(view(belief.Q.:,:))
+entropy(factor::AbstractFactor) = entropy(factor.J)
+function entropy(factor::GeneralizedBelief)
+    (factor.k[1] == 0) || error("belief is degenerate")
+    return view(factor.Q,:,:)*LA.Diagonal(view(factor.Λ,:))*transpose(view(factor.Q,:,:))
 end
 
 """
-    average_energy!(ref::AbstractBelief, target::AbstractFactorBelief)
+    average_energy!(ref::AbstractBelief, target::AbstractFactor)
     average_energy!(ref::AbstractBelief, Jₜ, hₜ, gₜ)
     average_energy(Jᵣ::Union{LA.Cholesky,PDMat}, μᵣ, Jₜ, hₜ, gₜ)
 
@@ -106,12 +101,10 @@ target: C(x | Jₜ, hₜ, gₜ) = exp( - (1/2)x'Jₜx + hₜ'x + gₜ )
 With empty vectors and matrices (J's of dimension 0×0 and h's of length 0),
 the result is simply: - gₜ.
 """
-function average_energy!(ref::AbstractBelief, target::AbstractFactorBelief)
-    return average_energy!(ref, target.J, target.h, target.g[1])
-end
-function average_energy!(ref::AbstractBelief, target::GeneralizedBelief)
-    error("average_energy! not implemented for type $(typeof(target))")
-end
+average_energy!(ref::AbstractBelief, target::AbstractFactor) =
+    average_energy!(ref, target.J, target.h, target.g[1])
+average_energy!(ref::AbstractBelief, target::GeneralizedBelief) =
+    error("average_energy! not implemented for target of type $(typeof(target))")
 function average_energy!(ref::AbstractBelief, Jₜ, hₜ, gₜ)
     (Jᵣ, μᵣ) = getcholesky_μ!(ref)
     return average_energy(Jᵣ, μᵣ, Jₜ, hₜ, gₜ)

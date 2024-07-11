@@ -1,13 +1,13 @@
 @enum BeliefType bclustertype=1 bsepsettype=2
 
-abstract type AbstractFactorBelief{T} end
-abstract type AbstractBelief{T} <: AbstractFactorBelief{T} end
+abstract type AbstractFactor{T} end
+abstract type AbstractBelief{T} <: AbstractFactor{T} end
 
 struct ClusterFactor{
     T<:Real,
     P<:AbstractMatrix{T},
     V<:AbstractVector{T}
-} <: AbstractFactorBelief{T}
+} <: AbstractFactor{T}
     h::V
     J::P
     g::MVector{1,T} # mutable
@@ -1224,7 +1224,7 @@ function iscalibrated_kl!(res::AbstractResidual{T}, atol=T(1e-5)) where T
 end
 
 """
-    residual_kldiv!(residual::AbstractResidual, sepset::AbstractFactorBelief,
+    residual_kldiv!(residual::AbstractResidual, sepset::AbstractFactor,
         canonicalparams::Tuple)
 
 Update `residual.kldiv` with the
@@ -1265,7 +1265,7 @@ message, which is *not* gₘ-gₛ because the stored beliefs are not normalized.
 See also: [`average_energy!`](@ref), which only requires the sepset belief
 to be positive definite.
 """
-function residual_kldiv!(res::AbstractResidual{T}, sepset::AbstractFactorBelief{T}) where {T <: Real}
+function residual_kldiv!(res::AbstractResidual{T}, sepset::AbstractFactor{T}) where {T <: Real}
     # isposdef returns true for empty matrices e.g. isposdef(Real[;;]) and isposdef(MMatrix{0,0}(Real[;;]))
     isempty(sepset.J) && return true
     (J0, μ0) = try getcholesky_μ!(sepset) # current (m): message that was passed
