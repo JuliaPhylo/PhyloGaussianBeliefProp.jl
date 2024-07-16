@@ -113,7 +113,7 @@ end
         m = PGBP.MvFullBrownianMotion([1 0.5; 0.5 1], [0,0], [Inf 0; 0 Inf]) # improper root
         cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3))
         b, c2f = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, cg, m);
-        PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, c2f); # todo: debug
+        PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, c2f);
         cgb = PGBP.ClusterGraphBelief(b, c2f)
         PGBP.regularizebeliefs_bynodesubtree!(cgb, cg)
         sch = [] # schedule based on 1 subtree per variable
@@ -205,8 +205,9 @@ end
 
         lbc = GeneralLazyBufferCache(function (paramOriginal)
             mo = PGBP.UnivariateBrownianMotion(paramOriginal...)
-            bel = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, mo)
-            return PGBP.ClusterGraphBelief(bel)
+            bel, c2f = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, mo)
+            # bel = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, mo)
+            return PGBP.ClusterGraphBelief(bel, c2f)
         end)
         mod2, llscore2, opt2 = PGBP.calibrate_optimize_cliquetree_autodiff!(lbc, ct, net.nodes_changed,
             tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (1, -2))

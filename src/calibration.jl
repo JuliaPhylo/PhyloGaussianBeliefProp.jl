@@ -224,7 +224,8 @@ function calibrate_optimize_cliquetree_autodiff!(bufferbeliefs::GeneralLazyBuffe
         model = evomodelfun(paramOriginal...)
         dualBeliefs = bufferbeliefs[paramOriginal]
         # reset beliefs based on factors from new model parameters
-        init_beliefs_assignfactors!(dualBeliefs.belief, model, tbl, taxa, prenodes)
+        assignfactors!(dualBeliefs.belief, model, tbl, taxa, prenodes, dualBeliefs.cluster2fams)
+        # init_beliefs_assignfactors!(dualBeliefs.belief, model, tbl, taxa, prenodes)
         # no need to reset factors: free_energy not used on a clique tree
         init_messagecalibrationflags_reset!(dualBeliefs, false)
         propagate_1traversal_postorder!(dualBeliefs, spt...)

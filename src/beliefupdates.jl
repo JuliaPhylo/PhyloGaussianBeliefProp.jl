@@ -55,15 +55,6 @@ end
 function marginalize(h,J,g::Real, keep_index, integrate_index, metadata)
     isempty(integrate_index) && return (h,J,g)
     Ji = view(J, integrate_index, integrate_index)
-    Ji = try PDMat(Ji) # re-binds Ji; fails if not positive definite, e.g. Ji=0
-    catch pdmat_ex
-        if isa(pdmat_ex, LA.PosDefException)
-            ex = BPPosDefException("belief $metadata, integrating $(integrate_index)", pdmat_ex.info)
-            throw(ex)
-        else
-            rethrow(pdmat_ex)
-        end
-    end
     Jk  = view(J, keep_index, keep_index)
     Jki = view(J, keep_index, integrate_index)
     hi = view(h, integrate_index)
@@ -72,6 +63,15 @@ function marginalize(h,J,g::Real, keep_index, integrate_index, metadata)
     ϵ = eps(eltype(J))
     if all(isapprox.(Ji, 0, atol=ϵ)) && all(isapprox.(hi, 0, atol=ϵ)) && all(isapprox.(Jki, 0, atol=ϵ))
         return (hk, Jk, g)
+    end
+    Ji = try PDMat(Ji) # re-binds Ji; fails if not positive definite, e.g. Ji=0
+    catch pdmat_ex
+        if isa(pdmat_ex, LA.PosDefException)
+            ex = BPPosDefException("belief $metadata, integrating $(integrate_index)", pdmat_ex.info)
+            throw(ex)
+        else
+            rethrow(pdmat_ex)
+        end
     end
     messageJ = Jk - X_invA_Xt(Ji, Jki) # Jk - Jki Ji^{-1} Jki' without inv(Ji)
     μi = Ji \ hi

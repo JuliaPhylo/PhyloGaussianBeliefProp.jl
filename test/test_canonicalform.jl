@@ -51,14 +51,14 @@ ne(ct), nv(ct)
 
 # fixit: one clique should have both the child & parents of the degenerate hybrid
 
-b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, PGBP.UnivariateBrownianMotion(1,0,1))
+b, _ = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct, PGBP.UnivariateBrownianMotion(1,0,1))
 beliefnodelabels = [[6,5], [7,6], [8,6], [5,4,2], [4,2,1], [3,2], [9,4], [6], [6], [5], [4,2], [2], [4]]
 @test [PGBP.nodelabels(be) for be in b] == beliefnodelabels
 @test PGBP.inscope(b[5]) == trues(2,3)
-@test isempty(PGBP.scopeindex([5], b[1]))
+@test !isempty(PGBP.scopeindex([5], b[1]))
 @test PGBP.scopeindex([6], b[1]) == [1,2]
 @test_throws ErrorException PGBP.scopeindex([2], b[1])
-b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, PGBP.UnivariateBrownianMotion(1,0,0))
+b, _ = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct, PGBP.UnivariateBrownianMotion(1,0,0))
 @test [PGBP.nodelabels(be) for be in b] == beliefnodelabels
 @test PGBP.inscope(b[5]) == [true true false; true true false] # root not in scope
 
@@ -73,8 +73,8 @@ PGBP.triangulate_minfill!(g)
 ct = PGBP.cliquetree(g)
 
 m = PGBP.UnivariateBrownianMotion(2, 3, 0) # 0 root prior variance: fixed root
-b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+b, c2f = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m);
+PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, c2f);
 # ["$(be.type): $(be.nodelabel)" for be in b]
 @test b[1].J ≈ m.J/net.edge[4].length .* [1 -1; -1 1]
 @test b[1].h == [0,0]
