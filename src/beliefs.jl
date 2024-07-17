@@ -864,8 +864,15 @@ function assignfactors!(
                     h,J,g = factor_treeedge(model, getparentedge(ch))
                 else
                     pae = PN.Edge[]
-                    for e in ch.edge
-                        getchild(e) === ch && push!(pae, e)
+                    for pi in nf[2:end] # parent indices
+                        for e in prenodes[pi].edge
+                            if getchild(e) === ch
+                                push!(pae, e)
+                                break
+                            else
+                                continue
+                            end
+                        end
                     end
                     # non-degenerate hybrid factor
                     !degen && ((h,J,g) = factor_hybridnode(model, pae))
