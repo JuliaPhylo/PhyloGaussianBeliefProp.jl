@@ -458,7 +458,7 @@ function allocatebeliefs(
     =#
     clusterlabs = labels(clustergraph) # same order as cluster beliefs
     cluster2fams = [
-        (Vector{Tuple{Tuple{Vararg{T1}}, BitVector, Bool}}(undef, 0), falses(1))
+        (Vector{Tuple{Tuple{Vararg{T1}}, BitVector, Bool}}(), falses(1))
         for _ in clusterlabs]
     hasdata = falses(numtraits, nnodes)
     for i_node in reverse(1:length(prenodes))
@@ -472,17 +472,17 @@ function allocatebeliefs(
             end
         end
         i_parents = Int[] # preorder indices of parent nodes, sorted in postorder
-        degen = node.hybrid & true # flag if node is degenerate hybrid
+        degen = node.hybrid # flag if node is degenerate hybrid
         for e in node.edge 
             ch = getchild(e)
             if ch === node # parent edge
                 degen && (e.length > 0) && (degen = false)
-                pi = findfirst(n -> n===getparent(e), prenodes) # parent index
+                pi = findfirst(n -> n === getparent(e), prenodes) # parent index
                 ii = findfirst(i_parents .< pi) # i_parents is reverse-sorted
                 if isnothing(ii) ii = length(i_parents) + 1; end
                 insert!(i_parents, ii, pi)
             else # child edge
-                i_child = findfirst(n -> n===ch, prenodes)
+                i_child = findfirst(n -> n === ch, prenodes)
                 isempty(i_child) && error("oops, child (number $(ch.number)) not
                     found in prenodes")
                 hasdata[:,i_node] .|= hasdata[:,i_child] # bitwise or
@@ -869,8 +869,6 @@ function assignfactors!(
                             if getchild(e) === ch
                                 push!(pae, e)
                                 break
-                            else
-                                continue
                             end
                         end
                     end
