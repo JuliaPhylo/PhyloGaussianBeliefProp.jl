@@ -160,7 +160,8 @@ factor_treeedge(m::HomogeneousBrownianMotion, edge::PN.Edge) = factor_treeedge(m
 
 function factor_treeedge(m::UnivariateBrownianMotion{T}, t::Real) where T
     j = T(m.J / t)
-    J = LA.Symmetric(SMatrix{2,2}(j,-j, -j,j))
+    # J = LA.Symmetric(SMatrix{2,2}(j,-j, -j,j))
+    J = SMatrix{2,2}(j,-j,-j,j) # todo: discuss not enforcing symmetry
     h = SVector{2,T}(zero(T), zero(T))
     g = m.g0 - dimension(m) * log(t)/2
     return(h,J,g)
@@ -207,7 +208,8 @@ function factor_tree_degeneratehybrid(m::UnivariateBrownianMotion{T}, t0::Real, 
     nparents = length(γ); nn = 1 + nparents
     # modifies γ in place below, to get longer vector: [1 -γ]
     γ .= -γ; pushfirst!(γ, one(eltype(γ)))
-    J = LA.Symmetric(SMatrix{nn,nn, T}(j*x*y for x in γ, y in γ))
+    # J = LA.Symmetric(SMatrix{nn,nn, T}(j*x*y for x in γ, y in γ))
+    J = SMatrix{nn,nn, T}(j*x*y for x in γ, y in γ) # todo: discuss not enforcing symmetry
     h = SVector{nn,T}(zero(T) for _ in 1:nn)
     g = m.g0 - dimension(m) * log(t0)/2
     return(h,J,g)

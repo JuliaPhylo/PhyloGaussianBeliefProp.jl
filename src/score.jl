@@ -9,7 +9,8 @@ structured matrices (e.g diagonal or sparse) and has efficient methods for
 linear algebra, e.g. `\\`, `invquad`, `X_invA_Xt` etc.
 """
 function getcholesky(J::AbstractMatrix)
-    return PDMat(J) # LA.cholesky(b.J)
+    # return PDMat(J) # LA.cholesky(b.J)
+    return PDMat(LA.Symmetric(J)) # todo: discuss enforcing J to be symmetric
 end
 
 """

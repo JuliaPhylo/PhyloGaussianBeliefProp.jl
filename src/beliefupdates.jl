@@ -64,7 +64,8 @@ function marginalize(h,J,g::Real, keep_index, integrate_index, metadata)
     if all(isapprox.(Ji, 0, atol=ϵ)) && all(isapprox.(hi, 0, atol=ϵ)) && all(isapprox.(Jki, 0, atol=ϵ))
         return (hk, Jk, g)
     end
-    Ji = try PDMat(Ji) # re-binds Ji; fails if not positive definite, e.g. Ji=0
+    # Ji = try PDMat(Ji) # re-binds Ji; fails if not positive definite, e.g. Ji=0
+    Ji = try PDMat(LA.Symmetric(Ji)) # todo: discuss enforcing symmetry
     catch pdmat_ex
         if isa(pdmat_ex, LA.PosDefException)
             ex = BPPosDefException("belief $metadata, integrating $(integrate_index)", pdmat_ex.info)
@@ -188,7 +189,7 @@ function integratebelief!(b::GeneralizedBelief)
 end
 function integratebelief(h,J,g)
     # Ji = PDMat(J) # fails if cholesky fails, e.g. if J=0
-    Ji = PDMat(LA.Symmetric(J)) # todo: discuss enforcing J to be symmetric
+    Ji = PDMat(LA.Symmetric(J)) # todo: discuss enforcing symmetry
     integratebelief(h,Ji,g)
 end
 function integratebelief(h,J::Union{LA.Cholesky{T},PDMat{T}},g::T) where T<:Real

@@ -239,7 +239,7 @@ function GeneralizedBelief(b::CanonicalBelief{T,Vlabel,P,V,M}) where {T,Vlabel,P
     c = MVector{m,T}(undef)
     GeneralizedBelief{T,Vlabel,P,V,M}(
         b.nodelabel,b.ntraits,b.inscope,
-        b.μ,transpose(Q)*b.h,similar(transpose(Q)*b.h),Q,similar(Q),Λ,similar(Λ),b.g,similar(b.g),
+        b.μ,Q*b.h,similar(Q*b.h),Q,similar(Q),Λ,similar(Λ),b.g,similar(b.g),
         k,similar(k),R,similar(R),c,similar(c),
         b.type,b.metadata)
 end
@@ -523,7 +523,19 @@ function allocatebeliefs(
         inscope = build_inscope(nodeindices)
         b = CanonicalBelief(nodeindices, numtraits, inscope, bclustertype, cllab, T2)
         #= if cluster belief contains a degenerate hybrid node family, then assign
-        a generalized belief, else assign a canonical belief =#
+        a generalized belief, else assign a canonical belief
+        Update: the above condition is NOT sufficient to decide if a belief should be
+        canonical or generalized. E.g. its possible to have a cluster that contains a 
+        degenerate hybrid, none of its parents, but all its grandparents. If both its
+        parents are also degenerate hybrids, then the child and its grandparents will be
+        deterministically related.
+        Possible solution: (1) use generalized beliefs for all clusters and assign the
+        degenerate hybrid factors, (2) do one round of constraint propagation to determine
+        the final constraint rank of each cluster, (3) the cluster should have a canonical
+        belief if the constraint rank is 0, and a generalized belief otherwise, (4) do BP
+        with all the factors now, but there is no need to update the constraint matrix of
+        any generalized belief since we know its final form.
+        =#
         if cluster2fams[i_b][2][1]
             push!(beliefs, GeneralizedBelief(b))
         else
@@ -853,7 +865,6 @@ function assignfactors!(
             nfsize = length(nf)
             ch = prenodes[nf[1]] # child node
             node2belief[nf[1]] = ci
-            # todo: use function barrier
             if nfsize == 1
                 nf[1] == 1 || error("only the root node can belong to a family of size 1")
                 # root is inscope iff root is not fixed (i.e. isrootfixed(model) == false)
@@ -1116,7 +1127,6 @@ struct MessageResidual{T<:Real, P<:AbstractMatrix{T}, V<:AbstractVector{T}} <: A
     iscalibrated_resid::MVector{1,Bool}
     iscalibrated_kl::MVector{1,Bool}
 end
-# todo: canonical residual, generalized residual
 
 """
     MessageResidual(J::AbstractMatrix{T}, h::AbstractVector{T})
