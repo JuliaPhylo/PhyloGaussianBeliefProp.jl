@@ -457,6 +457,16 @@ function allocatebeliefs(
     can be removed when the evidence is absorbed
     =#
     clusterlabs = labels(clustergraph) # same order as cluster beliefs
+    #=
+    Each entry in `cluster2fams` is a 2-tuple. Each 2-tuple corresponds to a cluster and
+    indicates which node families are assigned to it.
+    - The first element of the 2-tuple is a vector of 3-tuples, where each 3-tuple consists
+    of (1) an n-tuple of preorder indices (corresponding to a node family), (2) a BitVector
+    that indicates which nodes in the node family are inscope, and (3) a Bool that indicates
+    if the child of the node family is a degenerate hybrid.
+    - The second element is a Bool that indicates if at least one of the node families
+    assigned to the cluster has a degenerate hybrid child.
+    =#
     cluster2fams = [
         (Vector{Tuple{Tuple{Vararg{T1}}, BitVector, Bool}}(), falses(1))
         for _ in clusterlabs]
@@ -954,6 +964,16 @@ function assignfactors!(
             end
         end
     end
+    #=
+    note:
+    - `node2belief` is only used in `calibrate_exact_cliquetree!`, which currently does not
+    work when there are degenerate hybrids
+    - `node2belief` maps nodes to clusters, while `cluster2fams` maps clusters to nodes.
+    The original intention for the latter was to reuse information that would have already
+    been gathered to determine if a belief should be canonical or generalized.
+    But if it is already known which beliefs should be canonical or generalized, then it is
+    more efficient to use `node2belief` to initialize beliefs by looping over node families.
+    =#
     return node2belief
 end
 

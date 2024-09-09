@@ -126,7 +126,8 @@ function marginalize!(cluster_from::GeneralizedBelief, keepind)
     R2 = cluster_from.R[setdiff(1:m1,keepind),1:k] # (m1-mm) x k
     F = transpose(W*((R2*W)\Q2)) # transpose(W(R2*W)⁺Q2): (m1-k) x k
     G = (transpose(Q1)-F*transpose(R1))*view(U1,:,nonzeroind) # (m1-k) x (mm-km)
-    S = V*((transpose(V)*Λ*V) \ transpose(V)) # (m1-k) x (m1-k)
+    # S = V*((transpose(V)*Λ*V) \ transpose(V)) # (m1-k) x (m1-k)
+    S = iszero(Λ) ? Λ : V*((transpose(V)*Λ*V) \ transpose(V)) # edge-case
     Z, Λm = LA.svd(transpose(G)*(Λ-Λ*S*Λ)*G)
     cluster_from.Λmsg[1:(mm-km)] = Λm
     cluster_from.Qmsg[1:mm,1:(mm-km)] = view(U1,:,nonzeroind)*Z
