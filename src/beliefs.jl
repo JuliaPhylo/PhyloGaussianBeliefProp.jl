@@ -223,6 +223,41 @@ struct GeneralizedBelief{
 end
 
 """
+    GeneralizedBelief(nodelabels, numtraits, inscope, belieftype, metadata, T=Float64)
+
+Constructor to allocate memory for one cluster, and initialize objects with 0s
+to initialize the belief with the constant function exp(0)=1.
+"""
+function GeneralizedBelief(
+    nl::AbstractVector{Tlabel},
+    numtraits::Integer,
+    inscope::BitArray,
+    belief,
+    metadata,
+    T::Type=Float64,
+) where Tlabel<:Integer
+    nnodes = length(nl)
+    nodelabels = SVector{nnodes}(nl)
+    size(inscope) == (numtraits,nnodes) || error("inscope of the wrong size")
+    cldim = sum(inscope)
+    # canonical part
+    Q = MMatrix{cldim,cldim,T}(0 for _ in 1:(cldim*cldim))
+    Λ = MVector{cldim,T}(0 for _ in 1:cldim)
+    k = MVector{1,Int64}(0)
+    h = MVector{cldim,T}(0 for _ in 1:cldim)
+    μ = MVector{cldim,T}(0 for _ in 1:cldim)
+    g = MVector{1,T}(0)
+    # constraint part
+    R = MMatrix{cldim,cldim,T}(0 for _ in 1:(cldim*cldim))
+    c = MVector{cldim,T}(0 for _ in 1:cldim)
+    GeneralizedBelief{T,typeof(nodelabels),typeof(Q),typeof(h),typeof(metadata)}(
+        nodelabels,numtraits,inscope,
+        μ,h,similar(h),Q,similar(Q),Λ,similar(Λ),g,similar(g),
+        k,similar(k),R,similar(R),c,similar(c),
+        belief,metadata)
+end
+
+"""
     GeneralizedBelief(b::CanonicalBelief)
 
 Constructor from a canonical belief `b`.
@@ -531,7 +566,6 @@ function allocatebeliefs(
     for (i_b, cllab) in enumerate(clusterlabs)
         nodeindices = clustergraph[cllab][2]
         inscope = build_inscope(nodeindices)
-        b = CanonicalBelief(nodeindices, numtraits, inscope, bclustertype, cllab, T2)
         #= if cluster belief contains a degenerate hybrid node family, then assign
         a generalized belief, else assign a canonical belief
         Update: the above condition is NOT sufficient to decide if a belief should be
@@ -539,32 +573,19 @@ function allocatebeliefs(
         degenerate hybrid, none of its parents, but all its grandparents. If both its
         parents are also degenerate hybrids, then the child and its grandparents will be
         deterministically related.
-        Possible solution: (1) use generalized beliefs for all clusters and assign the
-        degenerate hybrid factors, (2) do one round of constraint propagation to determine
-        the final constraint rank of each cluster, (3) the cluster should have a canonical
-        belief if the constraint rank is 0, and a generalized belief otherwise, (4) do BP
-        with all the factors now, but there is no need to update the constraint matrix of
-        any generalized belief since we know its final form.
         =#
-        if cluster2fams[i_b][2][1]
-            push!(beliefs, GeneralizedBelief(b))
-        else
-            push!(beliefs, b)
-        end
+        beliefconstructor = cluster2fams[i_b][2][1] ? GeneralizedBelief : CanonicalBelief
+        push!(beliefs, beliefconstructor(nodeindices, numtraits, inscope, bclustertype,
+            cllab, T2))
     end
     for (cllab1, cllab2) in edge_labels(clustergraph)
         nodeindices = clustergraph[cllab1, cllab2]
         inscope = build_inscope(nodeindices)
-        b = CanonicalBelief(nodeindices, numtraits, inscope, bsepsettype,
-            (cllab1, cllab2), T2)
-        #= if both of the adjacent cluster beliefs are generalized, then assign
-        a generalized belief, else assign a canonical belief =#
-        if (cluster2fams[code_for(clustergraph, cllab1)][2][1] &&
-            cluster2fams[code_for(clustergraph, cllab2)][2][1])
-            push!(beliefs, GeneralizedBelief(b))
-        else
-            push!(beliefs, b)
-        end
+        beliefconstructor = (cluster2fams[code_for(clustergraph, cllab1)][2][1] &&
+            cluster2fams[code_for(clustergraph, cllab2)][2][1]) ?
+            GeneralizedBelief : CanonicalBelief
+        push!(beliefs, beliefconstructor(nodeindices, numtraits, inscope, bsepsettype,
+            (cllab1, cllab2), T2))
     end
     return beliefs, cluster2fams
 end
@@ -869,7 +890,7 @@ function assignfactors!(
     node2belief = zeros(Int, length(prenodes)) # node preorder index → belief index
     for (ci, nfs) in enumerate(cluster2fams) # cluster `ci`
         be = beliefs[ci]
-        for (nf, nfinscope, degen) in nfs[1] # node family `nf` assigned to `ci`
+        for (nf, nfinscope, _) in nfs[1] # node family `nf` assigned to `ci`
             # `nf`: (child, parents...); `nfinscope`::BitVector
             # `nf[nfinscope]`::Tuple of inscope nodes
             nfsize = length(nf)
@@ -879,10 +900,10 @@ function assignfactors!(
                 nf[1] == 1 || error("only the root node can belong to a family of size 1")
                 # root is inscope iff root is not fixed (i.e. isrootfixed(model) == false)
                 nfinscope[1] || continue 
-                h,J,g = factor_root(model)
+                ϕ = factor_root(model)
             else
                 if nfsize == 2
-                    h,J,g = factor_treeedge(model, getparentedge(ch))
+                    ϕ = factor_treeedge(model, getparentedge(ch))
                 else
                     pae = PN.Edge[]
                     for pi in nf[2:end] # parent indices
@@ -893,20 +914,22 @@ function assignfactors!(
                             end
                         end
                     end
-                    # non-degenerate hybrid factor
-                    !degen && ((h,J,g) = factor_hybridnode(model, pae))
+                    ϕ = factor_hybridnode(model, pae)
                 end
                 # absorb evidence (assume that only at leaves or root)
-                if !nfinscope[1] # ch.leaf == true
+                if !nfinscope[1] # `ch` is a leaf
                     i_datarow = findfirst(isequal(ch.name), taxa)
-                    h,J,g = absorbleaf!(h,J,g, i_datarow, tbl)
+                    # h,J,g = absorbleaf!(h,J,g, i_datarow, tbl)
+                    ϕ = absorbleaf!(ϕ..., i_datarow, tbl)
                 end
                 if !all(nfinscope[2:end]) # node's parents include a fixed root
-                    rootindex = (length(h) - numtraits + 1):length(h)
-                    h,J,g = absorbevidence!(h,J,g, rootindex, rootpriormeanvector(model))
+                    # rootindex = (length(h) - numtraits + 1):length(h)
+                    rootindex = (length(ϕ[1]) - numtraits + 1):length(ϕ[1])
+                    # h,J,g = absorbevidence!(h,J,g, rootindex, rootpriormeanvector(model))
+                    ϕ, _ = absorbevidence!(ϕ..., rootindex, rootpriormeanvector(model))
                 end
             end
-            i_inscope = nf[nfinscope]
+            i_inscope = nf[nfinscope] # tuple of preorder indices for inscope nodes
             factorind = scopeindex(i_inscope, be)
             # marginalize out variables not in scope, e.g. bc no data below
             #=
@@ -939,41 +962,19 @@ function assignfactors!(
             if length(factorind) != numtraits * length(i_inscope)
                 var_inscope = view(inscope(be), :, indexin(i_inscope, nodelabels(be)))
                 keep_index = LinearIndices(var_inscope)[var_inscope]
-                h,J,g = marginalize(h,J,g, keep_index, be.metadata)
+                # h,J,g = marginalize(h,J,g, keep_index, be.metadata)
+                ϕ = marginalize(ϕ..., keep_index, be.metadata)
             end
-            # multiply into cluster belief
-            if isa(be, CanonicalBelief)
-                be.h[factorind] .+= h
-                be.J[factorind,factorind] .+= J
-                be.g[1] += g
-            else # GeneralizedBelief
-                if degen # degenerate factor
-                    R = -ones(length(i_inscope),1)
-                    for (i, i_node) in enumerate(i_inscope[2:end]) # parent nodes
-                        for e in prenodes[i_node].edge
-                            if getchild(e) === ch
-                                R[i+1,1] = e.gamma
-                                break
-                            end
-                        end
-                    end
-                    mult!(be, factorind, R)
-                else
-                    mult!(be, factorind, h, J, g)
-                end
-            end
+            #=
+            multiply into cluster belief
+            Cases:
+                mult!(::GeneralizedBelief, upind, Δh, ΔJ, Δg)
+                mult!(::GeneralizedBelief, upind, R, c)
+                mult!(::CanonicalBelief, upind, Δh, ΔJ, Δg)
+            =#
+            mult!(be, factorind, ϕ...)
         end
     end
-    #=
-    note:
-    - `node2belief` is only used in `calibrate_exact_cliquetree!`, which currently does not
-    work when there are degenerate hybrids
-    - `node2belief` maps nodes to clusters, while `cluster2fams` maps clusters to nodes.
-    The original intention for the latter was to reuse information that would have already
-    been gathered to determine if a belief should be canonical or generalized.
-    But if it is already known which beliefs should be canonical or generalized, then it is
-    more efficient to use `node2belief` to initialize beliefs by looping over node families.
-    =#
     return node2belief
 end
 

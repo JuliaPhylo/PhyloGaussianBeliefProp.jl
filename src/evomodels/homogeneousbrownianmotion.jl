@@ -159,12 +159,18 @@ params(m::MvFullBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v
 factor_treeedge(m::HomogeneousBrownianMotion, edge::PN.Edge) = factor_treeedge(m, edge.length)
 
 function factor_treeedge(m::UnivariateBrownianMotion{T}, t::Real) where T
-    j = T(m.J / t)
-    # J = LA.Symmetric(SMatrix{2,2}(j,-j, -j,j))
-    J = SMatrix{2,2}(j,-j,-j,j) # todo: discuss not enforcing symmetry
-    h = SVector{2,T}(zero(T), zero(T))
-    g = m.g0 - dimension(m) * log(t)/2
-    return(h,J,g)
+    if iszero(t) # degenerate tree-edge factor, todo: set threshold
+        R = T[-1; 1 ;;]
+        c = T[0]
+        return(R,c)
+    else
+        j = T(m.J / t)
+        # todo: discuss not enforcing symmetry (e.g. J = LA.Symmetric(SMatrix...))
+        J = SMatrix{2,2,T}(j,-j,-j,j)
+        h = SVector{2,T}(0,0)
+        g = m.g0 - dimension(m) * log(t)/2
+        return(h,J,g)
+    end
 end
 function factor_treeedge(m::MvDiagBrownianMotion{T,V}, t::Real) where {T,V}
     numt = dimension(m); ntot = numt * 2
@@ -201,16 +207,23 @@ factor_tree_degeneratehybrid(m, che.length, [p.gamma for p in pae])
 
 function factor_hybridnode(m::HomogeneousBrownianMotion{T}, t::AbstractVector, γ::AbstractVector) where T
     t0 = T(sum(γ.^2 .* t)) # >0 if hybrid node is not degenerate
-    factor_tree_degeneratehybrid(m, t0, γ)
+    if iszero(t0) # degenerate hybrid factor
+        R = T[-1; γ ;;]
+        c = T[0]
+        return(R,c)
+    else
+        return factor_tree_degeneratehybrid(m, t0, γ)
+    end
 end
 function factor_tree_degeneratehybrid(m::UnivariateBrownianMotion{T}, t0::Real, γ::AbstractVector) where T
     j = T(m.J / t0)
     nparents = length(γ); nn = 1 + nparents
     # modifies γ in place below, to get longer vector: [1 -γ]
-    γ .= -γ; pushfirst!(γ, one(eltype(γ)))
-    # J = LA.Symmetric(SMatrix{nn,nn, T}(j*x*y for x in γ, y in γ))
-    J = SMatrix{nn,nn, T}(j*x*y for x in γ, y in γ) # todo: discuss not enforcing symmetry
-    h = SVector{nn,T}(zero(T) for _ in 1:nn)
+    γ .= -γ; pushfirst!(γ, 1)
+    # γ .= -γ; pushfirst!(γ, one(eltype(γ)))
+    # todo: discuss not enforcing symmetry (e.g. J = LA.Symmetric(SMatrix...))
+    J = SMatrix{nn,nn,T}(j*x*y for x in γ, y in γ)
+    h = SVector{nn,T}(0 for _ in 1:nn)
     g = m.g0 - dimension(m) * log(t0)/2
     return(h,J,g)
 end

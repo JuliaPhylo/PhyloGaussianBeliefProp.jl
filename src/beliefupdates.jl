@@ -222,13 +222,33 @@ function absorbevidence!(h,J,g, dataindex, datavalues)
         error("data indices go beyond belief size")
     Jkk = view(J, keep_ind,     keep_ind) # avoid copying
     if isempty(absorb_ind)
-        return h, Jkk, g, missingdata_indices
+        return (h, Jkk, g), missingdata_indices
     end
     Jk_data = view(J, keep_ind,   absorb_ind) * data_nm
     Ja_data = view(J, absorb_ind, absorb_ind) * data_nm
     g  += sum(view(h, absorb_ind) .* data_nm) - sum(Ja_data .* data_nm)/2
     hk = view(h, keep_ind) .- Jk_data # modifies h in place for a subset of indices
-    return hk, Jkk, g, missingdata_indices
+    return (hk, Jkk, g), missingdata_indices
+end
+function absorbevidence!(R,c, dataindex, datavalues)
+    numt = length(datavalues)
+    length(dataindex) == numt || error("data values and indices have different numbers of traits")
+    hasdata = .!ismissing.(datavalues)
+    absorb_ind = dataindex[hasdata]
+    nvar = size(R,1)
+    keep_ind = setdiff(1:nvar, absorb_ind)
+    # index of variables with missing data, after removing variables with data:
+    missingdata_indices = indexin(dataindex[.!hasdata], keep_ind)
+    data_nm = view(datavalues, hasdata) # non-missing data values
+    length(absorb_ind) + length(keep_ind) == nvar ||
+        error("data indices go beyond belief size")
+    if isempty(absorb_ind)
+        return (R,c), missingdata_indices
+    end
+    Rk = view(R, keep_ind, :) # avoid copying
+    Ra_data = transpose(view(R, absorb_ind, :)) * data_nm
+    ck = c .- Ra_data # modifies c in place for a subset of indices
+    return (Rk, ck), missingdata_indices
 end
 
 """
@@ -243,12 +263,20 @@ as is output by [`factor_treeedge`](@ref).
 """
 function absorbleaf!(h,J,g, rowindex, tbl)
     datavalues = [col[rowindex] for col in tbl]
-    h,J,g,missingindices = absorbevidence!(h,J,g, 1:length(datavalues), datavalues)
+    (h,J,g), missingindices = absorbevidence!(h,J,g, 1:length(datavalues), datavalues)
     if !isempty(missingindices)
         @debug "leaf data $(join(datavalues,',')), J=$(round.(J, digits=2)), will integrate at index $(join(missingindices,','))"
         h,J,g = marginalize(h,J,g, setdiff(1:length(h), missingindices), missingindices, "leaf row $rowindex")
     end
     return h,J,g
+end
+function absorbleaf!(R,c, rowindex, tbl)
+    datavalues = [col[rowindex] for col in tbl]
+    (R,c), missingindices = absorbevidence!(R,c, 1:length(datavalues), datavalues)
+    if !isempty(missingindices)
+        error("not implemented")
+    end
+    return R,c
 end
 
 """
@@ -332,8 +360,7 @@ function extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
     cluster_to.gmsg[1] = Δg
     return nothing
 end
-function extend!(cluster_to::GeneralizedBelief, upind, R)
-    # todo: check that R is valid (e.g. is a contrast associated with a hybrid family?)
+function extend!(cluster_to::GeneralizedBelief, upind, R, c)
     m1 = size(cluster_to.Q)[1]
     perm = [upind;setdiff(1:m1,upind)]
     m2, k2 = size(R)
@@ -343,7 +370,8 @@ function extend!(cluster_to::GeneralizedBelief, upind, R)
     cluster_to.Rmsg[:,1:k2] .= 0
     cluster_to.Rmsg[1:m2,1:k2] = R
     cluster_to.Rmsg[perm,:] = cluster_to.Rmsg[:,:]
-    cluster_to.cmsg[1:k2] .= 0
+    # cluster_to.cmsg[1:k2] .= 0
+    cluster_to.cmsg[1:k2] = c
     # precision
     cluster_to.Qmsg .= 0
     cluster_to.Qmsg[LA.diagind(cluster_to.Qmsg)] .= 1.0
@@ -445,8 +473,8 @@ function mult!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
     extend!(cluster_to, upind, Δh, ΔJ, Δg)
     mult!(cluster_to)
 end
-function mult!(cluster_to::GeneralizedBelief, upind, R)
-    extend!(cluster_to, upind, R)
+function mult!(cluster_to::GeneralizedBelief, upind, R, c)
+    extend!(cluster_to, upind, R, c)
     mult!(cluster_to)
 end
 function mult!(cluster_to::CanonicalBelief, upind, Δh, ΔJ, Δg)
