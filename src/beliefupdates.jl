@@ -96,7 +96,7 @@ function marginalize!(cluster_from::GeneralizedBelief, sepset::AbstractBelief)
 end
 function marginalize!(cluster_from::GeneralizedBelief, keepind)
     mm = length(keepind) # dimension for marginal
-    m1 = size(cluster_from.Q)[1]
+    m1 = size(cluster_from.Q,1)
     k = cluster_from.k[1] # k ≤ m1
     Q1 = cluster_from.Q[keepind,1:(m1-k)] # mm x (m1-k)
     R1 = cluster_from.R[keepind,1:k] # mm x k
@@ -171,7 +171,7 @@ function integratebelief!(b::CanonicalBelief)
     return (μ, norm)
 end
 function integratebelief!(b::GeneralizedBelief)
-    m = size(b.Q)[1]
+    m = size(b.Q,1)
     k = b.k[1]
     #=
     𝒟(x;Q,R,Λ,h,c,g) = exp(-xᵀ(QΛQᵀ)x/2+(Qh)ᵀx+g)⋅δ(Rᵀx-c)
@@ -185,7 +185,8 @@ function integratebelief!(b::GeneralizedBelief)
     μ = view(b.Q,:,1:(m-k))*(view(b.h,1:(m-k)) ./ view(b.Λ,1:m-k))
     norm = b.g[1] + (m*log(2π) - log(prod(view(b.Λ,1:(m-k)))) +
         sum(view(b.h,1:(m-k)) .^2 ./ view(b.Λ,1:(m-k))))/2
-    b.μ[1:(m-k)] = μ
+    # b.μ[1:(m-k)] = μ
+    b.μ[:] = μ
     return (μ, norm)
 end
 function integratebelief(h,J,g)
@@ -313,9 +314,9 @@ function extend!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
         - hᵀQ'ᵀ(Px') = hᵀQᵀx
         - R'ᵀ(Px') = Rᵀx
     =#
-    m1 = size(cluster_to.Q)[1]
+    m1 = size(cluster_to.Q,1)
     perm = [upind;setdiff(1:m1,upind)] # to permute rows
-    m2 = size(sepset.Q)[1]
+    m2 = size(sepset.Q,1)
     # constraint rank
     k2 = sepset.kmsg[1]
     cluster_to.kmsg[1] = k2
@@ -339,9 +340,9 @@ function extend!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     return nothing
 end
 function extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
-    m1 = size(cluster_to.Q)[1]
+    m1 = size(cluster_to.Q,1)
     perm = [upind;setdiff(1:m1,upind)]
-    m2 = size(ΔJ)[1]
+    m2 = size(ΔJ,1)
     # constraint rank
     cluster_to.kmsg[1] = 0
     # cluster_to.Rmsg, cluster_to.cmsg not updated since constraint is irrelevant
@@ -361,7 +362,7 @@ function extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
     return nothing
 end
 function extend!(cluster_to::GeneralizedBelief, upind, R, c)
-    m1 = size(cluster_to.Q)[1]
+    m1 = size(cluster_to.Q,1)
     perm = [upind;setdiff(1:m1,upind)]
     m2, k2 = size(R)
     # contraint rank
@@ -420,10 +421,10 @@ function mult!(cluster_to::GeneralizedBelief)
     c1 = c[1:k1]
     c2 = cluster_to.cmsg[1:k2]
     # precisions
-    m1 = size(cluster_to.Q)[1]
+    m1 = size(cluster_to.Q,1)
     Q1 = cluster_to.Q[:,1:(m1-k1)]
     Λ1 = cluster_to.Λ[1:(m1-k1)]
-    m2 = size(cluster_to.Qmsg)[1]
+    m2 = size(cluster_to.Qmsg,1)
     Q2 = cluster_to.Qmsg[:,1:(m2-k2)]
     Λ2 = cluster_to.Λmsg[1:(m2-k2)]
     # potentials
@@ -435,7 +436,7 @@ function mult!(cluster_to::GeneralizedBelief)
     # constraint
     V = LA.qr(Q1*transpose(Q1)*R2) # project R2 onto colsp(Q1)
     V = V.Q[:,findall(LA.diag(V.R) .!== 0.0)] # orthonormal basis for colsp(Q1*Q1ᵀ*R2)
-    Δk1 = size(V)[2] # increase in constraint rank
+    Δk1 = size(V,2) # increase in constraint rank
     R[:,(k1+1):(k1+Δk1)] = V
     R2tV = transpose(R2)*V
     if k2 == Δk1 # transpose(R2)*V is square
@@ -511,7 +512,7 @@ function divide!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
     k1 = cluster_from.kmsg[1]
     k2 = sepset.k[1]
     # contraints
-    m = size(sepset.Q)[1] # m ≥ max(k1,k2)
+    m = size(sepset.Q,1) # m ≥ max(k1,k2)
     R1 = cluster_from.Rmsg[1:m,1:k1]
     R2 = sepset.R[:,1:k2] # m x k2
     c1 = cluster_from.cmsg[1:k1]
@@ -531,7 +532,13 @@ function divide!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
     sepset.kmsg[1] = k
     # constraint
     cluster_from.Q[1:m,(m-k1+1):(m-k)] = R2 # store R2 in extra space of cluster_from.Q
-    sepset.Rmsg[:,1:k] = LA.nullspace(view(cluster_from.Q,:,1:(m-k)))
+    Rtmp = LA.nullspace(view(cluster_from.Q,:,1:(m-k)))
+    if isempty(Rtmp)
+        sepset.Rmsg[:,1:k] .= 0
+    else
+        sepset.Rmsg[:,1:k] = Rtmp
+    end
+    # sepset.Rmsg[:,1:k] = LA.nullspace(view(cluster_from.Q,:,1:(m-k)))
     sepset.cmsg[1:k] = transpose(view(sepset.Rmsg,:,1:k))*R1*c1
     # precision
     ZΛZt = LA.Diagonal(Λ1)-transpose(Q1)*Q2*LA.Diagonal(Λ2)*transpose(Q2)*Q1
@@ -566,7 +573,7 @@ function divide!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
 end
 function divide!(sepset::CanonicalBelief, cluster_from::GeneralizedBelief)
     k1 = cluster_from.kmsg[1]
-    m = size(sepset.J)[1]
+    m = size(sepset.J,1)
     Q = cluster_from.Qmsg[1:m,1:(m-k1)]
     J = Q*LA.Diagonal(view(cluster_from.Λmsg,1:(m-k1)))*transpose(Q)
     h = Q*view(cluster_from.hmsg,1:(m-k1))

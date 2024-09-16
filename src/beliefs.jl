@@ -919,13 +919,10 @@ function assignfactors!(
                 # absorb evidence (assume that only at leaves or root)
                 if !nfinscope[1] # `ch` is a leaf
                     i_datarow = findfirst(isequal(ch.name), taxa)
-                    # h,J,g = absorbleaf!(h,J,g, i_datarow, tbl)
                     ϕ = absorbleaf!(ϕ..., i_datarow, tbl)
                 end
                 if !all(nfinscope[2:end]) # node's parents include a fixed root
-                    # rootindex = (length(h) - numtraits + 1):length(h)
-                    rootindex = (length(ϕ[1]) - numtraits + 1):length(ϕ[1])
-                    # h,J,g = absorbevidence!(h,J,g, rootindex, rootpriormeanvector(model))
+                    rootindex = (size(ϕ[1],1) - numtraits + 1):size(ϕ[1],1) # ϕ[1] is h or R
                     ϕ, _ = absorbevidence!(ϕ..., rootindex, rootpriormeanvector(model))
                 end
             end
@@ -962,16 +959,8 @@ function assignfactors!(
             if length(factorind) != numtraits * length(i_inscope)
                 var_inscope = view(inscope(be), :, indexin(i_inscope, nodelabels(be)))
                 keep_index = LinearIndices(var_inscope)[var_inscope]
-                # h,J,g = marginalize(h,J,g, keep_index, be.metadata)
                 ϕ = marginalize(ϕ..., keep_index, be.metadata)
             end
-            #=
-            multiply into cluster belief
-            Cases:
-                mult!(::GeneralizedBelief, upind, Δh, ΔJ, Δg)
-                mult!(::GeneralizedBelief, upind, R, c)
-                mult!(::CanonicalBelief, upind, Δh, ΔJ, Δg)
-            =#
             mult!(be, factorind, ϕ...)
         end
     end
