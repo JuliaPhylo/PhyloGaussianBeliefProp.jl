@@ -143,7 +143,9 @@ function marginalize!(cluster_from::GeneralizedBelief, keepind)
         cluster_from.gmsg[1] -= 0.5*LA.logdet((1/2π)*transpose(V)*Λ*V)
     end
     if k > 0 # R2ᵀR2: k x k not empty
-        cluster_from.gmsg[1] -= 0.5*LA.logdet(transpose(R2*W)*R2*W)
+        if !isempty(R2*W)
+            cluster_from.gmsg[1] -= 0.5*LA.logdet(transpose(R2*W)*R2*W)
+        end
     end
     return nothing
 end
