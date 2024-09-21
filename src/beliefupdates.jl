@@ -173,24 +173,59 @@ function integratebelief!(b::CanonicalBelief)
     return (μ, norm)
 end
 function integratebelief!(b::GeneralizedBelief)
-    m = size(b.Q,1)
-    k = b.k[1]
-    #=
-    𝒟(x;Q,R,Λ,h,c,g) = exp(-xᵀ(QΛQᵀ)x/2+(Qh)ᵀx+g)⋅δ(Rᵀx-c)
-    Take Qᵀx ∼ 𝒩(Λ⁻¹h,Λ⁻¹):
-    (1) μ = E[QQᵀx] = QΛ⁻¹h
-    (2) norm = ∫C(Qᵀx;Λ,h,g)d(Qᵀx) = exp(g)⋅exp(log|2πΛ⁻¹| + hᵀΛ⁻¹h)/2)
-    =#
-    # todo: check that b.Λ[1:(m-k)] has no 0-entries so that C(Qᵀx;Λ,h,g) is normalizable
-
-    any(view(b.Λ,1:(m-k)) .== 0) && error("belief is not normalizable")
-    μ = view(b.Q,:,1:(m-k))*(view(b.h,1:(m-k)) ./ view(b.Λ,1:m-k))
-    norm = b.g[1] + (m*log(2π) - log(prod(view(b.Λ,1:(m-k)))) +
-        sum(view(b.h,1:(m-k)) .^2 ./ view(b.Λ,1:(m-k))))/2
-    # b.μ[1:(m-k)] = μ
-    b.μ[:] = μ
-    return (μ, norm)
+    m1 = size(b.Q,1)
+    k = b.k[1] # k ≤ m1
+    Q1 = b.Q[[],1:(m1-k)] # mm x (m1-k)
+    R1 = b.R[[],1:k] # mm x k
+    Λ = LA.Diagonal(view(b.Λ,1:(m1-k))) # matrix, not vector
+    _, S1, V1 = LA.svd(Q1; full=true) # U1: mm x mm, S1: min(mm,m1-k) x 1, V1: (m1-k) x (m1-k)
+    nonzeroind = findall(S1 .!= 0.0) # indices for non-zero singular values
+    zeroind = setdiff(1:(m1-k), nonzeroind) # indices for zero singular values
+    V = V1[:,zeroind] # nullspace(Q1): (m1-k) x (m1-k-mm+km)
+    W = transpose(R1)*Q1 # k x (m1-k)
+    if !isempty(W)
+        # orthogonalize W is non-empty
+        # note: qr can be run if input matrix has col dim 0, but not row dim 0
+        W = LA.qr(W)
+        W = W.Q[:,findall(LA.diag(W.R) .!== 0.0)]
+    end
+    Q2 = b.Q[setdiff(1:m1,[]),1:(m1-k)] # (m1-mm) x (m1-k)
+    R2 = b.R[setdiff(1:m1,[]),1:k] # (m1-mm) x k
+    F = transpose(W*((R2*W)\Q2)) # transpose(W(R2*W)⁺Q2): (m1-k) x k
+    Fc = F*b.c[1:k]
+    ΛFc = Λ*Fc
+    h_ΛFc = b.h[1:(m1-k)] - ΛFc
+    norm = b.g[1] + transpose(h_ΛFc+0.5*ΛFc)*Fc
+    # b.gmsg[1] = b.g[1] + transpose(h_ΛFc+0.5*ΛFc)*Fc
+    if m1 != k
+        norm -= 0.5*LA.logdet((1/2π)*transpose(V)*Λ*V)
+    end
+    if k > 0
+        if !isempty(R2*W)
+            norm -= 0.5*LA.logdet(transpose(R2*W)*R2*W)
+        end
+    end
+    return norm
 end
+# function integratebelief!(b::GeneralizedBelief)
+#     m = size(b.Q,1)
+#     k = b.k[1]
+#     #=
+#     𝒟(x;Q,R,Λ,h,c,g) = exp(-xᵀ(QΛQᵀ)x/2+(Qh)ᵀx+g)⋅δ(Rᵀx-c)
+#     Take Qᵀx ∼ 𝒩(Λ⁻¹h,Λ⁻¹):
+#     (1) μ = E[QQᵀx] = QΛ⁻¹h
+#     (2) norm = ∫C(Qᵀx;Λ,h,g)d(Qᵀx) = exp(g)⋅exp(log|2πΛ⁻¹| + hᵀΛ⁻¹h)/2)
+#     =#
+#     # todo: check that b.Λ[1:(m-k)] has no 0-entries so that C(Qᵀx;Λ,h,g) is normalizable
+
+#     any(view(b.Λ,1:(m-k)) .== 0) && error("belief is not normalizable")
+#     μ = view(b.Q,:,1:(m-k))*(view(b.h,1:(m-k)) ./ view(b.Λ,1:m-k))
+#     norm = b.g[1] + (m*log(2π) - log(prod(view(b.Λ,1:(m-k)))) +
+#         sum(view(b.h,1:(m-k)) .^2 ./ view(b.Λ,1:(m-k))))/2
+#     # b.μ[1:(m-k)] = μ
+#     b.μ[:] = μ
+#     return (μ, norm)
+# end
 function integratebelief(h,J,g)
     # Ji = PDMat(J) # fails if cholesky fails, e.g. if J=0
     Ji = PDMat(LA.Symmetric(J)) # todo: discuss enforcing symmetry
@@ -233,11 +268,13 @@ function absorbevidence!(h,J,g, dataindex, datavalues)
     hk = view(h, keep_ind) .- Jk_data # modifies h in place for a subset of indices
     return (hk, Jkk, g), missingdata_indices
 end
-function absorbevidence!(R,c, dataindex, datavalues)
+function absorbevidence!(Rg,c, dataindex, datavalues)
     numt = length(datavalues)
     length(dataindex) == numt || error("data values and indices have different numbers of traits")
     hasdata = .!ismissing.(datavalues)
     absorb_ind = dataindex[hasdata]
+    R = Rg[1]
+    g = Rg[2]
     nvar = size(R,1)
     keep_ind = setdiff(1:nvar, absorb_ind)
     # index of variables with missing data, after removing variables with data:
@@ -246,12 +283,12 @@ function absorbevidence!(R,c, dataindex, datavalues)
     length(absorb_ind) + length(keep_ind) == nvar ||
         error("data indices go beyond belief size")
     if isempty(absorb_ind)
-        return (R,c), missingdata_indices
+        return (Rg,c), missingdata_indices
     end
     Rk = view(R, keep_ind, :) # avoid copying
     Ra_data = transpose(view(R, absorb_ind, :)) * data_nm
     ck = c .- Ra_data # modifies c in place for a subset of indices
-    return (Rk, ck), missingdata_indices
+    return ((Rk,g), ck), missingdata_indices
 end
 
 """
@@ -285,7 +322,7 @@ end
 """
     extend!(cluster_to::GeneralizedBelief, sepset)
     extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
-    extend!(cluster_to::GeneralizedBelief, upind, R)
+    extend!(cluster_to::GeneralizedBelief, upind, Rg, c)
 
 Extend and match the scope of an incoming message to the scope of generalized
 belief `cluster_to` so that multiplication (see [`mult!`](@ref)) can be applied.
@@ -363,7 +400,8 @@ function extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
     cluster_to.gmsg[1] = Δg
     return nothing
 end
-function extend!(cluster_to::GeneralizedBelief, upind, R, c)
+function extend!(cluster_to::GeneralizedBelief, upind, Rg, c)
+    R = Rg[1]
     m1 = size(cluster_to.Q,1)
     perm = [upind;setdiff(1:m1,upind)]
     m2, k2 = size(R)
@@ -384,7 +422,7 @@ function extend!(cluster_to::GeneralizedBelief, upind, R, c)
     # potential
     cluster_to.hmsg .= 0
     # constant
-    cluster_to.gmsg[1] = 0
+    cluster_to.gmsg[1] = Rg[2]
     return nothing
 end
 
@@ -392,7 +430,7 @@ end
     mult!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     mult!(cluster_to::GeneralizedBelief)
     mult!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
-    mult!(cluster_to::GeneralizedBelief, upind, R)
+    mult!(cluster_to::GeneralizedBelief, upind, Rg, c)
     mult!(cluster_to::CanonicalBelief, upind, Δh, ΔJ, Δg)
 
 Multiply an incoming message into a cluster belief. The incoming message is extended (see
@@ -476,8 +514,8 @@ function mult!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
     extend!(cluster_to, upind, Δh, ΔJ, Δg)
     mult!(cluster_to)
 end
-function mult!(cluster_to::GeneralizedBelief, upind, R, c)
-    extend!(cluster_to, upind, R, c)
+function mult!(cluster_to::GeneralizedBelief, upind, Rg, c)
+    extend!(cluster_to, upind, Rg, c)
     mult!(cluster_to)
 end
 function mult!(cluster_to::CanonicalBelief, upind, Δh, ΔJ, Δg)

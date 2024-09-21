@@ -16,7 +16,7 @@
         spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
         PGBP.propagate_1traversal_postorder!(ctb, spt..., true, true, false)
         rootj = spt[3][1]
-        _, res = PGBP.integratebelief!(ctb, rootj)
+        res = PGBP.integratebelief!(ctb, rootj)
         #=
         using StatsModels
         fitx_ml = phylolm(@formula(x ~ 1), df, net; tipnames=:taxon, reml=false)
