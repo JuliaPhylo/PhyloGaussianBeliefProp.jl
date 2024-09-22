@@ -138,6 +138,7 @@ function marginalize!(cluster_from::GeneralizedBelief, keepind)
     cluster_from.hmsg[1:(mm-km)] = transpose(Z)*transpose(G)*(LA.I-Λ*S)*(h_ΛFc)
     # constant
     cluster_from.gmsg[1] = cluster_from.g[1] + transpose(h_ΛFc+0.5*ΛFc)*Fc
+        + 0.5*(transpose(h_ΛFc)*S*h_ΛFc)
     if m1 != k # Λ: (m1-k) x (m1-k) not empty
         # if Λ empty but V is not, then VᵀΛV defaults to a zero matrix with ∞ logdet!
         cluster_from.gmsg[1] -= 0.5*LA.logdet((1/2π)*transpose(V)*Λ*V)
@@ -173,59 +174,24 @@ function integratebelief!(b::CanonicalBelief)
     return (μ, norm)
 end
 function integratebelief!(b::GeneralizedBelief)
-    m1 = size(b.Q,1)
+    m = size(b.Q,1)
     k = b.k[1] # k ≤ m1
-    Q1 = b.Q[[],1:(m1-k)] # mm x (m1-k)
-    R1 = b.R[[],1:k] # mm x k
-    Λ = LA.Diagonal(view(b.Λ,1:(m1-k))) # matrix, not vector
-    _, S1, V1 = LA.svd(Q1; full=true) # U1: mm x mm, S1: min(mm,m1-k) x 1, V1: (m1-k) x (m1-k)
-    nonzeroind = findall(S1 .!= 0.0) # indices for non-zero singular values
-    zeroind = setdiff(1:(m1-k), nonzeroind) # indices for zero singular values
-    V = V1[:,zeroind] # nullspace(Q1): (m1-k) x (m1-k-mm+km)
-    W = transpose(R1)*Q1 # k x (m1-k)
-    if !isempty(W)
-        # orthogonalize W is non-empty
-        # note: qr can be run if input matrix has col dim 0, but not row dim 0
-        W = LA.qr(W)
-        W = W.Q[:,findall(LA.diag(W.R) .!== 0.0)]
-    end
-    Q2 = b.Q[setdiff(1:m1,[]),1:(m1-k)] # (m1-mm) x (m1-k)
-    R2 = b.R[setdiff(1:m1,[]),1:k] # (m1-mm) x k
-    F = transpose(W*((R2*W)\Q2)) # transpose(W(R2*W)⁺Q2): (m1-k) x k
-    Fc = F*b.c[1:k]
-    ΛFc = Λ*Fc
-    h_ΛFc = b.h[1:(m1-k)] - ΛFc
-    norm = b.g[1] + transpose(h_ΛFc+0.5*ΛFc)*Fc
-    # b.gmsg[1] = b.g[1] + transpose(h_ΛFc+0.5*ΛFc)*Fc
-    if m1 != k
-        norm -= 0.5*LA.logdet((1/2π)*transpose(V)*Λ*V)
-    end
-    if k > 0
-        if !isempty(R2*W)
-            norm -= 0.5*LA.logdet(transpose(R2*W)*R2*W)
-        end
-    end
-    return norm
+    m == k && error("belief is fully deterministic and not normalizable")
+    any(view(b.Λ,1:(m-k)) .== 0) && error("belief is not normalizable")
+    #=
+    𝒟(x;Q,R,Λ,h,c,g) = exp(-xᵀ(QΛQᵀ)x/2+(Qh)ᵀx+g)⋅δ(Rᵀx-c)
+    Take Qᵀx ∼ 𝒩(Λ⁻¹h,Λ⁻¹), then currently:
+        (1) μ = E[QQᵀx] = QΛ⁻¹h
+        (2) norm = ∫𝒟(x;Q,R,Λ,h,c,g)dx
+    todo: have μ = E[x]
+    =#
+    h = view(b.h,1:(m-k))
+    Λ = view(b.Λ,1:(m-k))
+    μ = view(b.Q,:,1:(m-k))*(h ./ Λ)
+    # expression for `norm` is special case of marginalize!
+    norm = b.g[1] + 0.5*(sum(h.^2 ./ Λ) - sum(log.(Λ))+(m-k)*log(2π))
+    return μ,norm
 end
-# function integratebelief!(b::GeneralizedBelief)
-#     m = size(b.Q,1)
-#     k = b.k[1]
-#     #=
-#     𝒟(x;Q,R,Λ,h,c,g) = exp(-xᵀ(QΛQᵀ)x/2+(Qh)ᵀx+g)⋅δ(Rᵀx-c)
-#     Take Qᵀx ∼ 𝒩(Λ⁻¹h,Λ⁻¹):
-#     (1) μ = E[QQᵀx] = QΛ⁻¹h
-#     (2) norm = ∫C(Qᵀx;Λ,h,g)d(Qᵀx) = exp(g)⋅exp(log|2πΛ⁻¹| + hᵀΛ⁻¹h)/2)
-#     =#
-#     # todo: check that b.Λ[1:(m-k)] has no 0-entries so that C(Qᵀx;Λ,h,g) is normalizable
-
-#     any(view(b.Λ,1:(m-k)) .== 0) && error("belief is not normalizable")
-#     μ = view(b.Q,:,1:(m-k))*(view(b.h,1:(m-k)) ./ view(b.Λ,1:m-k))
-#     norm = b.g[1] + (m*log(2π) - log(prod(view(b.Λ,1:(m-k)))) +
-#         sum(view(b.h,1:(m-k)) .^2 ./ view(b.Λ,1:(m-k))))/2
-#     # b.μ[1:(m-k)] = μ
-#     b.μ[:] = μ
-#     return (μ, norm)
-# end
 function integratebelief(h,J,g)
     # Ji = PDMat(J) # fails if cholesky fails, e.g. if J=0
     Ji = PDMat(LA.Symmetric(J)) # todo: discuss enforcing symmetry
