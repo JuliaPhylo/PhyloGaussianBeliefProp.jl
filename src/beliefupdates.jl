@@ -139,10 +139,10 @@ function marginalize!(cluster_from::GeneralizedBelief, keepind)
     cluster_from.hmsg[1:(mm-km)] = transpose(Z)*transpose(G)*(LA.I-Λ*S)*(h_ΛFc)
     # constant (stage computations to preserve numerical precision)
     cluster_from.gmsg[1] = cluster_from.g[1]
-    cluster_from.gmsg[1] += transpose(h_ΛFc+0.5*ΛFc)*Fc
-    cluster_from.gmsg[1] += 0.5*(transpose(h_ΛFc)*S*h_ΛFc)
-    cluster_from.gmsg[1] -= 0.5*LA.logdet((1/2π)*transpose(V)*Λ*V)
-    cluster_from.gmsg[1] -= 0.5*LA.logdet(transpose(R2*W)*R2*W)
+    cluster_from.gmsg[1] += transpose(h_ΛFc+ΛFc/2)*Fc
+    cluster_from.gmsg[1] += (transpose(h_ΛFc)*S*h_ΛFc)/2
+    cluster_from.gmsg[1] -= LA.logdet((1/2π)*transpose(V)*Λ*V)/2
+    cluster_from.gmsg[1] -= LA.logdet(transpose(R2*W)*R2*W)/2
     return nothing
 end
 
@@ -154,14 +154,10 @@ end
 (μ, norm) from fully integrating the belief. The first two forms update
 `belief.μ`.
 
-For a canonical belief, μ = J⁻¹h and norm = g + (log|2πJ⁻¹| + hᵀJ⁻¹h)/2. μ is
-the mean of x, where x is the scope of `belief`. norm is the normalization
+For a canonical belief, μ = J⁻¹h and norm = g + (log|2πJ⁻¹| + hᵀJ⁻¹h)/2.
+For a generalized belief, μ = QΛ⁻¹h + Rc and norm = g + (log|2πΛ⁻¹| + hᵀΛ⁻¹h)/2.
+μ is the mean of x, where x is the inscope of `belief`. norm is the normalization
 constant from integrating out x.
-
-For a generalized belief, μ = QΛ⁻¹h and norm = g + (log|2πΛ⁻¹| + hᵀΛ⁻¹h)/2.
-In this case, μ is the mean of QQᵀx and norm is the normalization constant from
-integrating out Qᵀx. If Q is square, then the interpretation of μ and norm is
-the same as for a canonical belief.
 """
 function integratebelief!(b::CanonicalBelief)
     μ, norm = integratebelief(b.h, b.J, b.g[1])
@@ -170,21 +166,16 @@ function integratebelief!(b::CanonicalBelief)
 end
 function integratebelief!(b::GeneralizedBelief)
     m = size(b.Q,1)
-    k = b.k[1] # k ≤ m1
+    k = b.k[1]
     m == k && error("belief is fully deterministic and not normalizable")
-    any(view(b.Λ,1:(m-k)) .== 0) && error("belief is not normalizable")
-    #=
-    𝒟(x;Q,R,Λ,h,c,g) = exp(-xᵀ(QΛQᵀ)x/2+(Qh)ᵀx+g)⋅δ(Rᵀx-c)
-    Take Qᵀx ∼ 𝒩(Λ⁻¹h,Λ⁻¹), then currently:
-        (1) μ = E[QQᵀx] = QΛ⁻¹h
-        (2) norm = ∫𝒟(x;Q,R,Λ,h,c,g)dx
-    todo: have μ = E[x]
-    =#
     h = view(b.h,1:(m-k))
     Λ = view(b.Λ,1:(m-k))
-    μ = view(b.Q,:,1:(m-k))*(h ./ Λ)
-    # expression for `norm` is special case of marginalize!
-    norm = b.g[1] + 0.5*(sum(h.^2 ./ Λ) - sum(log.(Λ))+(m-k)*log(2π))
+    any(Λ .== 0) && error("belief is not normalizable")
+    μ = view(b.Q,:,1:(m-k))*(h ./ Λ) + view(b.R,:,1:k)*b.c[1:k]
+    b.μ[:] = μ
+    #= expression for `norm` derived from Eq. 15 of Schoeman et. al (2022), also
+    reduces as a special case of marginalize! =#
+    norm = b.g[1] + (sum(h.^2 ./ Λ) - sum(log.(Λ))+(m-k)*log(2π))/2
     return μ,norm
 end
 function integratebelief(h,J,g)
@@ -207,7 +198,7 @@ Warnings:
 - a subset of `h` is modified in place
 - traits are assumed to come in the same order in `dataindex` as in `datavalues`.
 """
-function absorbevidence!(h,J,g, dataindex, datavalues)
+function absorbevidence!(h,J::AbstractMatrix,g, dataindex, datavalues)
     numt = length(datavalues)
     length(dataindex) == numt || error("data values and indices have different numbers of traits")
     hasdata = .!ismissing.(datavalues)
@@ -229,13 +220,11 @@ function absorbevidence!(h,J,g, dataindex, datavalues)
     hk = view(h, keep_ind) .- Jk_data # modifies h in place for a subset of indices
     return (hk, Jkk, g), missingdata_indices
 end
-function absorbevidence!(Rg,c, dataindex, datavalues)
+function absorbevidence!(R::AbstractMatrix, c, g, dataindex, datavalues)
     numt = length(datavalues)
     length(dataindex) == numt || error("data values and indices have different numbers of traits")
     hasdata = .!ismissing.(datavalues)
     absorb_ind = dataindex[hasdata]
-    R = Rg[1]
-    g = Rg[2]
     nvar = size(R,1)
     keep_ind = setdiff(1:nvar, absorb_ind)
     # index of variables with missing data, after removing variables with data:
@@ -244,12 +233,12 @@ function absorbevidence!(Rg,c, dataindex, datavalues)
     length(absorb_ind) + length(keep_ind) == nvar ||
         error("data indices go beyond belief size")
     if isempty(absorb_ind)
-        return (Rg,c), missingdata_indices
+        return (R,c,g), missingdata_indices
     end
     Rk = view(R, keep_ind, :) # avoid copying
     Ra_data = transpose(view(R, absorb_ind, :)) * data_nm
     ck = c .- Ra_data # modifies c in place for a subset of indices
-    return ((Rk,g), ck), missingdata_indices
+    return (Rk,ck,g), missingdata_indices
 end
 
 """
@@ -262,7 +251,7 @@ Warning:
 The leaf traits are assumed to correspond to the first variables in `h` (and `J`),
 as is output by [`factor_treeedge`](@ref).
 """
-function absorbleaf!(h,J,g, rowindex, tbl)
+function absorbleaf!(h,J::AbstractMatrix,g, rowindex, tbl)
     datavalues = [col[rowindex] for col in tbl]
     (h,J,g), missingindices = absorbevidence!(h,J,g, 1:length(datavalues), datavalues)
     if !isempty(missingindices)
@@ -271,7 +260,7 @@ function absorbleaf!(h,J,g, rowindex, tbl)
     end
     return h,J,g
 end
-function absorbleaf!(R,c, rowindex, tbl)
+function absorbleaf!(R::AbstractMatrix,c, rowindex, tbl)
     datavalues = [col[rowindex] for col in tbl]
     (R,c), missingindices = absorbevidence!(R,c, 1:length(datavalues), datavalues)
     if !isempty(missingindices)
@@ -283,7 +272,7 @@ end
 """
     extend!(cluster_to::GeneralizedBelief, sepset)
     extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
-    extend!(cluster_to::GeneralizedBelief, upind, Rg, c)
+    extend!(cluster_to::GeneralizedBelief, upind, R, c, g)
 
 Extend and match the scope of an incoming message to the scope of generalized
 belief `cluster_to` so that multiplication (see [`mult!`](@ref)) can be applied.
@@ -339,7 +328,7 @@ function extend!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     cluster_to.gmsg[1] = sepset.gmsg[1]
     return nothing
 end
-function extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
+function extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ::AbstractMatrix, Δg)
     m1 = size(cluster_to.Q,1)
     perm = [upind;setdiff(1:m1,upind)]
     m2 = size(ΔJ,1)
@@ -361,8 +350,7 @@ function extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
     cluster_to.gmsg[1] = Δg
     return nothing
 end
-function extend!(cluster_to::GeneralizedBelief, upind, Rg, c)
-    R = Rg[1]
+function extend!(cluster_to::GeneralizedBelief, upind, R::AbstractMatrix, c, g)
     m1 = size(cluster_to.Q,1)
     perm = [upind;setdiff(1:m1,upind)]
     m2, k2 = size(R)
@@ -383,7 +371,7 @@ function extend!(cluster_to::GeneralizedBelief, upind, Rg, c)
     # potential
     cluster_to.hmsg .= 0
     # constant
-    cluster_to.gmsg[1] = Rg[2]
+    cluster_to.gmsg[1] = g
     return nothing
 end
 
@@ -391,7 +379,7 @@ end
     mult!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     mult!(cluster_to::GeneralizedBelief)
     mult!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
-    mult!(cluster_to::GeneralizedBelief, upind, Rg, c)
+    mult!(cluster_to::GeneralizedBelief, upind, R, c, g)
     mult!(cluster_to::CanonicalBelief, upind, Δh, ΔJ, Δg)
 
 Multiply an incoming message into a cluster belief. The incoming message is extended (see
@@ -471,12 +459,12 @@ function mult!(cluster_to::GeneralizedBelief)
         transpose(h2-0.5*Λ2Q2tR1c1)*Q2tR1c1 - 0.5*lgdet
     return nothing
 end
-function mult!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ, Δg)
+function mult!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ::AbstractMatrix, Δg)
     extend!(cluster_to, upind, Δh, ΔJ, Δg)
     mult!(cluster_to)
 end
-function mult!(cluster_to::GeneralizedBelief, upind, Rg, c)
-    extend!(cluster_to, upind, Rg, c)
+function mult!(cluster_to::GeneralizedBelief, upind, R::AbstractMatrix, c, g)
+    extend!(cluster_to, upind, R, c, g)
     mult!(cluster_to)
 end
 function mult!(cluster_to::CanonicalBelief, upind, Δh, ΔJ, Δg)

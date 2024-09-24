@@ -163,7 +163,7 @@ function factor_treeedge(m::UnivariateBrownianMotion{T}, t::Real) where T
         R = T[-1/sqrt(2); 1/sqrt(2) ;;]
         g = T(0.5*log(2))
         c = T[0]
-        return((R,g),c)
+        return(R,c,g)
     else
         j = T(m.J / t)
         # todo: discuss not enforcing symmetry (e.g. J = LA.Symmetric(SMatrix...))
@@ -213,7 +213,7 @@ function factor_hybridnode(m::HomogeneousBrownianMotion{T}, t::AbstractVector, Î
         LA.ldiv!(sqrt(t0+1), R) # normalize
         g = T(0.5*log(t0+1))
         c = T[0]
-        return((R,g),c)
+        return(R,c,g)
     else
         return factor_tree_degeneratehybrid(m, t0, Î³)
     end
