@@ -97,7 +97,9 @@ end
 function marginalize!(cluster_from::GeneralizedBelief, keepind)
     mm = length(keepind) # dimension for marginal
     m1 = size(cluster_from.Q,1)
-    k = cluster_from.k[1] # k ≤ m1
+    k = cluster_from.k[1]
+    k == 0 && error("generalized belief should not have constraint rank 0")
+    m1-k ≤ 0 && error("belief dimension should exceed constraint rank")
     Q1 = cluster_from.Q[keepind,1:(m1-k)] # mm x (m1-k)
     R1 = cluster_from.R[keepind,1:k] # mm x k
     Λ = LA.Diagonal(view(cluster_from.Λ,1:(m1-k))) # matrix, not vector
@@ -126,8 +128,7 @@ function marginalize!(cluster_from::GeneralizedBelief, keepind)
     R2 = cluster_from.R[setdiff(1:m1,keepind),1:k] # (m1-mm) x k
     F = transpose(W*((R2*W)\Q2)) # transpose(W(R2*W)⁺Q2): (m1-k) x k
     G = (transpose(Q1)-F*transpose(R1))*view(U1,:,nonzeroind) # (m1-k) x (mm-km)
-    # S = V*((transpose(V)*Λ*V) \ transpose(V)) # (m1-k) x (m1-k)
-    S = iszero(Λ) ? Λ : V*((transpose(V)*Λ*V) \ transpose(V)) # edge-case
+    S = V*((transpose(V)*Λ*V) \ transpose(V)) # (m1-k) x (m1-k)
     Z, Λm = LA.svd(transpose(G)*(Λ-Λ*S*Λ)*G)
     cluster_from.Λmsg[1:(mm-km)] = Λm
     cluster_from.Qmsg[1:mm,1:(mm-km)] = view(U1,:,nonzeroind)*Z
@@ -136,18 +137,12 @@ function marginalize!(cluster_from::GeneralizedBelief, keepind)
     ΛFc = Λ*Fc # (m1-k) x 1
     h_ΛFc = cluster_from.h[1:(m1-k)] - ΛFc
     cluster_from.hmsg[1:(mm-km)] = transpose(Z)*transpose(G)*(LA.I-Λ*S)*(h_ΛFc)
-    # constant
-    cluster_from.gmsg[1] = cluster_from.g[1] + transpose(h_ΛFc+0.5*ΛFc)*Fc
-        + 0.5*(transpose(h_ΛFc)*S*h_ΛFc)
-    if m1 != k # Λ: (m1-k) x (m1-k) not empty
-        # if Λ empty but V is not, then VᵀΛV defaults to a zero matrix with ∞ logdet!
-        cluster_from.gmsg[1] -= 0.5*LA.logdet((1/2π)*transpose(V)*Λ*V)
-    end
-    if k > 0 # R2ᵀR2: k x k not empty
-        if !isempty(R2*W)
-            cluster_from.gmsg[1] -= 0.5*LA.logdet(transpose(R2*W)*R2*W)
-        end
-    end
+    # constant (stage computations to preserve numerical precision)
+    cluster_from.gmsg[1] = cluster_from.g[1]
+    cluster_from.gmsg[1] += transpose(h_ΛFc+0.5*ΛFc)*Fc
+    cluster_from.gmsg[1] += 0.5*(transpose(h_ΛFc)*S*h_ΛFc)
+    cluster_from.gmsg[1] -= 0.5*LA.logdet((1/2π)*transpose(V)*Λ*V)
+    cluster_from.gmsg[1] -= 0.5*LA.logdet(transpose(R2*W)*R2*W)
     return nothing
 end
 
