@@ -102,17 +102,13 @@
             ───────────────────────────────────────────────
             =#
             # ancestral reconstruction
-            @test all(PGBP.integratebelief!(ctb,5)[1] .≈ [-0.0865686,-0.144281]) # H1,B
-            @test_broken all(PGBP.integratebelief!(ctb,1)[1] .≈ [0.0153366,-0.04452,0.105121]) # H4,H2,H3
-            @test_broken all(PGBP.integratebelief!(ctb,6)[1] .≈ [0.232915]) # D
+            @test all(isapprox.(PGBP.integratebelief!(ctb,5)[1], [-0.0865686,-0.144281]; rtol=1e-5)) # H1,B
+            @test all(isapprox.(PGBP.integratebelief!(ctb,1)[1], [0.0153366,-0.04452,0.105121]; rtol=1e-5)) # H4,H2,H3
+            @test all(isapprox.(PGBP.integratebelief!(ctb,6)[1], [0.232915]; rtol=1e-5)) # D
             llscore = -3.4486412230145387
             for i in eachindex(ctb.belief)
                 _, tmp = PGBP.integratebelief!(ctb, i) # llscore from norm constant
-                if i ∈ [5,10]
-                    @test tmp ≈ llscore
-                else
-                    @test_broken tmp ≈ llscore
-                end
+                @test tmp ≈ llscore
             end
         end
     end

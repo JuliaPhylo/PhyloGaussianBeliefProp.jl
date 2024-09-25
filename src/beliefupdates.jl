@@ -527,37 +527,35 @@ function divide!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
 
     ## compute quotient and save parameters to sepset message
     # constraint rank
-    k = k1-k2
+    k = k1-k2 # k is an upper bound for the constraint rank
     k ≥ 0 || error("quotient cannot have negative constraint rank")
-    sepset.kmsg[1] = k
     # constraint
-    cluster_from.Q[1:m,(m-k1+1):(m-k)] = R2 # store R2 in extra space of cluster_from.Q
-    Rtmp = LA.nullspace(view(cluster_from.Q,:,1:(m-k)))
-    if isempty(Rtmp)
-        sepset.Rmsg[:,1:k] .= 0
-    else
-        sepset.Rmsg[:,1:k] = Rtmp
-    end
-    # sepset.Rmsg[:,1:k] = LA.nullspace(view(cluster_from.Q,:,1:(m-k)))
-    sepset.cmsg[1:k] = transpose(view(sepset.Rmsg,:,1:k))*R1*c1
+    # (m-k1+1):(m-k1+k2) <=> (m-k1+1):(m-k)
+    cluster_from.Qmsg[1:m,(m-k1+1):(m-k)] = R2 # store R2 in extra space of cluster_from.Qmsg
+    Rtmp = LA.nullspace(transpose(view(cluster_from.Qmsg,1:m,1:(m-k)))) # m x kq
+    kq = size(Rtmp,2) # constraint rank for quotient
+    sepset.kmsg[1] = kq
+    sepset.Rmsg[:,1:kq] = Rtmp
+    sepset.cmsg[1:kq] = transpose(Rtmp)*R1*c1
     # precision
     ZΛZt = LA.Diagonal(Λ1)-transpose(Q1)*Q2*LA.Diagonal(Λ2)*transpose(Q2)*Q1
     Z, Λ = LA.svd(ZΛZt)
+    mtmp = size(Z,2)
     sepset.Λmsg .= 0.0 # reset
-    sepset.Λmsg[1:(m-k1)] = Λ
-    sepset.Qmsg[:,1:(m-k1)] = Q1*Z
-    sepset.Qmsg[:,(m-k1+1):(m-k)] = R2
+    sepset.Λmsg[1:mtmp] = Λ
+    sepset.Qmsg[:,1:mtmp] = Q1*Z
+    sepset.Qmsg[:,(mtmp+1):(mtmp+k2)] = R2
     # potential
     Q2tR1c1 = transpose(Q2)*R1*c1
     Λ2Q2tR1c1 = Λ2 .* Q2tR1c1
-    sepset.hmsg[1:(m-k)] = (transpose(view(sepset.Qmsg,:,1:(m-k))) *
+    sepset.hmsg[1:(m-kq)] = (transpose(view(sepset.Qmsg,:,1:(m-kq))) *
         (Q1*h1 - Q2*(h2 - Λ2Q2tR1c1)))
     # constant
     sepset.gmsg[1] = cluster_from.gmsg[1] - sepset.g[1] -
-        transpose(h2-0.5*Λ2Q2tR1c1)*Q2tR1c1
+        transpose(h2-Λ2Q2tR1c1/2)*Q2tR1c1
 
     ## quotient canonical parameters: Qh, QΛQᵀ, g
-    Δh = view(sepset.Qmsg,:,1:(m-k))*view(sepset.hmsg,1:(m-k))
+    Δh = view(sepset.Qmsg,:,1:(m-kq))*view(sepset.hmsg,1:(m-kq))
     ΔJ = Q1*ZΛZt*transpose(Q1)
     Δg = sepset.gmsg[1]
     
