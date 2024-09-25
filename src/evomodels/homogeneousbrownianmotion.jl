@@ -161,7 +161,7 @@ factor_treeedge(m::HomogeneousBrownianMotion, edge::PN.Edge) = factor_treeedge(m
 function factor_treeedge(m::UnivariateBrownianMotion{T}, t::Real) where T
     if iszero(t) # degenerate tree-edge factor, todo: set threshold
         R = T[-1/sqrt(2); 1/sqrt(2) ;;]
-        g = T(0.5*log(2))
+        g = T(-0.5*log(2))
         c = T[0]
         return(R,c,g)
     else
@@ -210,8 +210,8 @@ function factor_hybridnode(m::HomogeneousBrownianMotion{T}, t::AbstractVector, �
     t0 = T(sum(γ.^2 .* t)) # >0 if hybrid node is not degenerate
     if iszero(t0) # degenerate hybrid factor
         R = T[-1; γ ;;]
-        LA.ldiv!(sqrt(t0+1), R) # normalize
-        g = T(0.5*log(t0+1))
+        LA.ldiv!(sqrt(sum(γ.^2) + 1), R) # normalize
+        g = T(-log(sum(γ.^2) + 1)/2)
         c = T[0]
         return(R,c,g)
     else

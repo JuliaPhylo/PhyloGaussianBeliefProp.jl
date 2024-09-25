@@ -100,10 +100,19 @@ function marginalize!(cluster_from::GeneralizedBelief, keepind)
     k = cluster_from.k[1]
     k == 0 && error("generalized belief should not have constraint rank 0")
     m1-k ≤ 0 && error("belief dimension should exceed constraint rank")
+    if m1 == mm # no/trivial marginalization
+        cluster_from.kmsg[1] = cluster_from.k[1]
+        cluster_from.Rmsg[1:m1,1:k] = view(cluster_from.R,keepind,1:k)
+        cluster_from.cmsg[1:k] = view(cluster_from.c,1:k)
+        cluster_from.Λmsg[1:(m1-k)] = view(cluster_from.Λ,1:(m1-k))
+        cluster_from.Qmsg[1:m1,1:(m1-k)] = view(cluster_from.Q,keepind,1:(m1-k))
+        cluster_from.hmsg[1:(m1-k)] = view(cluster_from.h,1:(m1-k))
+        cluster_from.gmsg[1] = cluster_from.g[1]
+        return nothing
+    end
     Q1 = cluster_from.Q[keepind,1:(m1-k)] # mm x (m1-k)
     R1 = cluster_from.R[keepind,1:k] # mm x k
     Λ = LA.Diagonal(view(cluster_from.Λ,1:(m1-k))) # matrix, not vector
-    
     ## compute marginal and save parameters to cluster_from message
     # constraint rank (todo: set threshold for a zero singular value)
     U1, S1, V1 = LA.svd(Q1; full=true) # U1: mm x mm, S1: min(mm,m1-k) x 1, V1: (m1-k) x (m1-k)
@@ -454,9 +463,11 @@ function mult!(cluster_to::GeneralizedBelief)
     # potential
     h[1:(m1-k1)] = transpose(view(cluster_to.Q,:,1:(m1-k1)))*(Q1*(h1-Λ1Q1tVb) +
         Q2*(h2-Λ2Q2tR1c1))
-    # constant
-    cluster_to.g[1] += cluster_to.gmsg[1] + transpose(h1-0.5*Λ1Q1tVb)*Q1tVb +
-        transpose(h2-0.5*Λ2Q2tR1c1)*Q2tR1c1 - 0.5*lgdet
+    # constant (stage computations to preserve numerical precision)
+    cluster_to.g[1] += cluster_to.gmsg[1]
+    cluster_to.g[1] += transpose(h1-0.5*Λ1Q1tVb)*Q1tVb
+    cluster_to.g[1] += transpose(h2-0.5*Λ2Q2tR1c1)*Q2tR1c1
+    cluster_to.g[1] -= 0.5*lgdet
     return nothing
 end
 function mult!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ::AbstractMatrix, Δg)

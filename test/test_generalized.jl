@@ -2,9 +2,34 @@
     net1 = "((#H1:0.0::0.4,#H2:0.0::0.4)I1:1.0,(((A:1.0)#H1:0.0::0.6,#H3:0.0::0.4)#H2:0.0::0.6,(B:1.0)#H3:0.0::0.6)I2:1.0)I3;"
     # net2 is modified from mateescu_2010.phy with all hybrid edge lengths set to 0
     net2 = "((((g:1.0)#H4:0.0::0.6)#H2:0.0::0.6,(d:1.0,(#H2:0.0::0.4,#H4:0.0::0.4)#H3:0.0::0.6)D:1.0,(#H3:0.0::0.4)#H1:0.0::0.6)B:1.0,#H1:0.0::0.4)A;"
+    # net3 is from SM section F of manuscript
+    net3 = "((i1:1.0,(i2:1.0)#H1:0.0::0.5)i4:1.0, (#H1:0.0::0.5,i3:1.0)i6:1.0)i0;"
 
     @testset "no optimization" begin
-        @testset "Level-3 w/ 2 tips. Univariate. Clique tree" begin
+        @testset "Level-1. 3 tips. Univariate. Clique tree" begin
+            net = readTopology(net3)
+            df = DataFrame(taxon=["i1","i2","i3"], x=[1.0,1.0,1.0])
+            tbl_x = columntable(select(df, :x))
+            ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
+            m = PGBP.UnivariateBrownianMotion(1, 0)
+            b, c2n = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
+            PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, c2n)
+            ctb = PGBP.ClusterGraphBelief(b, c2n)
+            spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+            PGBP.calibrate!(ctb, [spt])
+            #=
+            μ = 0; σ2 = 1; Vy = sharedPathMatrix(net)[:Tips]; Y = [1.0,1.0,1.0]
+            # llscore
+            -0.5*transpose(Y .- μ)*inv(σ2*Vy)*(Y .- μ) - 0.5*logdet(2π*σ2*Vy) # -4.161534555831068
+            =#
+            @test PGBP.integratebelief!(ctb, 6)[1] ≈ [0.6] # H1
+            llscore = -4.161534555831068
+            for i in eachindex(ctb.belief)
+                _, tmp = PGBP.integratebelief!(ctb, i)
+                @test tmp ≈ llscore
+            end
+        end
+        @testset "Level-3. 2 tips. Univariate. Clique tree" begin
             net = readTopology(net1)
             df = DataFrame(taxon=["A","B"], x=[2.11,2.15])
             tbl_x = columntable(select(df, :x))
@@ -46,7 +71,7 @@
                 @test tmp ≈ llscore
             end
         end
-        @testset "Level-4 w/ 2 tips. Univariate. Clique tree" begin
+        @testset "Level-4. 2 tips. Univariate. Clique tree" begin
             #= root node is a parent of a degenerate hybrid, and also a parent of its
             coparent (for the hybrid) =#
             net = readTopology(net2)
@@ -83,10 +108,10 @@
             llscore = -3.4486412230145387
             for i in eachindex(ctb.belief)
                 _, tmp = PGBP.integratebelief!(ctb, i) # llscore from norm constant
-                if i != 5
-                    @test_broken tmp ≈ llscore
-                else
+                if i ∈ [5,10]
                     @test tmp ≈ llscore
+                else
+                    @test_broken tmp ≈ llscore
                 end
             end
         end
