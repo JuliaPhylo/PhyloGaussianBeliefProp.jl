@@ -378,7 +378,7 @@ factor_root(obj::T) where {T <: EvolutionaryModel} = factor_root(UnivariateType(
 function factor_root(::IsUnivariate, m::EvolutionaryModel{T}) where T
     j = T(1/m.v) # improper prior: j=0, v=Inf, factor ≡ 1: h,J,g all 0
     g = (j == 0.0 ? zero(T) : -(log2π + log(m.v) + m.μ^2 * j)/2)
-    return(m.μ*j, j, g)
+    return(m.μ*j, SMatrix{1,1,T}(j), g)
 end
 function factor_root(::IsMultivariate, m::EvolutionaryModel{T}) where T
     #= check if improper from m.v since inv(m.v), called by `rootpriorprecision`,

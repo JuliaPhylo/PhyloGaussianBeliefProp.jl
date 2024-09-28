@@ -99,7 +99,7 @@ function marginalize!(cluster_from::GeneralizedBelief, keepind)
     m1 = size(cluster_from.Q,1)
     k = cluster_from.k[1]
     k == 0 && error("generalized belief should not have constraint rank 0")
-    m1-k ≤ 0 && error("belief dimension should exceed constraint rank")
+    m1 < k && error("constraint rank should not exceed belief dimension")
     if m1 == mm # no/trivial marginalization
         cluster_from.kmsg[1] = cluster_from.k[1]
         cluster_from.Rmsg[1:m1,1:k] = view(cluster_from.R,keepind,1:k)
@@ -116,7 +116,8 @@ function marginalize!(cluster_from::GeneralizedBelief, keepind)
     ## compute marginal and save parameters to cluster_from message
     # constraint rank (todo: set threshold for a zero singular value)
     U1, S1, V1 = LA.svd(Q1; full=true) # U1: mm x mm, S1: min(mm,m1-k) x 1, V1: (m1-k) x (m1-k)
-    nonzeroind = findall(S1 .!= 0.0) # indices for non-zero singular values
+    atol = eps(eltype(S1)) # todo: discuss threshold
+    nonzeroind = findall((x -> !isapprox(x, 0; atol=atol)).(S1)) # indices for non-zero singular values
     zeroind = setdiff(1:(m1-k), nonzeroind) # indices for zero singular values
     km = mm - length(nonzeroind)
     cluster_from.kmsg[1] = km
@@ -127,12 +128,9 @@ function marginalize!(cluster_from::GeneralizedBelief, keepind)
     # precision
     V = V1[:,zeroind] # nullspace(Q1): (m1-k) x (m1-k-mm+km)
     W = transpose(R1)*Q1 # k x (m1-k)
-    if !isempty(W)
-        # orthogonalize W is non-empty
-        # note: qr can be run if input matrix has col dim 0, but not row dim 0
-        W = LA.qr(W)
-        W = W.Q[:,findall(LA.diag(W.R) .!== 0.0)]
-    end
+    U_R1tQ1, S_R1tQ1, _ = LA.svd(transpose(R1)*Q1)
+    firstzeroind = findfirst((x -> isapprox(x, 0; atol=atol)).(S_R1tQ1)) # todo: discuss threshold
+    W = isnothing(firstzeroind) ? U_R1tQ1 : U_R1tQ1[:,1:(firstzeroind-1)] 
     Q2 = cluster_from.Q[setdiff(1:m1,keepind),1:(m1-k)] # (m1-mm) x (m1-k)
     R2 = cluster_from.R[setdiff(1:m1,keepind),1:k] # (m1-mm) x k
     F = transpose(W*((R2*W)\Q2)) # transpose(W(R2*W)⁺Q2): (m1-k) x k
@@ -219,11 +217,11 @@ function absorbevidence!(h,J::AbstractMatrix,g, dataindex, datavalues)
     data_nm = view(datavalues, hasdata) # non-missing data values
     length(absorb_ind) + length(keep_ind) == nvar ||
         error("data indices go beyond belief size")
-    Jkk = view(J, keep_ind,     keep_ind) # avoid copying
     if isempty(absorb_ind)
-        return (h, Jkk, g), missingdata_indices
+        return (h,J,g), missingdata_indices
     end
-    Jk_data = view(J, keep_ind,   absorb_ind) * data_nm
+    Jkk = view(J, keep_ind, keep_ind) # avoid copying
+    Jk_data = view(J, keep_ind, absorb_ind) * data_nm
     Ja_data = view(J, absorb_ind, absorb_ind) * data_nm
     g  += sum(view(h, absorb_ind) .* data_nm) - sum(Ja_data .* data_nm)/2
     hk = view(h, keep_ind) .- Jk_data # modifies h in place for a subset of indices
@@ -246,7 +244,10 @@ function absorbevidence!(R::AbstractMatrix, c, g, dataindex, datavalues)
     end
     Rk = view(R, keep_ind, :) # avoid copying
     Ra_data = transpose(view(R, absorb_ind, :)) * data_nm
-    ck = c .- Ra_data # modifies c in place for a subset of indices
+    normRk = LA.norm(Rk)
+    g -= log(normRk)
+    LA.ldiv!(normRk, Rk) # normalize
+    ck = (view(c,:) .- Ra_data) ./ normRk # modifies c in place for a subset of indices
     return (Rk,ck,g), missingdata_indices
 end
 
@@ -269,13 +270,13 @@ function absorbleaf!(h,J::AbstractMatrix,g, rowindex, tbl)
     end
     return h,J,g
 end
-function absorbleaf!(R::AbstractMatrix,c, rowindex, tbl)
+function absorbleaf!(R::AbstractMatrix,c,g, rowindex, tbl)
     datavalues = [col[rowindex] for col in tbl]
-    (R,c), missingindices = absorbevidence!(R,c, 1:length(datavalues), datavalues)
+    (R,c,g), missingindices = absorbevidence!(R,c,g, 1:length(datavalues), datavalues)
     if !isempty(missingindices)
         error("not implemented")
     end
-    return R,c
+    return R,c,g
 end
 
 """
@@ -478,7 +479,7 @@ function mult!(cluster_to::GeneralizedBelief, upind, R::AbstractMatrix, c, g)
     extend!(cluster_to, upind, R, c, g)
     mult!(cluster_to)
 end
-function mult!(cluster_to::CanonicalBelief, upind, Δh, ΔJ, Δg)
+function mult!(cluster_to::CanonicalBelief, upind, Δh, ΔJ::AbstractMatrix, Δg)
     cluster_to.h[upind] .+= Δh
     cluster_to.J[upind, upind] .+= ΔJ
     cluster_to.g[1] += Δg
@@ -526,17 +527,14 @@ function divide!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
     h2 = sepset.h[1:(m-k2)]
 
     ## compute quotient and save parameters to sepset message
-    # constraint rank
-    k = k1-k2 # k is an upper bound for the constraint rank
-    k ≥ 0 || error("quotient cannot have negative constraint rank")
     # constraint
-    # (m-k1+1):(m-k1+k2) <=> (m-k1+1):(m-k)
-    cluster_from.Qmsg[1:m,(m-k1+1):(m-k)] = R2 # store R2 in extra space of cluster_from.Qmsg
-    Rtmp = LA.nullspace(transpose(view(cluster_from.Qmsg,1:m,1:(m-k)))) # m x kq
-    kq = size(Rtmp,2) # constraint rank for quotient
-    sepset.kmsg[1] = kq
-    sepset.Rmsg[:,1:kq] = Rtmp
-    sepset.cmsg[1:kq] = transpose(Rtmp)*R1*c1
+    cluster_from.Qmsg[1:m,(m-k1+1):(m-k1+k2)] = R2 # store R2 in extra space of cluster_from.Qmsg
+    Rtmp = LA.nullspace(transpose(view(cluster_from.Qmsg,1:m,1:(m-k1+k2)))) # m x k
+    k = size(Rtmp,2) # constraint rank for quotient
+    k > k1 && error("constraint rank for quotient cannot exceed that of dividend")
+    sepset.kmsg[1] = k
+    sepset.Rmsg[:,1:k] = Rtmp
+    sepset.cmsg[1:k] = transpose(Rtmp)*R1*c1
     # precision
     ZΛZt = LA.Diagonal(Λ1)-transpose(Q1)*Q2*LA.Diagonal(Λ2)*transpose(Q2)*Q1
     Z, Λ = LA.svd(ZΛZt)
@@ -548,14 +546,14 @@ function divide!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
     # potential
     Q2tR1c1 = transpose(Q2)*R1*c1
     Λ2Q2tR1c1 = Λ2 .* Q2tR1c1
-    sepset.hmsg[1:(m-kq)] = (transpose(view(sepset.Qmsg,:,1:(m-kq))) *
+    sepset.hmsg[1:(m-k)] = (transpose(view(sepset.Qmsg,:,1:(m-k))) *
         (Q1*h1 - Q2*(h2 - Λ2Q2tR1c1)))
     # constant
     sepset.gmsg[1] = cluster_from.gmsg[1] - sepset.g[1] -
         transpose(h2-Λ2Q2tR1c1/2)*Q2tR1c1
 
     ## quotient canonical parameters: Qh, QΛQᵀ, g
-    Δh = view(sepset.Qmsg,:,1:(m-kq))*view(sepset.hmsg,1:(m-kq))
+    Δh = view(sepset.Qmsg,:,1:(m-k))*view(sepset.hmsg,1:(m-k))
     ΔJ = Q1*ZΛZt*transpose(Q1)
     Δg = sepset.gmsg[1]
     
@@ -577,7 +575,7 @@ function divide!(sepset::CanonicalBelief, cluster_from::GeneralizedBelief)
     h = Q*view(cluster_from.hmsg,1:(m-k1))
     return divide!(sepset, h, J, cluster_from.gmsg[1])
 end
-function divide!(sepset::CanonicalBelief, h, J, g)
+function divide!(sepset::CanonicalBelief, h, J::AbstractMatrix, g)
     Δh = h .- sepset.h
     ΔJ = J .- sepset.J
     Δg = g - sepset.g[1]
@@ -689,6 +687,9 @@ function propagate_belief!(
     cluster_from::GeneralizedBelief,
 )
     marginalize!(cluster_from, sepset)
+    cluster_from.kmsg[1] > 0 && error("message from cluster $(cluster_from.metadata)
+        has positive constraint rank, represent cluster $(cluster_to.metadata)
+        and sepset $(sepset.metadata) as GeneralizedBeliefs")
     Δh, ΔJ, Δg = divide!(sepset, cluster_from)
     mult!(cluster_to, scopeindex(sepset, cluster_to), Δh, ΔJ, Δg)
     return Δh, ΔJ, Δg
