@@ -245,7 +245,7 @@ end
     calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief, clustergraph,
         nodevector_preordered, tbl::Tables.ColumnTable, taxa::AbstractVector,
         evolutionarymodel_name, evolutionarymodel_startingparameters,
-        max_iterations=100)
+        max_iterations=100, regularizationfunction=regularizebeliefs_bycluster!)
 
 Same as [`calibrate_optimize_cliquetree!`](@ref) above, except that the user can
 supply an arbitrary `clustergraph` (including a clique tree) for the input
@@ -256,7 +256,8 @@ When `clustergraph` is a clique tree, the factored energy approximation is exact
 equal to the ELBO and the log-likelihood.
 
 Cluster beliefs are regularized using [`regularizebeliefs_bycluster!`](@ref)
-(other options are likely to be available in future versions) before calibration.
+by default (other options include [`regularizebeliefs_bynodesubtree!`](@ref),
+[`regularizebeliefs_onschedule!`](@ref)) before calibration.
 The calibration repeatedly loops through a minimal set of spanning trees (see
 [`spanningtrees_clusterlist`](@ref)) that covers all edges in the cluster
 graph, and does a postorder-preorder traversal for each tree. The loop runs till
@@ -267,16 +268,17 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
         cgraph, prenodes::Vector{PN.Node},
         tbl::Tables.ColumnTable, taxa::AbstractVector,
         evomodelfun, # constructor function
-        evomodelparams, maxiter::Integer=100)
+        evomodelparams, maxiter::Integer=100,
+        regfun=regularizebeliefs_bycluster!, # regularization function
+ )
     sch = spanningtrees_clusterlist(cgraph, prenodes)
     mod = evomodelfun(evomodelparams...) # model with starting values
     function score(θ)
         model = evomodelfun(params_original(mod, θ)...)
         assignfactors!(beliefs.belief, model, tbl, taxa, prenodes, beliefs.cluster2fams)
-        # init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
         init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
         init_messagecalibrationflags_reset!(beliefs, true)
-        regularizebeliefs_bycluster!(beliefs, cgraph)
+        regfun(beliefs, cgraph)
         calibrate!(beliefs, sch, maxiter, auto=true)
         return free_energy(beliefs)[3] # to be minimized
     end
