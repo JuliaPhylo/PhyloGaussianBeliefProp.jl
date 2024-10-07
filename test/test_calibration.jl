@@ -104,6 +104,20 @@ end
         @test PGBP.integratebelief!(b[ind])[1][end] ≈
             0.21511454631828986 rtol=1e-5 # posterior root mean
     end
+    @testset "tree, 4 tips, 2 traits, 3 missing unscoped in 5 nodes. Clique tree" begin
+        netstr = "(((A:1.0, B:1.0)E:1.0, C:2.0)F:1.0, D:3.0)G;"
+        net = readTopology(netstr)
+        ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
+        df = DataFrame(taxon=["A","B","C","D"], y1=[1,1,1,1], y2=[missing,missing,missing,1])
+        tbl_y = columntable(select(df, :y1, :y2))
+        m = PGBP.MvDiagBrownianMotion((1,1), (0,0))
+        b, c2f = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m)
+        @test_broken PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, c2f)
+        #= assignfactors! should NOT throw BPPosDefException after this bug (concerning how
+        we marginalize out variables with no data below, as mentioned in comments for
+        assignfactors!) is fixed =#
+        @test_throws PGBP.BPPosDefException PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, c2f)
+    end
     @testset "level-3, 2 tips, 2 traits, 1 missing unscoped in 2 nodes. Join-graph, regularize by node subtree" begin
         netstr = "((#H1:0.1::0.4,#H2:0.1::0.4)I1:1.0,(((A:1.0)#H1:0.1::0.6,#H3:0.1::0.4)#H2:0.1::0.6,(B:1.0)#H3:0.1::0.6)I2:1.0)I3;"
         net = readTopology(netstr)
@@ -125,9 +139,9 @@ end
         @test (@test_logs (:info, "calibration reached: iteration 4, schedule tree 1") PGBP.calibrate!(cgb, sch, 10; auto=true, info=true))
         #= Compare posterior means against clique tree estimates:
         ct = PGBP.clustergraph!(net, PGBP.Cliquetree());
-        b_ct = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b_ct, m, tbl_y, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b_ct);
+        b_ct, c2f = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m);
+        PGBP.assignfactors!(b_ct, m, tbl_y, df.taxon, net.nodes_changed, c2f);
+        ctb = PGBP.ClusterGraphBelief(b_ct, c2f);
         PGBP.calibrate!(ctb, [PGBP.spanningtree_clusterlist(ct, net.nodes_changed)]);
         PGBP.integratebelief!(b_ct[6]) # cluster I1I2I3: PGBP.clusterindex(:I1I2I3, ctb)
         # ([2.121105154896223, 30.005552577448075, 2.1360649504455984, 30.013032475222563, 2.128585052670908, 30.00929252633532], -1.39059577242449)

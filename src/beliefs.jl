@@ -930,9 +930,10 @@ function assignfactors!(
             factorind = scopeindex(i_inscope, be)
             # marginalize out variables not in scope, e.g. bc no data below
             #=
-            Note: marginalizing out variables from a factor if these variables
-            have no data below does not always work!
-            E.g. Consider a bivariate trait (X,Y) evolving on a single branch
+            todo: we cannot always marginalize out non-inscope variables from a factor!
+            See the "tree, 4 tips, 2 traits, 3 missing unscoped in 5 nodes ..." testset
+            in `test_calibration.jl` for an example.
+            Simpler example: Consider a bivariate trait (X,Y) evolving on a single branch
             according to BM with no correlation between X and Y. The states of
             the child node and parent node are respectively (x1,y1) and (x2,y2).
             The precision parameter of the factor for this tree-edge could be:
