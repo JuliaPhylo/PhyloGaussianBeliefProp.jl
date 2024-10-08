@@ -133,4 +133,30 @@
             end
         end
     end
+
+    @testset "Multivariate. No optimization. Clique tree" begin
+        net3 = "((i1:1.0,(i2:1.0)#H1:0.0::0.5)i4:1.0, (#H1:0.0::0.5,i3:1.0)i6:1.0)i0;"
+        net = readTopology(net3)
+        ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
+        df = DataFrame(taxon=["i1","i2","i3"], x=[1.0,1.0,1.0], y=[2.0,2.0,2.0])
+        df_var = select(df, Not(:taxon))
+        tbl = columntable(df_var)
+        m_biBM_fixedroot = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0,0))
+        b_xy_fixedroot = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct,
+            m_biBM_fixedroot)
+        PGBP.assignfactors!(b_xy_fixedroot[1], m_biBM_fixedroot, tbl, df.taxon,
+            net.nodes_changed, b_xy_fixedroot[2]);
+        ctb = PGBP.ClusterGraphBelief(b_xy_fixedroot...)
+        spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+        PGBP.calibrate!(ctb, [spt])
+        # Vy = sharedPathMatrix(net)[:Tips];
+        # μ = repeat([3, -3],3); σ2 = [2 0; 0 1]; 
+        # Y = repeat([1.0,2.0],3)
+        # -0.5*transpose(Y - μ)*inv(kron(Vy,σ2))*(Y - μ) - 0.5*logdet(2π*kron(Vy,σ2)) # -24.362789882502057
+        llscore = -24.362789882502057
+        for i in eachindex(ctb.belief)
+            _, tmp = PGBP.integratebelief!(ctb, i)
+            @test tmp ≈ llscore
+        end
+    end
 end

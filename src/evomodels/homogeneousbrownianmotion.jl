@@ -208,11 +208,12 @@ factor_tree_degeneratehybrid(m, che.length, [p.gamma for p in pae])
 
 function factor_hybridnode(m::HomogeneousBrownianMotion{T}, t::AbstractVector, γ::AbstractVector) where T
     t0 = T(sum(γ.^2 .* t)) # >0 if hybrid node is not degenerate
+    numt = dimension(m)
     if iszero(t0) # degenerate hybrid factor
-        R = T[-1; γ ;;]
+        R = kron(T[-1; γ ;;], LA.I(numt))
         LA.ldiv!(sqrt(sum(γ.^2) + 1), R) # normalize
-        g = T(-log(sum(γ.^2) + 1)/2)
-        c = T[0]
+        g = T(-numt*log(sum(γ.^2) + 1)/2)
+        c = zeros(T, numt)
         return(R,c,g)
     else
         return factor_tree_degeneratehybrid(m, t0, γ)
