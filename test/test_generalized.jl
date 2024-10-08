@@ -158,5 +158,23 @@
             _, tmp = PGBP.integratebelief!(ctb, i)
             @test tmp ≈ llscore
         end
+
+        m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0,-3.0])
+        PGBP.assignfactors!(b_xy_fixedroot[1], m, tbl, df.taxon, net.nodes_changed,
+            b_xy_fixedroot[2]);
+        PGBP.calibrate!(ctb, [spt])
+        # Vy = sharedPathMatrix(net)[:Tips];
+        # μ = repeat([3, -3],3); σ2 = [2.0 0.5; 0.5 1.0]; 
+        # Y = repeat([1.0,2.0],3)
+        # -0.5*transpose(Y - μ)*inv(kron(Vy,σ2))*(Y - μ) - 0.5*logdet(2π*kron(Vy,σ2)) # -29.905349936422414
+        llscore = -29.905349936422414
+        for i in eachindex(ctb.belief)
+            _, tmp = PGBP.integratebelief!(ctb, i)
+            if i ∈ [4,8]
+                @test tmp ≈ llscore
+            else
+                @test_broken tmp ≈ llscore
+            end
+        end
     end
 end
