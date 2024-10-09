@@ -118,7 +118,7 @@ function MvFullBrownianMotion(R::AbstractMatrix, μ, v=nothing)
     SV = SVector{numt, T}
     size(R) == (numt,numt)       || error("R and μ have conflicting sizes")
     LA.issymmetric(R) || error("R should be symmetric")
-    R = PDMat(R)
+    # R = PDMat(R) # todo: discuss precision issues
     J = inv(R) # uses cholesky. fails if not symmetric positive definite
     MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, branch_logdet_variance(numt, R))
 end

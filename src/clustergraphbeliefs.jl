@@ -42,8 +42,12 @@ struct ClusterGraphBelief{B<:AbstractBelief, F<:ClusterFactor, M<:MessageResidua
     sdict::Dict{Set{Symbol},Int}
     "dictionary: message labels (cluster_to, cluster_from) => residual information"
     messageresidual::Dict{Tuple{Symbol,Symbol}, M}
-    "vector: cluster index => node families"
-    cluster2fams::Vector{Tuple{Vector{Tuple{Tuple{Vararg{T}},BitVector,Bool}}, BitVector}} where T <: Integer
+    "vector: node index => cluster index"
+    node2cluster::Vector{Integer}
+    "vector: node index => node family"
+    node2family::Vector{Tuple{Vector{Integer}, BitVector}}
+    "vector: cluster index => node indices"
+    cluster2nodes::Vector{Vector{Integer}}
 end
 nbeliefs(obj::ClusterGraphBelief) = length(obj.belief)
 nclusters(obj::ClusterGraphBelief) = obj.nclusters
@@ -80,9 +84,13 @@ e.g. for factors (with data copied from cluster beliefs) and message residuals
 To construct the input vector of beliefs, see [`init_beliefs_allocate`](@ref)
 and [`init_beliefs_assignfactors!`](@ref)
 """
-function ClusterGraphBelief(beliefs::Vector{B},
-    cluster2fams::Vector{Tuple{Vector{Tuple{Tuple{Vararg{T}},BitVector,Bool}}, BitVector}}
-) where B<:AbstractBelief where T<:Integer
+function ClusterGraphBelief(
+    beliefs::Vector{B},
+    node2cluster::Vector,
+    node2family::Vector,
+    cluster2nodes::Vector,
+    # todo: more specific function signature
+) where B<:AbstractBelief
     i = findfirst(b -> b.type == bsepsettype, beliefs)
     nc = (isnothing(i) ? length(beliefs) : i - 1)
     all(beliefs[i].type == bclustertype for i in 1:nc) ||
@@ -93,7 +101,8 @@ function ClusterGraphBelief(beliefs::Vector{B},
     sdict = get_sepsetindexdictionary(beliefs, nc)
     mr = init_messageresidual_allocate(beliefs, nc)
     factors = init_factors_allocate(beliefs, nc)
-    return ClusterGraphBelief{B,eltype(factors),valtype(mr)}(beliefs,factors,nc,cdict,sdict,mr,cluster2fams)
+    return ClusterGraphBelief{B,eltype(factors),valtype(mr)}(beliefs,factors,nc,cdict,sdict,mr,
+        node2cluster, node2family, cluster2nodes)
 end
 
 function get_clusterindexdictionary(beliefs, nclusters)

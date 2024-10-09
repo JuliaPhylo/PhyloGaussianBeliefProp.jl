@@ -73,8 +73,8 @@ PGBP.triangulate_minfill!(g)
 ct = PGBP.cliquetree(g)
 
 m = PGBP.UnivariateBrownianMotion(2, 3, 0) # 0 root prior variance: fixed root
-b, c2f = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m);
-PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, c2f);
+b, (n2c, n2f, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m);
+PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, n2c, n2f);
 # ["$(be.type): $(be.nodelabel)" for be in b]
 @test b[1].J ≈ m.J/net.edge[4].length .* [1 -1; -1 1]
 @test b[1].h == [0,0]
