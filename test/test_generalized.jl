@@ -5,7 +5,22 @@
     # net3 is from SM section F of manuscript
     net3 = "((i1:1.0,(i2:1.0)#H1:0.0::0.5)i4:1.0, (#H1:0.0::0.5,i3:1.0)i6:1.0)i0;"
     net4 = "(((i2:0.0)#H1:0.0::0.5)i4:1.0, (#H1:0.0::0.5)i6:1.0)i0;"
-    
+
+@testset "degenerate extended family" begin
+    netstr = "(((a:1.0)#H1:0.0::0.5)d:1.0, (((#H1:0.0::0.5)#H2:0.0::0.5)b:1.0, (#H2:0.0::0.5)c:1.0)e:1.0)f;"
+    net = readTopology(netstr)
+    PGBP.preorder!(net)
+    df = DataFrame(taxon="a", x=[1.0])
+    tbl_x = columntable(select(df, :x))
+    # clusters: [[d, e, f], [H1, d, b, c, e], [H1, d, H2, b, c], [a, H1]]
+    # In [H1, d, b, c, e], d is a parent of H1, and b, c are grandparents of H1
+    clusters = [[6,2,1], [7,6,4,3,2], [7,6,5,4,3], [8,7]]
+    cg = PGBP.clustergraph!(net, PGBP.LTRIP(clusters, net))
+    m = PGBP.UnivariateBrownianMotion(1, 0)
+    b, (n2c, n2f, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, cg, m)
+    cgb = PGBP.ClusterGraphBelief(b, n2c, n2f, c2n)
+end
+
     @testset "Univariate. No optimization. Clique tree" begin
         @testset "Hybrid leaf. 1 tip" begin
             net = readTopology(net4)
