@@ -125,3 +125,72 @@ function addtreenode_belowdegeneratehybrid!(net::HybridNetwork)
     end
     return net
 end
+
+"""
+    isdegenerate_extendedfamily_covered(nodeindex, clustermembers)
+
+Check for the absence of an intermediate node in a degenerate extended family,
+for an input node `v` represented by its preorder index, looking at its ancestors
+in the input cluster `C` represented by its members, a vector of node preorder indices.
+
+Output: tuple of 2 booleans `(b1,b2)` where
+- `b1` is true if `v` is degenerate conditional on its ancestors that are
+  present in `C`, false otherwise (e.g. `v` is not degenerate conditional on
+  its parents, or if none of its parents are in `C`)
+- `b2` is true if `b1` is false, or `C` is *not* missing intermediate ancestors
+  for `v` in the following sense:
+  there exists a set of ancestors `A` such that `A ⊆ C`,
+  `v` is degenerate conditional on `A`, and for any `p` intermediate between
+  `A` and `v` (that is `p` is a descendant of `A` and ancestor of `v`),
+  we have that `p ∈ C`.
+
+By `v` is "degenerate" we mean that its distribution is deterministic, taking as
+value a linear (or affine) combination of its ancestor(s)' value(s).
+"""
+function isdegenerate_extendedfamily_covered(
+    nodeindex::Integer,
+    clustermembers::Vector{<:Integer},
+    node2family,
+    node2degen,
+    node2fixed,
+)
+    b1 = node2fixed[nodeindex]
+    # fixit above: we want false by default except for the root if the model has it fixed,
+    # but I still need to think about tips
+    b2 = true
+    if node2degen[nodeindex]
+        for ip in Iterators.drop(node2family[nodeindex], 1)
+            node2fixed[ip] && continue # skip parents with a fixed value: not in scope
+            ip in clustermembers && continue # skip parents present in cluster
+            b1p, b2p = isdegenerate_extendedfamily_covered(ip, clustermembers,
+                node2family, node2degen, node2fixed)
+            if b1p # parent is degenerate given ancestors in cluster
+                #if !b2p # the cluster is missing intermediates for the parent
+                    b2 = false
+                #end
+            else # parent *not* degenerate given cluster
+                return (false, true)
+            end
+        end
+    end
+    return (b1,b2)
+end
+
+"""
+    isdegenerate_extendedfamily_covered(clusterindex)
+
+Boolean:
+`true` if for each node `v` in the input cluster `C` (represented by its index),
+    `C` contains all intermediate nodes in the degenerate extended family of `v`.
+`false` if this property fails for one or more node `v` in `C`.
+"""
+function isdegenerate_extendedfamily_covered(
+    clusterindex::Integer,
+    node2cluster,
+    node2family,
+    node2degen,
+    node2fixed,
+    cluster2nodes,
+)
+fixit
+end
