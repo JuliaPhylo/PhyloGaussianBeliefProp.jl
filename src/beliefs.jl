@@ -450,16 +450,32 @@ end
     allocatebeliefs(tbl, taxa, nodevector_preordered, clustergraph,
                      evolutionarymodel)
 
-Return tuple `(beliefs, (node2cluster, node2family, node2degen, cluster2nodes))`.
-`beliefs` is a vector of beliefs, initialized to the constant function exp(0)=1,
-one for each cluster then one for each sepset in `clustergraph`.
-`node2cluster` is a vector maps each node to the cluster it is assigned to.
-`node2family` is a vector that maps each node to its node family (represented as
-a vector of preorder indices, e.g. (child, parent1, ...)).
-`node2degen` is a vector that maps each node to a Bool indicating if none of its
-parent edges have positive length.
-`cluster2nodes` is a vector that maps each cluster to the nodes that are assigned
-to it.
+Tuple `(beliefs, (node2cluster, node2family, node2degen, cluster2nodes))` with:
+- `beliefs`: vector of beliefs, canonical or generalized as appropriate,
+  initialized to the constant function exp(0)=1,
+  one for each cluster then one for each sepset in `clustergraph`.
+- `node2cluster`: vector mapping each node to the cluster it is assigned to:
+  `node2cluster[i]` is the index of the cluster to which was assigned the family
+  for node of preorder index `i`.
+- `node2family`: vector mapping each node to its node family. Each node is
+  represented by its preorder index. A family is represented as a vector of
+  preorder indices: [child, parent1, ...].
+  fixit
+  the description above seems off. how about changing the code to fit the
+  description, by splitting the current tuple into (1) the vector above, and
+  (2) a single new vector as described below? Then this single vector can be
+  looked up, for each parent in each node family, without duplication of
+  information (and memory usage)
+- `node2fixed`: vector of booleans, indicating for each node if its value is
+  fixed, either because it's the root and is assumed fixed by the model,
+  or because it's a tip with data (and any missing values removed from scope),
+  or for some other reason (e.g. single parent of a degenerate leaf).
+  fixit: do we actually need to include "other reasons" like that last case?
+- `node2degen`: vector mapping each node to a boolean indicating if its
+  distribution is deterministic given its parents (e.g. if all of its parent
+  edges 0 length under a BM with no extra variance).
+- `cluster2nodes`: vector mapping each cluster to the nodes (represented by
+  their preorder index) whose families are assigned to the cluster.
 
 `tbl` is used to know which leaf in `net` has data for which trait, so as to
 remove from the scope each variable without data below it.
@@ -471,6 +487,7 @@ to use the model's fixed root value as data if the root as zero prior variance.
 Warnings:
 - Any hybrid node that is degenerate and has a single child edge of positive
 length is removed from scope
+fixit: is that still true??
 - This function might need to be re-run to re-do allocation if:
     - the data changed: different number of traits, or different pattern of
     missing data at the tips
