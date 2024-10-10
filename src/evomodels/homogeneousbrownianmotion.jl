@@ -174,26 +174,42 @@ function factor_treeedge(m::UnivariateBrownianMotion{T}, t::Real) where T
     end
 end
 function factor_treeedge(m::MvDiagBrownianMotion{T,V}, t::Real) where {T,V}
-    numt = dimension(m); ntot = numt * 2
-    j = m.J ./ T(t) # diagonal elements
-    # J = [diag(j) -diag(j); -diag(j) diag(j)]
-    gen = ((u,tu,v,tv) for u in 1:2 for tu in 1:numt for v in 1:2 for tv in 1:numt)
-    Juv = (u,tu,v,tv) -> (tu==tv ? (u==v ? j[tu] : -j[tu]) : 0)
-    J = LA.Symmetric(SMatrix{ntot,ntot}(Juv(x...) for x in gen))
-    h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
-    g = m.g0 - numt * log(t)/2
-    return(h,J,g)
+    numt = dimension(m)
+    if iszero(t)
+        R = kron(T[-1/sqrt(2); 1/sqrt(2) ;;], LA.I(numt))
+        g = T(-numt*log(2)/2)
+        c = zeros(T, numt)
+        return(R,c,g)
+    else
+        ntot = numt * 2
+        j = m.J ./ T(t) # diagonal elements
+        # J = [diag(j) -diag(j); -diag(j) diag(j)]
+        gen = ((u,tu,v,tv) for u in 1:2 for tu in 1:numt for v in 1:2 for tv in 1:numt)
+        Juv = (u,tu,v,tv) -> (tu==tv ? (u==v ? j[tu] : -j[tu]) : 0)
+        J = LA.Symmetric(SMatrix{ntot,ntot}(Juv(x...) for x in gen))
+        h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
+        g = m.g0 - numt * log(t)/2
+        return(h,J,g)
+    end
 end
 function factor_treeedge(m::MvFullBrownianMotion{T,P1,V,P2}, t::Real) where {T,P1,V,P2}
-    numt = dimension(m); ntot = numt * 2
-    j = m.J ./ T(t)
-    # J = [j -j; -j j]
-    gen = ((u,tu,v,tv) for u in 1:2 for tu in 1:numt for v in 1:2 for tv in 1:numt)
-    Juv = (u,tu,v,tv) -> (u==v ? j[tu,tv] : -j[tu,tv])
-    J = LA.Symmetric(SMatrix{ntot,ntot}(Juv(x...) for x in gen))
-    h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
-    g = m.g0 - numt * log(t)/2
-    return(h,J,g)
+    numt = dimension(m)
+    if iszero(t)
+        R = kron(T[-1/sqrt(2); 1/sqrt(2) ;;], LA.I(numt))
+        g = T(-numt*log(2)/2)
+        c = zeros(T, numt)
+        return(R,c,g)
+    else
+        ntot = numt * 2
+        j = m.J ./ T(t)
+        # J = [j -j; -j j]
+        gen = ((u,tu,v,tv) for u in 1:2 for tu in 1:numt for v in 1:2 for tv in 1:numt)
+        Juv = (u,tu,v,tv) -> (u==v ? j[tu,tv] : -j[tu,tv])
+        J = LA.Symmetric(SMatrix{ntot,ntot}(Juv(x...) for x in gen))
+        h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
+        g = m.g0 - numt * log(t)/2
+        return(h,J,g)
+    end
 end
 
 ################################################################

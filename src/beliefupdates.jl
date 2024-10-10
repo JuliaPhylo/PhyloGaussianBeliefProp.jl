@@ -355,7 +355,7 @@ function extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ::AbstractMatrix,
     cluster_to.Λmsg[1:m2] = Λ
     # potential
     cluster_to.hmsg .= 0.0
-    cluster_to.hmsg[1:m2] = Q*Δh
+    cluster_to.hmsg[1:m2] = Q \ Δh
     # constant
     cluster_to.gmsg[1] = Δg
     return nothing
