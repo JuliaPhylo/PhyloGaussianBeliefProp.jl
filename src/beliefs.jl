@@ -460,17 +460,9 @@ Tuple `(beliefs, (node2cluster, node2family, node2degen, cluster2nodes))` with:
 - `node2family`: vector mapping each node to its node family. Each node is
   represented by its preorder index. A family is represented as a vector of
   preorder indices: [child, parent1, ...].
-  fixit
-  the description above seems off. how about changing the code to fit the
-  description, by splitting the current tuple into (1) the vector above, and
-  (2) a single new vector as described below? Then this single vector can be
-  looked up, for each parent in each node family, without duplication of
-  information (and memory usage)
 - `node2fixed`: vector of booleans, indicating for each node if its value is
   fixed, either because it's the root and is assumed fixed by the model,
   or because it's a tip with data (and any missing values removed from scope),
-  or for some other reason (e.g. single parent of a degenerate leaf).
-  fixit: do we actually need to include "other reasons" like that last case?
 - `node2degen`: vector mapping each node to a boolean indicating if its
   distribution is deterministic given its parents (e.g. if all of its parent
   edges 0 length under a BM with no extra variance).
@@ -485,9 +477,6 @@ The root is removed from scope if the evolutionary model has a fixed root: so as
 to use the model's fixed root value as data if the root as zero prior variance.
 
 Warnings:
-- Any hybrid node that is degenerate and has a single child edge of positive
-length is removed from scope
-fixit: is that still true??
 - This function might need to be re-run to re-do allocation if:
     - the data changed: different number of traits, or different pattern of
     missing data at the tips
@@ -513,19 +502,9 @@ function allocatebeliefs(
     can be removed when the evidence is absorbed
     =#
     clusterlabs = labels(clustergraph) # same order as cluster beliefs
-    #=
-    node2cluster: node (preorder) index → cluster index
-    node2family: node index → (nodefamily, inscope)
-        - nodefamily is a vector of preorder indices, i.e. the child index followed
-        by the parent indices (in postorder)
-        - inscope is a BitVector indicating which nodes in the family are leaves,
-        or the root if fixedroot==true
-    node2degen: node index → no positive parent edge length
-    cluster2degen: cluster index → cluster was assigned some node family i such
-    that node2degen[i]==true
-    =#
     node2cluster = zeros(Int, length(prenodes))
-    node2family = Vector{Tuple{Vector{T1}, BitVector}}(undef, length(prenodes))
+    node2family = Vector{Vector{T1}}(undef, length(prenodes))
+    node2fixed = falses(length(prenodes))
     node2degen = falses(length(prenodes))
     cluster2nodes = [Vector{T1}() for _ in clusterlabs]
     cluster2degen = falses(length(clusterlabs))
@@ -561,13 +540,11 @@ function allocatebeliefs(
             (node.leaf ? @error("tip $nodelab in network without any data") :
                          @error("internal node $nodelab without any data below"))
         nodefamily = [i_node, i_parents...]
-        nfinscope = trues(length(nodefamily)) # inscope nodes in `nodefamily`
-        (node.leaf || (i_node == 1) && fixedroot) && (nfinscope[1] = false)
-        fixedroot && (1 ∈ i_parents) && (nfinscope[end] = false)
+        (node.leaf || (i_node == 1) && fixedroot) && (node2fixed[i_node] = true)
         i_b = findfirst(cl -> issubset(nodefamily, clustergraph[cl][2]), clusterlabs)
         isnothing(i_b) && error("no cluster containing the node family for $(node.number).")
         node2cluster[i_node] = i_b
-        node2family[i_node] = (nodefamily, nfinscope)
+        node2family[i_node] = nodefamily
         node2degen[i_node] = degen
         push!(cluster2nodes[i_b], i_node)
         !cluster2degen[i_b] && degen && (cluster2degen[i_b] = degen)
@@ -614,7 +591,7 @@ function allocatebeliefs(
         push!(beliefs, beliefconstructor(nodeindices, numtraits, inscope, bsepsettype,
             (cllab1, cllab2), T2))
     end
-    return beliefs, (node2cluster, node2family, node2degen, cluster2nodes)
+    return beliefs, (node2cluster, node2family, node2fixed, node2degen, cluster2nodes)
 end
 
 """
@@ -784,6 +761,7 @@ function init_beliefs_allocate_atroot!(
     messageresidual,
     model::EvolutionaryModel{T},
     node2family,
+    node2fixed,
     cluster2nodes,
 ) where T
     numtraits = dimension(model)
@@ -800,9 +778,9 @@ function init_beliefs_allocate_atroot!(
         if iscluster # re-allocate the corresponding factor. if sepset: nothing to do
             factors[i_b] = ClusterFactor(beliefs[i_b])
             for ni in cluster2nodes[i_b]
-                (nf, nfinscope) = node2family[ni]
+                nf = node2family[ni]
                 # if node family contains root node, then update whether it is inscope
-                (nf[end] == 1) && (nfinscope[end] = !fixedroot)
+                (nf[end] == 1) && (node2fixed[1] = fixedroot)
             end
         end
         issepset = beliefs[i_b].type == bsepsettype
@@ -915,19 +893,21 @@ function assignfactors!(
     prenodes::Vector{PN.Node},
     node2cluster,
     node2family,
+    node2fixed,
 ) where B <: AbstractBelief{T} where T
     init_beliefs_reset!(beliefs)
     numtraits = dimension(model)
-    # node2belief = zeros(Int, length(prenodes)) # node preorder index → belief index
     for (ni, ci) in enumerate(node2cluster)
         be = beliefs[ci]
-        nf, nfinscope = node2family[ni]
+        # nf, nfinscope = node2family[ni]
+        nf = node2family[ni]
         nfsize = length(nf)
-        ch = prenodes[nf[1]] # child node
+        # ch = prenodes[nf[1]] # child node
+        ch = prenodes[ni]
         if nfsize == 1
-            nf[1] != 1 && error("only the root node can belong to a family of size 1")
+            ni != 1 && error("only the root node can belong to a family of size 1")
             # root is inscope iff root is not fixed (i.e. isrootfixed(model) == false)
-            nfinscope[1] || continue
+            node2fixed[1] && continue
             ϕ = factor_root(model)
         else
             if nfsize == 2
@@ -945,16 +925,16 @@ function assignfactors!(
                 ϕ = factor_hybridnode(model, pae)
             end
             # absorb evidence (assume that only at leaves or root)
-            if !nfinscope[1] # `ch` is a leaf
+            if node2fixed[ni] # `ch` is a leaf
                 i_datarow = findfirst(isequal(ch.name), taxa)
                 ϕ = absorbleaf!(ϕ..., i_datarow, tbl)
             end
-            if !all(nfinscope[2:end]) # node's parents include a fixed root
+            if any(node2fixed[nf[2:end]]) # node's parents include a fixed root
                 rootindex = (size(ϕ[1],1) - numtraits + 1):size(ϕ[1],1) # ϕ[1] is h or R
                 ϕ, _ = absorbevidence!(ϕ..., rootindex, rootpriormeanvector(model))
             end
         end
-        i_inscope = nf[nfinscope] # tuple of preorder indices for inscope nodes
+        i_inscope = nf[.!node2fixed[nf]]
         factorind = scopeindex(i_inscope, be)
         if length(factorind) != numtraits * length(i_inscope)
             var_inscope = view(inscope(be), :, indexin(i_inscope, nodelabels(be)))

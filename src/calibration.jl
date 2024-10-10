@@ -175,7 +175,7 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
         model = evomodelfun(params_original(mod, θ)...)
         # reset beliefs based on factors from new model parameters
         assignfactors!(beliefs.belief, model, tbl, taxa, prenodes,
-            beliefs.node2cluster, beliefs.node2family)
+            beliefs.node2cluster, beliefs.node2family, beliefs.node2fixed)
         # init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
         # no need to reset factors: free_energy not used on a clique tree
         init_messagecalibrationflags_reset!(beliefs, false)
@@ -226,7 +226,7 @@ function calibrate_optimize_cliquetree_autodiff!(bufferbeliefs::GeneralLazyBuffe
         dualBeliefs = bufferbeliefs[paramOriginal]
         # reset beliefs based on factors from new model parameters
         assignfactors!(dualBeliefs.belief, model, tbl, taxa, prenodes,
-            dualBeliefs.node2cluster, dualBeliefs.node2family)
+            dualBeliefs.node2cluster, dualBeliefs.node2family, dualBeliefs.node2fixed)
         # init_beliefs_assignfactors!(dualBeliefs.belief, model, tbl, taxa, prenodes)
         # no need to reset factors: free_energy not used on a clique tree
         init_messagecalibrationflags_reset!(dualBeliefs, false)
@@ -278,7 +278,7 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
     function score(θ)
         model = evomodelfun(params_original(mod, θ)...)
         assignfactors!(beliefs.belief, model, tbl, taxa, prenodes,
-            beliefs.node2cluster, beliefs.node2family)
+            beliefs.node2cluster, beliefs.node2family, beliefs.node2fixed)
         init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
         init_messagecalibrationflags_reset!(beliefs, true)
         regfun(beliefs, cgraph)
@@ -356,9 +356,9 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
     ## calibrate beliefs using infinite root and identity rate variance
     calibrationparams = evomodelfun(LA.diagm(ones(p)), zeros(p), LA.diagm(repeat([Inf], p)))
     init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual,
-        calibrationparams, beliefs.node2family, beliefs.cluster2nodes) # in case root status changed
+        calibrationparams, beliefs.node2family, beliefs.node2fixed, beliefs.cluster2nodes) # in case root status changed
     assignfactors!(beliefs.belief, calibrationparams, tbl, taxa, prenodes,
-        beliefs.node2cluster, beliefs.node2family)
+        beliefs.node2cluster, beliefs.node2family, beliefs.node2fixed)
     node2belief = beliefs.node2cluster
     # node2belief = init_beliefs_assignfactors!(beliefs.belief, calibrationparams, tbl, taxa, prenodes)
     # no need to reset factors: free_energy not used on a clique tree
@@ -439,10 +439,10 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
     ## Get associated likelihood
     loglikscore = NaN
     init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual,
-        bestmodel, beliefs.node2family, beliefs.cluster2nodes)
+        bestmodel, beliefs.node2family, beliefs.node2fixed, beliefs.cluster2nodes)
     # init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
     assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes,
-        beliefs.node2cluster, beliefs.node2family)
+        beliefs.node2cluster, beliefs.node2family, beliefs.node2fixed)
     init_messagecalibrationflags_reset!(beliefs, false)
     calibrate!(beliefs, [spt])
     _, loglikscore = integratebelief!(beliefs, rootj)

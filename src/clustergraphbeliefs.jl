@@ -45,7 +45,9 @@ struct ClusterGraphBelief{B<:AbstractBelief, F<:ClusterFactor, M<:MessageResidua
     "vector: node index => cluster index"
     node2cluster::Vector{Integer}
     "vector: node index => node family"
-    node2family::Vector{Tuple{Vector{Integer}, BitVector}}
+    node2family::Vector{Vector{Integer}}
+    "vector: node index => node is leaf or fixed root"
+    node2fixed::BitVector
     "vector: cluster index => node indices"
     cluster2nodes::Vector{Vector{Integer}}
 end
@@ -88,6 +90,7 @@ function ClusterGraphBelief(
     beliefs::Vector{B},
     node2cluster::Vector,
     node2family::Vector,
+    node2fixed::BitVector,
     cluster2nodes::Vector,
     # todo: more specific function signature
 ) where B<:AbstractBelief
@@ -102,7 +105,7 @@ function ClusterGraphBelief(
     mr = init_messageresidual_allocate(beliefs, nc)
     factors = init_factors_allocate(beliefs, nc)
     return ClusterGraphBelief{B,eltype(factors),valtype(mr)}(beliefs,factors,nc,cdict,sdict,mr,
-        node2cluster, node2family, cluster2nodes)
+        node2cluster, node2family, node2fixed, cluster2nodes)
 end
 
 function get_clusterindexdictionary(beliefs, nclusters)

@@ -16,8 +16,8 @@
     clusters = [[6,2,1], [7,6,4,3,2], [7,6,5,4,3], [8,7]]
     cg = PGBP.clustergraph!(net, PGBP.LTRIP(clusters, net))
     m = PGBP.UnivariateBrownianMotion(1, 0)
-    b, (n2c, n2f, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, cg, m)
-    cgb = PGBP.ClusterGraphBelief(b, n2c, n2f, c2n)
+    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, cg, m)
+    cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
 end
 
 @testset "Univariate BM. Clique tree" begin
@@ -27,20 +27,20 @@ end
     tbl_x = columntable(select(df, :x))
     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
     m = PGBP.UnivariateBrownianMotion(1, 0)
-    b, (n2c, n2f, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
-    ctb = PGBP.ClusterGraphBelief(b, n2c, n2f, c2n)
+    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
+    ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
     # no method to multiply a Dirac measure into a CanonicalBelief
-    @test_throws MethodError PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2f)
+    @test_throws MethodError PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
     # convert b[1] and b[4] into GeneralizedBelief
     b[1] = PGBP.GeneralizedBelief(b[1])
     b[4] = PGBP.GeneralizedBelief(b[4])
-    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2f)
+    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
     spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
     # b[3] and b[5] should also be represented as GeneralizedBeliefs
     @test_throws ErrorException PGBP.calibrate!(ctb, [spt])
     b[3] = PGBP.GeneralizedBelief(b[3])
     b[5] = PGBP.GeneralizedBelief(b[5])
-    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2f)
+    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
     PGBP.calibrate!(ctb, [spt])
     llscore = -1.5723649429247 # -0.5*(1-0)^2/0.5 - 0.5*logdet(2π*0.5)
     for i in eachindex(ctb.belief)
@@ -59,9 +59,9 @@ end
     tbl_x = columntable(select(df, :x))
     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
     m = PGBP.UnivariateBrownianMotion(1, 0)
-    b, (n2c, n2f, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
-    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2f)
-    ctb = PGBP.ClusterGraphBelief(b, n2c, n2f, c2n)
+    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
+    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
+    ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
     spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
     PGBP.calibrate!(ctb, [spt])
     # μ = 0; σ2 = 1; Vy = sharedPathMatrix(net)[:Tips]; Y = [1.0,1.0,1.0]
@@ -79,9 +79,9 @@ end
     tbl_x = columntable(select(df, :x))
     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
     m = PGBP.UnivariateBrownianMotion(0.000325097529258775, 2.128439531859558)
-    b, (n2c, n2f, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
-    ctb = PGBP.ClusterGraphBelief(b, n2c, n2f, c2n)
-    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2f)
+    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
+    ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
+    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
     spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
     PGBP.calibrate!(ctb, [spt])
     #= using StatsModels
@@ -119,9 +119,9 @@ end
     tbl_x = columntable(select(df, :x))
     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
     m = PGBP.UnivariateBrownianMotion(1, 0)
-    b, (n2c, n2f, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
-    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2f)
-    ctb = PGBP.ClusterGraphBelief(b, n2c, n2f, c2n)
+    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
+    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
+    ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
     spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
     PGBP.calibrate!(ctb, [spt])
     #= μ = 0; σ2 = 1; Vy = sharedPathMatrix(net)[:Tips]; Y = [-1.0,1.0]
@@ -157,10 +157,10 @@ end
     df_var = select(df, Not(:taxon))
     tbl = columntable(df_var)
     m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0, -3.0])
-    b, (n2c, n2f, n2d, c2n) = PGBP.allocatebeliefs(tbl, df.taxon,
+    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl, df.taxon,
         net.nodes_changed, ct, m)
-    PGBP.assignfactors!(b, m, tbl, df.taxon, net.nodes_changed, n2c, n2f)
-    ctb = PGBP.ClusterGraphBelief(b, n2c, n2f, c2n)
+    PGBP.assignfactors!(b, m, tbl, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
+    ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
     spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
     PGBP.calibrate!(ctb, [spt])
     # Vy = sharedPathMatrix(net)[:Tips]
@@ -186,9 +186,9 @@ m_biBM_fixedroot = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0,0))
 b_xy_fixedroot = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct,
     m_biBM_fixedroot)
 PGBP.assignfactors!(b_xy_fixedroot[1], m_biBM_fixedroot, tbl, df.taxon,
-    net.nodes_changed, b_xy_fixedroot[2][1], b_xy_fixedroot[2][2]);
+    net.nodes_changed, b_xy_fixedroot[2][1], b_xy_fixedroot[2][2], b_xy_fixedroot[2][3]);
 ctb = PGBP.ClusterGraphBelief(b_xy_fixedroot[1], b_xy_fixedroot[2][1],
-    b_xy_fixedroot[2][2], b_xy_fixedroot[2][4])
+    b_xy_fixedroot[2][2], b_xy_fixedroot[2][3], b_xy_fixedroot[2][5])
 spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
 PGBP.calibrate!(ctb, [spt])
 # Vy = sharedPathMatrix(net)[:Tips];
@@ -203,7 +203,7 @@ end
 
 m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0,-3.0])
 PGBP.assignfactors!(b_xy_fixedroot[1], m, tbl, df.taxon, net.nodes_changed,
-    b_xy_fixedroot[2][1], b_xy_fixedroot[2][2]);
+    b_xy_fixedroot[2][1], b_xy_fixedroot[2][2], b_xy_fixedroot[2][3]);
 PGBP.calibrate!(ctb, [spt])
 # Vy = sharedPathMatrix(net)[:Tips];
 # μ = repeat([3, -3],3); σ2 = [2.0 0.5; 0.5 1.0]; 
