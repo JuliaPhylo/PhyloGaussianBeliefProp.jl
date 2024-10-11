@@ -127,7 +127,8 @@ function addtreenode_belowdegeneratehybrid!(net::HybridNetwork)
 end
 
 """
-    isdegenerate_extendedfamily_covered(nodeindex, clustermembers)
+    isdegenerate_extendedfamily_covered(nodeindex, clustermembers,
+        node2family, node2degen, node2fixed)
 
 Check for the absence of an intermediate node in a degenerate extended family,
 for an input node `v` represented by its preorder index, looking at its ancestors
@@ -137,12 +138,9 @@ Output: tuple of 2 booleans `(b1,b2)` where
 - `b1` is true if `v` is degenerate conditional on its ancestors that are
   present in `C`, false otherwise (e.g. `v` is not degenerate conditional on
   its parents, or if none of its parents are in `C`)
-- `b2` is true if `b1` is false, or `C` is *not* missing intermediate ancestors
-  for `v` in the following sense:
-  there exists a set of ancestors `A` such that `A ⊆ C`,
-  `v` is degenerate conditional on `A`, and for any `p` intermediate between
-  `A` and `v` (that is `p` is a descendant of `A` and ancestor of `v`),
-  we have that `p ∈ C`.
+- `b2` is true if `C` is a "good cover" for `v` in the following sense:
+  either `v` is not generate given its ancestors in `C`,
+  or `C` contains all of `v`'s parents.
 
 By `v` is "degenerate" we mean that its distribution is deterministic, taking as
 value a linear (or affine) combination of its ancestor(s)' value(s).
@@ -154,43 +152,57 @@ function isdegenerate_extendedfamily_covered(
     node2degen,
     node2fixed,
 )
-    b1 = node2fixed[nodeindex]
-    # fixit above: we want false by default except for the root if the model has it fixed,
-    # but I still need to think about tips
+    b1 = node2degen[nodeindex]  # or should we use node2fixed[nodeindex]?
     b2 = true
-    if node2degen[nodeindex]
-        for ip in Iterators.drop(node2family[nodeindex], 1)
-            node2fixed[ip] && continue # skip parents with a fixed value: not in scope
-            ip in clustermembers && continue # skip parents present in cluster
-            b1p, b2p = isdegenerate_extendedfamily_covered(ip, clustermembers,
-                node2family, node2degen, node2fixed)
-            if b1p # parent is degenerate given ancestors in cluster
-                #if !b2p # the cluster is missing intermediates for the parent
-                    b2 = false
-                #end
-            else # parent *not* degenerate given cluster
-                return (false, true)
-            end
+    b1 || return (b1,b2) # node is not degenerate
+    # if we get here: degenerate given its parents
+    for ip in Iterators.drop(node2family[nodeindex], 1)
+        node2fixed[ip] && continue # skip parents with a fixed value: not in scope
+        ip in clustermembers && continue # skip parents present in cluster
+        b1p, _ = isdegenerate_extendedfamily_covered(ip, clustermembers,
+            node2family, node2degen, node2fixed)
+        if b1p # this parent is degenerate given ancestors in cluster
+            b2 = false
+        else # parent *not* degenerate given cluster
+            return (false, true)
         end
     end
     return (b1,b2)
 end
 
 """
-    isdegenerate_extendedfamily_covered(clusterindex)
+    isdegenerate_extendedfamily_covered(clusterindex,
+        node2family, node2degen, node2fixed)
 
 Boolean:
 `true` if for each node `v` in the input cluster `C` (represented by its index),
     `C` contains all intermediate nodes in the degenerate extended family of `v`.
 `false` if this property fails for one or more node `v` in `C`.
+
+We say that `C` contains all intermediate ancestors for `v` in `v`'s degenerate
+extended family if:
+- for any set of ancestors `A ⊆ C` such that `v` is degenerate conditional on `A`,
+- for any `p` intermediate between `A` and `v` (that is `p` is a descendant of
+  `A` and ancestor of `v`),
+- then we have that `p ∈ C`.
+
+We check that this condition holds for all nodes `v` in `C` by checking,
+more simply, that for any `v` degenerate given its ancestors in `C`,
+all of `v`'s parents are in `C`.
 """
 function isdegenerate_extendedfamily_covered(
-    clusterindex::Integer,
-    node2cluster,
+    clustermembers::Vector{<:Integer},
     node2family,
     node2degen,
     node2fixed,
-    cluster2nodes,
 )
-fixit
+    for ni in clustermembers
+        _, b2 = isdegenerate_extendedfamily_covered(ni, clustermembers,
+                    node2family, node2degen, node2fixed)
+        b2 || return false
+    end
+    return true
 end
+
+# fixit: 3rd method to check that *all* clusters are good.
+# clustermembers = cluster2nodes[clusterindex]
