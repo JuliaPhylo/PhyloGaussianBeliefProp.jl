@@ -291,28 +291,27 @@ The incoming message is extended within the message of `cluster_to`.
 The first form applies when the incoming message is the message of `sepset`.
 The second form applies when the incoming message is non-deterministic with canonical
 parameters Δh, ΔJ, Δg.
-The third form applies when the incoming message is deterministic with constraint matrix R.
+The third form applies when the incoming message is deterministic with constraint matrix R,
+offset c, and multiplicative constant exp(g) (i.e. exp(g)⋅δ(Rᵀx - c))
 """
 function extend!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     # indices in `cluster_to` inscope variables of `sepset` inscope variables
     upind = scopeindex(sepset, cluster_to)
-    #=
-    x,Q,Λ from sepset message are extended as follows:
+    #= x,Q,Λ from sepset message are extended as follows:
     (1) x is extended to Px', where x' is formed by stacking x on top of the
     inscope variables of `cluster_to` that are not in x, and P is a permutation
     matrix determined by `upind`
-    (2) Q is extended to Q' = P[Q 0; 0 I], where P is a permutation matrix
+    (2) Q is extended to PQ', where Q' = [Q 0; 0 I]
     (3) Λ is extended to Λ' = [Λ 0; 0 0]
-    (4) R is extended to R' = P[R; 0]
+    (4) R is extended to PR', where R' = [R; 0]
 
     - Px' matches the scope of `cluster_to`
     - the additional rows and columns in Q',Λ',R' correspond to the variables
     present in x but not x'
-    - Only Q,Λ,R, but not h,c need to be extended:
-        - (Px')ᵀQ'Λ'Q'ᵀ(Px') = xᵀQΛQᵀx
-        - hᵀQ'ᵀ(Px') = hᵀQᵀx
-        - R'ᵀ(Px') = Rᵀx
-    =#
+    - Only Q,Λ,R need to be extended:
+        - xᵀQΛQᵀx = x'ᵀQ'Λ'Q'ᵀx' = x'ᵀ(PᵀP)Q'Λ'Q'ᵀ(PᵀP)x' = (Px')ᵀ(PQ')Λ'(PQ')ᵀ(Px')
+        - hᵀQᵀx = hᵀQ'ᵀx' = hᵀQ'ᵀ(PᵀP)x' = hᵀ(PQ')ᵀ(Px')
+        - Rᵀx = R'ᵀx' = R'(PᵀP)x' = (PR')ᵀ(Px') =#
     m1 = size(cluster_to.Q,1)
     perm = [upind;setdiff(1:m1,upind)] # to permute rows
     m2 = size(sepset.Q,1)
@@ -345,6 +344,9 @@ function extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ::AbstractMatrix,
     # constraint rank
     cluster_to.kmsg[1] = 0
     # cluster_to.Rmsg, cluster_to.cmsg not updated since constraint is irrelevant
+    #= Q' = [Q 0; 0 I], Λ' = [Λ 0; 0 0],
+    xᵀ(ΔJ)x = xᵀQΛQᵀx = x'ᵀQ'Λ'Q'ᵀx' = x'ᵀ(PᵀP)Q'Λ'Q'ᵀ(PᵀP)x' = (Px')ᵀ(PQ')Λ'(PQ')ᵀ(Px')
+    (Δh)ᵀx = hᵀQᵀx = hᵀQ'ᵀx' = hᵀQ'ᵀ(PᵀP)x' = hᵀ(PQ')ᵀ(Px'), where h = Q⁻¹Δh =#
     # precision
     Q, Λ = LA.svd(ΔJ)
     cluster_to.Qmsg .= 0.0
@@ -370,7 +372,6 @@ function extend!(cluster_to::GeneralizedBelief, upind, R::AbstractMatrix, c, g)
     cluster_to.Rmsg[:,1:k2] .= 0
     cluster_to.Rmsg[1:m2,1:k2] = R
     cluster_to.Rmsg[perm,:] = cluster_to.Rmsg[:,:]
-    # cluster_to.cmsg[1:k2] .= 0
     cluster_to.cmsg[1:k2] = c
     # precision
     cluster_to.Qmsg .= 0
@@ -604,11 +605,12 @@ if it is a generalized belief (we ignore the constraint part).
 The first form stores the potential and precision canonical parameters of the incoming
 message in `residual`, but returns nothing. The second form returns the canonical parameters
 of the incoming message, and dispatches on the types of `cluster_from`, `sepset` and
-`cluster_to`. There are 3 cases:
-(1) `sepset`, `cluster_to` and `cluster_from` are all generalized beliefs
-(2) `sepset` and `cluster_from` are canonical beliefs, and `cluster_to` is a generalized
-belief
-(3) `sepset` and `cluster_to` are canonical beliefs, and `cluster_to` is a generalized
+`cluster_to`. There are 4 cases:
+(1) `sepset`, `cluster_to` and `cluster_from` are all canonical beliefs
+(2) `sepset`, `cluster_to` and `cluster_from` are all generalized beliefs
+(3) `sepset` and `cluster_from` are canonical beliefs, and `cluster_to` is a
+generalized belief
+(4) `sepset` and `cluster_to` are canonical beliefs, and `cluster_to` is a generalized
 belief
 
 ## Degeneracy

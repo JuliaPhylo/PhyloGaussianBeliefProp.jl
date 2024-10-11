@@ -159,7 +159,7 @@ diagonal); not always updated
 - `Q::P`: m × m matrix, where `Q[:,1:(m-k)]` stores generalized parameter Q
 - `Λ::V`: m × 1 vector, where `Diagonal(Λ[1:(m-k)])` gives generalized parameter Λ
 - `g::MVector{1,T}`: `g[1]` stores the generalized parameter g
-- `k::MVector{1,T}`: `k[1]` stores the constraint rank k
+- `k::MVector{1,Int}`: `k[1]` stores the constraint rank k
 - `R::P`: m × m matrix, where `R[:,1:k]` stores the generalized parameter R (i.e. the
 constraint matrix)
 - `c::V`: m × 1 matrix, where `c[1:k]` stores the the generalized parameter c
@@ -208,8 +208,8 @@ struct GeneralizedBelief{
     g::MVector{1,T}
     gmsg::MVector{1,T}
     "constraint rank"
-    k::MVector{1,Int64}
-    kmsg::MVector{1,Int64}
+    k::MVector{1,Int}
+    kmsg::MVector{1,Int}
     "constraint matrix: linear dependencies among inscope variables"
     R::P
     Rmsg::P
@@ -225,7 +225,7 @@ end
 """
     GeneralizedBelief(nodelabels, numtraits, inscope, belieftype, metadata, T=Float64)
 
-Constructor to allocate memory for one cluster, and initialize objects with 0s
+Constructor to allocate memory for one cluster, and initialize objects with zeros
 to initialize the belief with the constant function exp(0)=1.
 """
 function GeneralizedBelief(
@@ -243,7 +243,7 @@ function GeneralizedBelief(
     # canonical part
     Q = MMatrix{cldim,cldim,T}(0 for _ in 1:(cldim*cldim))
     Λ = MVector{cldim,T}(0 for _ in 1:cldim)
-    k = MVector{1,Int64}(0)
+    k = MVector{1,Int}(0)
     h = MVector{cldim,T}(0 for _ in 1:cldim)
     μ = MVector{cldim,T}(0 for _ in 1:cldim)
     g = MVector{1,T}(0)
@@ -269,7 +269,7 @@ function GeneralizedBelief(b::CanonicalBelief{T,Vlabel,P,V,M}) where {T,Vlabel,P
     # J = SArray{Tuple{size(b.J)...}}(b.J) # `eigen` cannot be called on
     Q, Λ = LA.svd(b.J)
     m = size(b.J,1) # dimension
-    k = MVector{1,Int64}(0) # constraint rank 0
+    k = MVector{1,Int}(0) # constraint rank 0
     R = MMatrix{m,m,T}(undef)
     c = MVector{m,T}(undef)
     GeneralizedBelief{T,Vlabel,P,V,M}(
@@ -277,26 +277,6 @@ function GeneralizedBelief(b::CanonicalBelief{T,Vlabel,P,V,M}) where {T,Vlabel,P
         b.μ,Q*b.h,similar(Q*b.h),Q,similar(Q),Λ,similar(Λ),b.g,similar(b.g),
         k,similar(k),R,similar(R),c,similar(c),
         b.type,b.metadata)
-end
-
-"""
-    GeneralizedBelief(b::CanonicalBelief, R::AbstractMatrix)
-
-Constructor from a canonical belief `b` and a constraint matrix `R`.
-
-`R` is assumed to have the same number of rows as `b.R`, and all entries of
-`b.c[1:size(R)[2]]` are assumed to be 0.
-"""
-function GeneralizedBelief(b::CanonicalBelief{T,Vlabel,P,V,M}, R::AbstractMatrix{T}) where {T,Vlabel,P,V,M}
-    gb = GeneralizedBelief(b)
-    m, k = size(R)
-    gb.R[:,1:k] = R # R should have the same no. of rows as gb.R
-    gb.Q[:,1:(m-k)] = LA.nullspace(transpose(R))
-    gb.Λ[1:(m-k)] = LA.diag(transpose(view(gb.Q,:,1:(m-k)))*b.J*view(gb.Q,:,1:(m-k)))
-    gb.h[1:(m-k)] = transpose(view(gb.Q,:,1:(m-k)))*b.h
-    gb.k[1] = k
-    gb.c[1:k] .= 0
-    gb
 end
 
 nodelabels(b::AbstractBelief) = b.nodelabel
@@ -602,102 +582,6 @@ function allocatebeliefs(
 end
 
 """
-    init_beliefs_allocate(tbl::Tables.ColumnTable, taxa, net, clustergraph,
-                          evolutionarymodel)
-
-Vector of beliefs, initialized to the constant function exp(0)=1,
-one for each cluster then one for each sepset in `clustergraph`.
-`tbl` is used to know which leaf in `net` has data for which trait,
-so as to remove from the scope each variable without data below it.
-`taxa` should be a vector with taxon names in the same order as they come in
-the table of data `tbl`.
-The root is removed from scope if the evolutionary model has a fixed root: so as
-to use the model's fixed root value as data if the root as zero prior variance.
-Also removed from scope is any hybrid node that is degenerate and who has
-a single child edge of positive length.
-
-Warnings: this function might need to be re-run to re-do allocation if
-- the data changed: different number of traits, or different pattern of missing
-  data at the tips
-- the model changed: with the root changed from fixed to random, see
-  [`init_beliefs_allocate_atroot!`](@ref) in that case.
-"""
-function init_beliefs_allocate(
-    tbl::Tables.ColumnTable,
-    taxa::AbstractVector,
-    net::HybridNetwork,
-    clustergraph,
-    model::EvolutionaryModel{T},
-) where T
-    numtraits = length(tbl)
-    nnodes = length(net.nodes_changed)
-    nnodes > 0 ||
-        error("the network should have been pre-ordered, with indices used in cluster graph")
-    fixedroot = isrootfixed(model)
-    #= hasdata: to know, for each node, whether that node has a descendant
-                with data, for each trait.
-    If not: that node can be removed from all clusters & sepsets.
-    If yes and the node is a tip: the evidence should be used later,
-      then the tip can be removed the evidence is absorbed.
-    =#
-    hasdata = falses(numtraits, nnodes)
-    for i_node in reverse(eachindex(net.nodes_changed))
-        node = net.nodes_changed[i_node]
-        nodelab = node.name
-        i_row = findfirst(isequal(nodelab), taxa)
-        if !isnothing(i_row) # the node has data: it should be a tip!
-            node.leaf || error("A node with data is internal, should be a leaf")
-            for v in 1:numtraits
-              hasdata[v,i_node] = !ismissing(tbl[v][i_row])
-            end
-        end
-        if node.leaf
-            all(!hasdata[v,i_node] for v in 1:numtraits) &&
-                @error("tip $nodelab in network without any data")
-            continue
-        end
-        for e in node.edge
-            ch = getchild(e)
-            ch !== node || continue # skip parent edges
-            i_child = findfirst( n -> n===ch, net.nodes_changed)
-            isempty(i_child) && error("oops, child (number $(ch.number)) not found in nodes_changed")
-            hasdata[:,i_node] .|= hasdata[:,i_child] # bitwise or
-        end
-        all(!hasdata[v,i_node] for v in 1:numtraits) &&
-            @error("internal node $nodelab without any data below")
-    end
-    #= next: create a belief for each cluster and sepset. inscope =
-    'has partial information and non-degenerate variance or precision?' =
-    - false at the root if "fixedroot", else:
-    - 'hasdata?' at internal nodes (assumes non-degenerate transitions)
-    - false at tips (assumes all data are at tips)
-    - false at degenerate hybrid node with 1 tree child edge of positive length
-    =#
-    function build_inscope(set_nodeindices)
-        inscope = falses(numtraits, length(set_nodeindices)) # remove from scope by default
-        for (i,i_node) in enumerate(set_nodeindices)
-            node = net.nodes_changed[i_node]
-            (node.leaf || (isdegenerate(node) && unscope(node))) && continue # inscope[:,i] already false
-            fixedroot && i_node==1 && continue # keep 'false' at the root if fixed
-            inscope[:,i] .= hasdata[:,i_node]
-        end
-        return inscope
-    end
-    beliefs = CanonicalBelief{T}[]
-    for cllab in labels(clustergraph)
-        nodeindices = clustergraph[cllab][2]
-        inscope = build_inscope(nodeindices)
-        push!(beliefs, CanonicalBelief(nodeindices, numtraits, inscope, bclustertype, cllab,T))
-    end
-    for sslab in edge_labels(clustergraph)
-        nodeindices = clustergraph[sslab...]
-        inscope = build_inscope(nodeindices)
-        push!(beliefs, CanonicalBelief(nodeindices, numtraits, inscope, bsepsettype, sslab,T))
-    end
-    return beliefs
-end
-
-"""
     ClusterFactor(belief::AbstractBelief{T}) where T
 
 Constructor to allocate memory for one cluster factor, with canonical parameters
@@ -733,10 +617,8 @@ function init_factors_allocate(
     beliefs::AbstractVector{B},
     nclusters::Integer
 ) where B<:AbstractBelief{T} where T
-    # factors = FamilyFactor{T}[]
     factors = Vector{ClusterFactor}(undef, nclusters)
     for i in 1:nclusters
-        # push!(factors, FamilyFactor(beliefs[i]))
         factors[i] = ClusterFactor(beliefs[i])
     end
     return factors
@@ -802,9 +684,12 @@ end
 """
     init_beliefs_reset!(beliefs::Vector{<:AbstractBelief})
 
-Reset all beliefs (which can be cluster and/or sepset beliefs) to h=0, J=0, g=0 (μ unchanged).
-They can later be re-initialized for different model parameters and
-re-calibrated, without re-allocating memory.
+Reset all beliefs (which can be cluster and/or sepset beliefs) so that they can
+later be re-initialized for different model parameters and re-calibrated, without
+re-allocating memory.
+For CanonicalBeliefs, all entries of h, J, g are zeroed, with μ left unchanged.
+For GeneralizedBeliefs, all entries of h, hmsg, Λ, Λmsg, g, gmsg, k, kmsg are
+zeroed. Q and Qmsg are set to the identity. μ, R, Rmsg, c, cmsg are left unchanged.
 """
 function init_beliefs_reset!(beliefs::AbstractVector{B}) where B<:AbstractBelief{T} where T
     for be in beliefs
@@ -818,23 +703,17 @@ function init_belief_reset!(be::CanonicalBelief{T}) where T
     be.g[1] = zero(T)
     return nothing
 end
-function init_belief_reset!(be::GeneralizedBelief)
-    be.h .= 0
-    be.hmsg .= 0 
-    be.Q .= 0
-    be.Qmsg .= 0
-    be.Q[:,:] += LA.I
-    be.Qmsg[:,:] += LA.I
-    be.Λ .= 0
-    be.Λmsg .= 0
-    be.g[1] = 0
-    be.gmsg[1] = 0
-    be.k[1] = 0
-    be.kmsg[1] = 0
-    # be.R
-    # be.Rmsg
-    # be.c
-    # be.cmsg
+function init_belief_reset!(be::GeneralizedBelief{T}) where T
+    be.h .= zero(T)
+    be.hmsg .= zero(T)
+    be.Q[:,:] = LA.UniformScaling(one(T))(size(be.Q,1))
+    be.Qmsg[:,:] = LA.UniformScaling(one(T))(size(be.Qmsg,1))
+    be.Λ .= zero(T)
+    be.Λmsg .= zero(T)
+    be.g[1] = zero(T)
+    be.gmsg[1] = zero(T)
+    be.k[1] = Int(0)
+    be.kmsg[1] = Int(0)
     return nothing
 end
 
@@ -906,11 +785,9 @@ function assignfactors!(
     numtraits = dimension(model)
     for (ni, ci) in enumerate(node2cluster)
         be = beliefs[ci]
-        # nf, nfinscope = node2family[ni]
-        nf = node2family[ni]
+        nf = node2family[ni] # nodefamily: [child, parent1, ...]
         nfsize = length(nf)
-        # ch = prenodes[nf[1]] # child node
-        ch = prenodes[ni]
+        ch = prenodes[ni] # child node
         if nfsize == 1
             ni != 1 && error("only the root node can belong to a family of size 1")
             # root is inscope iff root is not fixed (i.e. isrootfixed(model) == false)
@@ -951,137 +828,6 @@ function assignfactors!(
         mult!(be, factorind, ϕ...)
     end
     return
-end
-
-"""
-    init_beliefs_assignfactors!(beliefs,
-                                evolutionarymodel, columntable, taxa,
-                                nodevector_preordered)
-
-Initialize cluster beliefs prior to belief propagation, by assigning
-each factor to one cluster. Sepset beliefs are reset to 0.
-There is one factor for each node v in the vector of nodes:
-the density of X\\_v conditional on its parent X\\_pa(v) if v is not the root,
-or the prior density for X_root.
-- for each leaf, the factor is reduced by absorbing the evidence for that leaf,
-  that is, the data found in the `columntable`, whose rows should be ordered by
-  taxa as they appear in `taxa`.
-- for each leaf, missing trait values are removed from scope.
-- for each internal node, any trait not in scope (e.g. if all descendant leaves
-  are missing a value for this trait) is marginalized out of the factor.
-
-Assumptions:
-- In vector `nodevector_preordered`, nodes are assumed to be preordered.
-  Typically, this vector is `net.nodes_changed` after the network is preordered.
-- Belief node labels correspond to the index of each node in `nodevector_preordered`.
-- In `beliefs`, cluster beliefs come first and sepset beliefs come last,
-  as when created by [`init_beliefs_allocate`](@ref)
-
-Output: vector `node2belief` such that, if `i` is the preorder index of a node
-in the network, `node2belief[i]` is the index of the belief that the node family
-was assigned to.
-
-The `beliefs` vector is modified in place.
-"""
-function init_beliefs_assignfactors!(
-        beliefs::AbstractVector{<:AbstractBelief},
-        model::EvolutionaryModel,
-        tbl::Tables.ColumnTable,
-        taxa::AbstractVector,
-        prenodes::Vector{PN.Node},
-)
-    init_beliefs_reset!(beliefs)
-    numtraits = dimension(model)
-    visited = falses(length(prenodes))
-    node2belief = Vector{Int}(undef, length(prenodes)) # node preorder index → belief index
-    for (i_node,node) in enumerate(prenodes)
-        visited[i_node] && continue # skip child of unscoped degenerate hybrid
-        nodelab = node.name
-        if i_node == 1 # root
-            isrootfixed(model) && continue # h,J,g all 0: nothing to do
-            i_b = findfirst(b -> 1 ∈ nodelabels(b), beliefs)
-            isnothing(i_b) && error("no cluster containing the root, number $(node.number).")
-            i_inscope = (1,)
-            h,J,g = factor_root(model)
-        elseif node.hybrid
-            pae = PN.Edge[] # collect parent edges, parent nodes, and their
-            pa  = PN.Node[] # preorder indices, sorted in postorder
-            i_parents = Int[]
-            for e in node.edge # loop over parent edges
-                getchild(e) === node || continue
-                pn = getparent(e) # parent node
-                pi = findfirst(n -> n===pn, prenodes) # parent index
-                ii = findfirst(i_parents .< pi) # i_parents is reverse-sorted
-                if isnothing(ii) ii = length(i_parents) + 1; end
-                insert!(i_parents, ii, pi)
-                insert!(pa, ii, pn)
-                insert!(pae, ii, e)
-            end
-            if isdegenerate(node) && unscope(node)
-                che = getchildedge(node)
-                ch = getchild(che)
-                i_child = findfirst(n -> n===ch, prenodes)
-                visited[i_child] = true
-                h,J,g = factor_tree_degeneratehybrid(model, pae, che)
-                if ch.leaf
-                    i_datarow = findfirst(isequal(ch.name), taxa)
-                    h,J,g = absorbleaf!(h,J,g, i_datarow, tbl)
-                    i_inscope = (i_parents...,)
-                else
-                    i_inscope = (i_child, i_parents...)
-                end
-            else
-                i_inscope = (i_node, i_parents...)
-                h,J,g = factor_hybridnode(model, pae)
-                @debug "node $(node.name), lengths $([e.length for e in pae]), gammas $([p.gamma for p in pae])\nh=$h, J=$J, g=$g"
-            end
-            i_b = findfirst(b -> issubset(i_inscope, nodelabels(b)), beliefs)
-            isnothing(i_b) && error("no cluster containing the scope for hybrid $(node.number).")
-        else
-            e = getparentedge(node)
-            pa = getparent(e)
-            i_parent = findfirst(n -> n===pa, prenodes)
-            i_b = findfirst(x -> i_parent ∈ x && i_node ∈ x, nodelabels(b) for b in beliefs)
-            isnothing(i_b) && error("no cluster containing nodes $(node.number) and $(pa.number).")
-            h,J,g = factor_treeedge(model, e)
-            if node.leaf
-                i_datarow = findfirst(isequal(nodelab), taxa)
-                h,J,g = absorbleaf!(h,J,g, i_datarow, tbl)
-                i_inscope = (i_parent,)
-            else
-                i_inscope = (i_node,i_parent)
-            end
-        end
-        node2belief[i_node] = i_b
-        be = beliefs[i_b]
-        be.type == bclustertype || error("belief $(be.metadata) is of type $(be.type)")
-        if isrootfixed(model) && 1 ∈ i_inscope # the node's parents include the root
-            1 == i_inscope[end] || error("expected the root to be listed last (postorder)")
-            i_inscope = i_inscope[1:(end-1)] # remove last entry '1'
-            rootindex = (length(h) - numtraits + 1):length(h)
-            h,J,g = absorbevidence!(h,J,g, rootindex, rootpriormeanvector(model))
-        end
-        factorind = scopeindex(i_inscope, be)
-        @debug """
-        factor for node $(node.name), nodes in scope have preorder $i_inscope,
-        cluster $i_b with labels $(nodelabels(be)), inscope: $(inscope(be)),
-        their variable belief indices $factorind.
-        before marginalizing: h=$(round.(h, digits=2)), J=$(round.(J, digits=2)), g=$g
-        """ 
-        if length(factorind) != numtraits * length(i_inscope)
-            # then marginalize variables not in scope, e.g. bc no data below
-            var_inscope = view(inscope(be), :, indexin(i_inscope, nodelabels(be)))
-            keep_index = LinearIndices(var_inscope)[var_inscope]
-            @debug """factor for node $(node.name), cluster $i_b with labels $(nodelabels(be)),
-            need to marginalize, keep index $keep_index.
-            h=$(round.(h, digits=2)), J=$(round.(J, digits=2)), g=$g"""
-            h,J,g = marginalize(h,J,g, keep_index, be.metadata)
-        end
-        view(be.h, factorind) .+= h
-        view(be.J, factorind, factorind) .+= J
-        be.g[1] += g
-    end
-    return node2belief
 end
 
 #= messages in ReactiveMP.jl have an `addons` field that stores computation history:
