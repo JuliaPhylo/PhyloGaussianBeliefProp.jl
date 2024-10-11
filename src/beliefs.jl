@@ -462,7 +462,7 @@ Tuple `(beliefs, (node2cluster, node2family, node2degen, cluster2nodes))` with:
   preorder indices: [child, parent1, ...].
 - `node2fixed`: vector of booleans, indicating for each node if its value is
   fixed, either because it's the root and is assumed fixed by the model,
-  or because it's a tip with data (and any missing values removed from scope),
+  or because it's a tip with data (and any missing values removed from scope).
 - `node2degen`: vector mapping each node to a boolean indicating if its
   distribution is deterministic given its parents (e.g. if all of its parent
   edges 0 length under a BM with no extra variance).
@@ -499,28 +499,29 @@ function allocatebeliefs(
                 with data, for each trait.
     If not: that node can be removed from all clusters & sepsets
     If yes and the node is a tip: the evidence should be used later, and the tip
-    can be removed when the evidence is absorbed
-    =#
+    can be removed when the evidence is absorbed =#
     clusterlabs = labels(clustergraph) # same order as cluster beliefs
-    node2cluster = zeros(Int, length(prenodes))
-    node2family = Vector{Vector{T1}}(undef, length(prenodes))
-    node2fixed = falses(length(prenodes))
-    node2degen = falses(length(prenodes))
+    node2cluster = zeros(T1, nnodes)
+    node2family = Vector{Vector{T1}}(undef, nnodes)
+    node2fixed = falses(nnodes)
+    node2degen = falses(nnodes)
     cluster2nodes = [Vector{T1}() for _ in clusterlabs]
+    #= cluster2degen[i]: cluster i is assigned some degenerate node family, excluding the
+    singleton of a fixed root =#
     cluster2degen = falses(length(clusterlabs))
     hasdata = falses(numtraits, nnodes)
-    for i_node in reverse(1:length(prenodes))
-        node = prenodes[i_node]
+    for ni in reverse(1:nnodes)
+        node = prenodes[ni]
         nodelab = node.name
         if node.leaf
             i_row = findfirst(isequal(nodelab), taxa)
             isnothing(i_row) && error("tip $nodelab in network without any data")
             for v in 1:numtraits
-                hasdata[v,i_node] = !ismissing(tbl[v][i_row])
+                hasdata[v,ni] = !ismissing(tbl[v][i_row])
             end
         end
-        i_parents = Int[] # preorder indices of parent nodes, sorted in postorder
-        degen = node.hybrid # flag if node is degenerate hybrid
+        i_parents = T1[] # preorder indices of parent nodes, sorted in postorder
+        degen = true
         for e in node.edge 
             ch = getchild(e)
             if ch === node # parent edge
@@ -533,52 +534,49 @@ function allocatebeliefs(
                 i_child = findfirst(n -> n === ch, prenodes)
                 isempty(i_child) && error("oops, child (number $(ch.number)) not
                     found in prenodes")
-                hasdata[:,i_node] .|= hasdata[:,i_child] # bitwise or
+                hasdata[:,ni] .|= hasdata[:,i_child] # bitwise or
             end
         end
-        all(!hasdata[v,i_node] for v in 1:numtraits) &&
+        all(!hasdata[v,ni] for v in 1:numtraits) &&
             (node.leaf ? @error("tip $nodelab in network without any data") :
                          @error("internal node $nodelab without any data below"))
-        nodefamily = [i_node, i_parents...]
-        (node.leaf || (i_node == 1) && fixedroot) && (node2fixed[i_node] = true)
-        i_b = findfirst(cl -> issubset(nodefamily, clustergraph[cl][2]), clusterlabs)
-        isnothing(i_b) && error("no cluster containing the node family for $(node.number).")
-        node2cluster[i_node] = i_b
-        node2family[i_node] = nodefamily
-        node2degen[i_node] = degen
-        push!(cluster2nodes[i_b], i_node)
-        !cluster2degen[i_b] && degen && (cluster2degen[i_b] = degen)
+        nf = [ni, i_parents...] # node family
+        ci = findfirst(cl -> issubset(nf, clustergraph[cl][2]), clusterlabs)
+        isnothing(ci) && error("no cluster containing the node family for $(node.number).")
+        node2cluster[ni] = ci
+        node2family[ni] = nf
+        (node.leaf || (ni == 1) && fixedroot) && (node2fixed[ni] = true)
+        node2degen[ni] = degen
+        push!(cluster2nodes[ci], ni)
+        (ni > 1) && !cluster2degen[ci] && degen && (cluster2degen[ci] = degen)
     end
     #= next: create a belief for each cluster and sepset. inscope =
     'has partial information and non-degenerate variance or precision?' =
     - false at the root if "fixedroot", else:
     - 'hasdata?' at internal nodes (assumes non-degenerate transitions)
     - false at tips (assumes all data are at tips)
-    - false at degenerate hybrid node with 1 child tree edge of positive length
-    =#
+    - false at degenerate hybrid node with 1 child tree edge of positive length =#
     function build_inscope(set_nodeindices)
         inscope = falses(numtraits, length(set_nodeindices))
-        for (i,i_node) in enumerate(set_nodeindices)
-            node = prenodes[i_node]
-            (node.leaf || (i_node == 1) && fixedroot) && continue # keep 'false' at the root if fixed
-            # isdegenerate(node) && unscope(node) && continue # todo: remove
-            inscope[:,i] = view(hasdata,:,i_node)
+        for (i,ni) in enumerate(set_nodeindices)
+            node = prenodes[ni]
+            (node.leaf || (ni == 1) && fixedroot) && continue # keep 'false' at the root if fixed
+            inscope[:,i] = view(hasdata,:,ni)
         end
         return inscope
     end
     beliefs = AbstractBelief{T2}[]
-    for (i_b, cllab) in enumerate(clusterlabs)
+    for (ci, cllab) in enumerate(clusterlabs)
         nodeindices = clustergraph[cllab][2]
         inscope = build_inscope(nodeindices)
-        #= if cluster belief contains a degenerate hybrid node family, then assign
-        a generalized belief, else assign a canonical belief
-        Update: the above condition is NOT sufficient to decide if a belief should be
-        canonical or generalized. E.g. its possible to have a cluster that contains a 
-        degenerate hybrid, none of its parents, but all its grandparents. If both its
+        #= Current rule: assign a generalized cluster if the cluster contains a degenerate
+        hybrid node family, else assign a canonical cluster
+        Possible misassignment: the above rule is not sufficient to conclude that a belief
+        should be canonical or generalized. E.g. its possible to have a cluster that contains
+        a degenerate hybrid, none of its parents, but all its grandparents. If both its
         parents are also degenerate hybrids, then the child and its grandparents will be
-        deterministically related.
-        =#
-        beliefconstructor = cluster2degen[i_b] ? GeneralizedBelief : CanonicalBelief
+        deterministically related =#
+        beliefconstructor = cluster2degen[ci] ? GeneralizedBelief : CanonicalBelief
         push!(beliefs, beliefconstructor(nodeindices, numtraits, inscope, bclustertype,
             cllab, T2))
     end
@@ -588,6 +586,15 @@ function allocatebeliefs(
         beliefconstructor = (cluster2degen[code_for(clustergraph, cllab1)] &&
             cluster2degen[code_for(clustergraph, cllab2)]) ?
             GeneralizedBelief : CanonicalBelief
+        #= Current rule: assign a generalized sepset if both adjacent cluster beliefs are
+        generalized, else assign a canonical sepset
+        Possible cases:
+        (1) sender and receiver are generalized => generalized sepset
+        (2) sender and receiver are canonical => canonical sepset
+        (3) canonical sender, generalized receiver => canonical sepset
+        (4) generalized sender, canonical receiver => canonical sepset
+        Possible misassignment (valid but less efficient): case 1, where a canonical sepset
+        may have sufficed =#
         push!(beliefs, beliefconstructor(nodeindices, numtraits, inscope, bsepsettype,
             (cllab1, cllab2), T2))
     end

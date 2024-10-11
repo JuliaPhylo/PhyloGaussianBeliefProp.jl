@@ -29,11 +29,6 @@ end
     m = PGBP.UnivariateBrownianMotion(1, 0)
     b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
     ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
-    # no method to multiply a Dirac measure into a CanonicalBelief
-    @test_throws MethodError PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
-    # convert b[1] and b[4] into GeneralizedBelief
-    b[1] = PGBP.GeneralizedBelief(b[1])
-    b[4] = PGBP.GeneralizedBelief(b[4])
     PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
     spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
     # b[3] and b[5] should also be represented as GeneralizedBeliefs
