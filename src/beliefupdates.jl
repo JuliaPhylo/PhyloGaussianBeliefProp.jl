@@ -102,16 +102,15 @@ function marginalize!(cluster_from::GeneralizedBelief, keepind)
     m1 < k && error("constraint rank should not exceed belief dimension")
     if m1 == mm # no/trivial marginalization
         cluster_from.kmsg[1] = cluster_from.k[1]
-        cluster_from.Rmsg[1:m1,1:k] = view(cluster_from.R,keepind,1:k)
         cluster_from.cmsg[1:k] = view(cluster_from.c,1:k)
         cluster_from.Λmsg[1:(m1-k)] = view(cluster_from.Λ,1:(m1-k))
-        cluster_from.Qmsg[1:m1,1:(m1-k)] = view(cluster_from.Q,keepind,1:(m1-k))
+        cluster_from.Qmsg[:,:] = cluster_from.Q
         cluster_from.hmsg[1:(m1-k)] = view(cluster_from.h,1:(m1-k))
         cluster_from.gmsg[1] = cluster_from.g[1]
         return nothing
     end
     Q1 = cluster_from.Q[keepind,1:(m1-k)] # mm x (m1-k)
-    R1 = cluster_from.R[keepind,1:k] # mm x k
+    R1 = cluster_from.Q[keepind,(m1-k+1):m1] # mm x k
     Λ = LA.Diagonal(view(cluster_from.Λ,1:(m1-k))) # matrix, not vector
     ## compute marginal and save parameters to cluster_from message
     # constraint rank (todo: set threshold for a zero singular value)
@@ -122,8 +121,8 @@ function marginalize!(cluster_from::GeneralizedBelief, keepind)
     km = mm - length(nonzeroind)
     cluster_from.kmsg[1] = km
     # constraint
-    cluster_from.Rmsg[1:mm,1:km] = view(U1,:,setdiff(1:mm,nonzeroind)) # mm x km
-    cluster_from.cmsg[1:km] = transpose(view(cluster_from.Rmsg,1:mm,1:km))*R1*
+    cluster_from.Qmsg[1:mm,(mm-km+1):mm] = view(U1,:,setdiff(1:mm,nonzeroind)) # mm x km
+    cluster_from.cmsg[1:km] = transpose(view(cluster_from.Qmsg,1:mm,(mm-km+1):mm))*R1*
         view(cluster_from.c,1:k)
     # precision
     V = V1[:,zeroind] # nullspace(Q1): (m1-k) x (m1-k-mm+km)
@@ -132,7 +131,7 @@ function marginalize!(cluster_from::GeneralizedBelief, keepind)
     firstzeroind = findfirst((x -> isapprox(x, 0; atol=atol)).(S_R1tQ1)) # todo: discuss threshold
     W = isnothing(firstzeroind) ? U_R1tQ1 : U_R1tQ1[:,1:(firstzeroind-1)] 
     Q2 = cluster_from.Q[setdiff(1:m1,keepind),1:(m1-k)] # (m1-mm) x (m1-k)
-    R2 = cluster_from.R[setdiff(1:m1,keepind),1:k] # (m1-mm) x k
+    R2 = cluster_from.Q[setdiff(1:m1,keepind),(m1-k+1):m1] # (m1-mm) x k
     F = transpose(W*((R2*W)\Q2)) # transpose(W(R2*W)⁺Q2): (m1-k) x k
     G = (transpose(Q1)-F*transpose(R1))*view(U1,:,nonzeroind) # (m1-k) x (mm-km)
     S = V*((transpose(V)*Λ*V) \ transpose(V)) # (m1-k) x (m1-k)
@@ -178,7 +177,7 @@ function integratebelief!(b::GeneralizedBelief)
     h = view(b.h,1:(m-k))
     Λ = view(b.Λ,1:(m-k))
     any(Λ .== 0) && error("belief is not normalizable")
-    μ = view(b.Q,:,1:(m-k))*(h ./ Λ) + view(b.R,:,1:k)*b.c[1:k]
+    μ = view(b.Q,:,1:(m-k))*(h ./ Λ) + view(b.Q,:,(m-k+1):m)*b.c[1:k]
     b.μ[:] = μ
     #= expression for `norm` derived from Eq. 15 of Schoeman et. al (2022), also
     reduces as a special case of marginalize! =#
@@ -318,18 +317,17 @@ function extend!(cluster_to::GeneralizedBelief, sepset::GeneralizedBelief)
     # constraint rank
     k2 = sepset.kmsg[1]
     cluster_to.kmsg[1] = k2
-    # constraint
-    cluster_to.Rmsg[:,1:k2] .= 0.0 # reset
-    cluster_to.Rmsg[1:m2,1:k2] = view(sepset.Rmsg,:,1:k2)
-    cluster_to.Rmsg[perm,:] = cluster_to.Rmsg[:,:] # permute rows of [R; 0]
-    cluster_to.cmsg[1:k2] = view(sepset.cmsg,1:k2)
     # precision
-    cluster_to.Qmsg .= 0.0
-    cluster_to.Qmsg[LA.diagind(cluster_to.Qmsg)] .= 1.0 # 1s along the diagonal
+    cluster_to.Qmsg .= 0.0 # reset
+    cluster_to.Qmsg[(m2+1):m1,(m2-k2+1):(m1-k2)] += LA.I # 1s along the diagonal
     cluster_to.Qmsg[1:m2,1:(m2-k2)] = view(sepset.Qmsg,:,1:(m2-k2))
-    cluster_to.Qmsg[perm,:] = cluster_to.Qmsg[:,:] # permute rows of [Q 0; 0 I]
     cluster_to.Λmsg .= 0.0
-    cluster_to.Λmsg[1:(m2-k2)] = sepset.Λmsg[1:(m2-k2)]
+    cluster_to.Λmsg[1:(m2-k2)] = view(sepset.Λmsg,1:(m2-k2))
+    # constraint
+    cluster_to.Qmsg[1:m2,(m1-k2+1):m1] = view(sepset.Qmsg,:,(m2-k2+1):m2)
+    cluster_to.cmsg[1:k2] = view(sepset.cmsg,1:k2)
+    # permute precision and constraint (i.e. rows of [Q 0 R; 0 I 0])
+    cluster_to.Qmsg[perm,:] = cluster_to.Qmsg[:,:]
     # potential
     cluster_to.hmsg .= 0.0
     cluster_to.hmsg[1:(m2-k2)] = view(sepset.hmsg,1:(m2-k2))
@@ -343,11 +341,12 @@ function extend!(cluster_to::GeneralizedBelief, upind, Δh, ΔJ::AbstractMatrix,
     m2 = size(ΔJ,1)
     # constraint rank
     cluster_to.kmsg[1] = 0
-    # cluster_to.Rmsg, cluster_to.cmsg not updated since constraint is irrelevant
+    # cluster_to.cmsg not updated since constraint is irrelevant
     #= Q' = [Q 0; 0 I], Λ' = [Λ 0; 0 0],
     xᵀ(ΔJ)x = xᵀQΛQᵀx = x'ᵀQ'Λ'Q'ᵀx' = x'ᵀ(PᵀP)Q'Λ'Q'ᵀ(PᵀP)x' = (Px')ᵀ(PQ')Λ'(PQ')ᵀ(Px')
     (Δh)ᵀx = hᵀQᵀx = hᵀQ'ᵀx' = hᵀQ'ᵀ(PᵀP)x' = hᵀ(PQ')ᵀ(Px'), where h = Q⁻¹Δh =#
     # precision
+    # currently assumes that ΔJ ≻ 0; todo: generalize to ΔJ ⪰ 0
     Q, Λ = LA.svd(ΔJ)
     cluster_to.Qmsg .= 0.0
     cluster_to.Qmsg[LA.diagind(cluster_to.Qmsg)] .= 1.0
@@ -368,17 +367,16 @@ function extend!(cluster_to::GeneralizedBelief, upind, R::AbstractMatrix, c, g)
     m2, k2 = size(R)
     # contraint rank
     cluster_to.kmsg[1] = k2
-    # constraint
-    cluster_to.Rmsg[:,1:k2] .= 0
-    cluster_to.Rmsg[1:m2,1:k2] = R
-    cluster_to.Rmsg[perm,:] = cluster_to.Rmsg[:,:]
-    cluster_to.cmsg[1:k2] = c
     # precision
     cluster_to.Qmsg .= 0
-    cluster_to.Qmsg[LA.diagind(cluster_to.Qmsg)] .= 1.0
+    cluster_to.Qmsg[(m2+1):m1,(m2-k2+1):(m1-k2)] += LA.I
     cluster_to.Qmsg[1:m2,1:(m2-k2)] = LA.nullspace(transpose(R))
-    cluster_to.Qmsg[perm,:] = cluster_to.Qmsg[:,:]
     cluster_to.Λmsg .= 0
+    # constraint
+    cluster_to.Qmsg[1:m2,(m1-k2+1):m1] = R
+    cluster_to.cmsg[1:k2] = c
+    # permute precision and constraint
+    cluster_to.Qmsg[perm,:] = cluster_to.Qmsg[:,:]
     # potential
     cluster_to.hmsg .= 0
     # constant
@@ -413,31 +411,30 @@ function mult!(cluster_to::GeneralizedBelief)
     # constraint rank
     k1 = cluster_to.k[1]
     k2 = cluster_to.kmsg[1]
-    # contraints
-    R = cluster_to.R
-    R1 = R[:,1:k1]
-    R2 = cluster_to.Rmsg[:,1:k2]
-    c = cluster_to.c
-    c1 = c[1:k1]
-    c2 = cluster_to.cmsg[1:k2]
     # precisions
     m1 = size(cluster_to.Q,1)
     Q1 = cluster_to.Q[:,1:(m1-k1)]
     Λ1 = cluster_to.Λ[1:(m1-k1)]
-    m2 = size(cluster_to.Qmsg,1)
-    Q2 = cluster_to.Qmsg[:,1:(m2-k2)]
-    Λ2 = cluster_to.Λmsg[1:(m2-k2)]
+    Q2 = cluster_to.Qmsg[:,1:(m1-k2)]
+    Λ2 = cluster_to.Λmsg[1:(m1-k2)]
+    # contraints
+    R1 = cluster_to.Q[:,(m1-k1+1):m1]
+    R2 = cluster_to.Qmsg[:,(m1-k2+1):m1]
+    c = cluster_to.c
+    c1 = c[1:k1]
+    c2 = cluster_to.cmsg[1:k2]
     # potentials
     h = cluster_to.h
     h1 = h[1:(m1-k1)]
-    h2 = cluster_to.hmsg[1:(m2-k2)]
+    h2 = cluster_to.hmsg[1:(m1-k2)]
 
     ## compute product and save parameters to cluster_to
     # constraint
     V = LA.qr(Q1*transpose(Q1)*R2) # project R2 onto colsp(Q1)
     V = V.Q[:,findall(LA.diag(V.R) .!== 0.0)] # orthonormal basis for colsp(Q1*Q1ᵀ*R2)
     Δk1 = size(V,2) # increase in constraint rank
-    R[:,(k1+1):(k1+Δk1)] = V
+    cluster_to.Q[:,(m1-Δk1+1-k1):(m1-Δk1)] = R1
+    cluster_to.Q[:,(m1-Δk1+1):m1] = V
     R2tV = transpose(R2)*V
     if k2 == Δk1 # transpose(R2)*V is square
         b = R2tV \ (c2 - transpose(R2)*R1*c1)
@@ -454,10 +451,10 @@ function mult!(cluster_to::GeneralizedBelief)
     # for updating h and g (using new R1, c1, k1)
     Q1tVb = transpose(Q1)*V*b
     Λ1Q1tVb = Λ1.*Q1tVb
-    Q2tR1c1 = transpose(Q2)*view(R,:,1:k1)*view(c,1:k1)
+    Q2tR1c1 = transpose(Q2)*view(cluster_to.Q,:,(m1-k1+1):m1)*view(c,1:k1)
     Λ2Q2tR1c1 = Λ2.*Q2tR1c1
     # precision
-    U = LA.nullspace(transpose(view(R,:,1:k1)))
+    U = LA.nullspace(transpose(view(cluster_to.Q,:,(m1-k1+1):m1)))
     Z, Λ = LA.svd(transpose(U)*(Q1*LA.Diagonal(Λ1)*transpose(Q1) +
         Q2*LA.Diagonal(Λ2)*transpose(Q2))*U)
     cluster_to.Q[:,1:(m1-k1)] = U*Z
@@ -515,8 +512,8 @@ function divide!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
     k2 = sepset.k[1]
     # contraints
     m = size(sepset.Q,1) # m ≥ max(k1,k2)
-    R1 = cluster_from.Rmsg[1:m,1:k1]
-    R2 = sepset.R[:,1:k2] # m x k2
+    R1 = cluster_from.Qmsg[1:m,(m-k1+1):m]
+    R2 = sepset.Q[:,(m-k2+1):m] # m x k2
     c1 = cluster_from.cmsg[1:k1]
     # precisions
     Q1 = cluster_from.Qmsg[1:m,1:(m-k1)]
@@ -534,7 +531,7 @@ function divide!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
     k = size(Rtmp,2) # constraint rank for quotient
     k > k1 && error("constraint rank for quotient cannot exceed that of dividend")
     sepset.kmsg[1] = k
-    sepset.Rmsg[:,1:k] = Rtmp
+    sepset.Qmsg[:,(m-k+1):m] = Rtmp
     sepset.cmsg[1:k] = transpose(Rtmp)*R1*c1
     # precision
     ZΛZt = LA.Diagonal(Λ1)-transpose(Q1)*Q2*LA.Diagonal(Λ2)*transpose(Q2)*Q1
@@ -560,7 +557,7 @@ function divide!(sepset::GeneralizedBelief, cluster_from::GeneralizedBelief)
     
     ## update sepset (non-message) parameters to those of the dividend
     sepset.k[1] = k1
-    sepset.R[:,1:k1] = R1
+    sepset.Q[:,(m-k1+1):m] = R1
     sepset.c[1:k1] = c1
     sepset.Q[:,1:(m-k1)] = Q1
     sepset.Λ[1:(m-k1)] = Λ1

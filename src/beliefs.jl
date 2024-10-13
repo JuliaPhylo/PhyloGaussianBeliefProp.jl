@@ -210,9 +210,6 @@ struct GeneralizedBelief{
     "constraint rank"
     k::MVector{1,Int}
     kmsg::MVector{1,Int}
-    "constraint matrix: linear dependencies among inscope variables"
-    R::P
-    Rmsg::P
     "offset"
     c::V
     cmsg::V
@@ -248,12 +245,12 @@ function GeneralizedBelief(
     μ = MVector{cldim,T}(0 for _ in 1:cldim)
     g = MVector{1,T}(0)
     # constraint part
-    R = MMatrix{cldim,cldim,T}(0 for _ in 1:(cldim*cldim))
     c = MVector{cldim,T}(0 for _ in 1:cldim)
     GeneralizedBelief{T,typeof(nodelabels),typeof(Q),typeof(h),typeof(metadata)}(
         nodelabels,numtraits,inscope,
         μ,h,similar(h),Q,similar(Q),Λ,similar(Λ),g,similar(g),
-        k,similar(k),R,similar(R),c,similar(c),
+        k,similar(k),
+        c,similar(c),
         belief,metadata)
 end
 
@@ -267,15 +264,17 @@ are square with the same dimensions as `b.J`, and `Λ` is positive semidefinite.
 """
 function GeneralizedBelief(b::CanonicalBelief{T,Vlabel,P,V,M}) where {T,Vlabel,P,V,M}
     # J = SArray{Tuple{size(b.J)...}}(b.J) # `eigen` cannot be called on
-    Q, Λ = LA.svd(b.J)
+    Q, Λ = LA.svd(b.J) # todo: should this call svd(...; full=true)?
     m = size(b.J,1) # dimension
     k = MVector{1,Int}(0) # constraint rank 0
-    R = MMatrix{m,m,T}(undef)
+    # R = MMatrix{m,m,T}(undef)
     c = MVector{m,T}(undef)
     GeneralizedBelief{T,Vlabel,P,V,M}(
         b.nodelabel,b.ntraits,b.inscope,
         b.μ,Q*b.h,similar(Q*b.h),Q,similar(Q),Λ,similar(Λ),b.g,similar(b.g),
-        k,similar(k),R,similar(R),c,similar(c),
+        k,similar(k),
+        # R,similar(R),
+        c,similar(c),
         b.type,b.metadata)
 end
 
