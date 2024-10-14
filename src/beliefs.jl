@@ -822,7 +822,24 @@ function assignfactors!(
         if length(factorind) != numtraits * length(i_inscope)
             var_inscope = view(inscope(be), :, indexin(i_inscope, nodelabels(be)))
             keep_index = LinearIndices(var_inscope)[var_inscope]
-            ϕ = marginalize(ϕ..., keep_index, be.metadata)
+            if !node2fixed[ni]
+                #= if child node is not leaf, integrate out non-inscope traits of child node
+                first then those of parent(s), rather than all at once 
+                fixit: this works for BM, but not for general linear Gaussian? =#
+                integrate_index_ch = setdiff(1:numtraits, keep_index[keep_index .≤ numtraits])
+                keep_index_ch = setdiff(1:size(ϕ[1],1), integrate_index_ch)
+                ϕ = marginalize(ϕ..., keep_index_ch, be.metadata)
+                if any(.!node2fixed[nf[2:end]])
+                    keep_index_pa = keep_index[keep_index .> numtraits]
+                    integrate_index_pa = setdiff((numtraits+1):(numtraits * length(i_inscope)), keep_index_pa)
+                    keep_index_pa .-= (numtraits - sum(keep_index .≤ numtraits))
+                    integrate_index_pa .-= (numtraits - sum(keep_index .≤ numtraits))
+                    ϕ = marginalize(ϕ..., keep_index_pa, integrate_index_pa, be.metadata)
+                end
+            else
+                # if child node is leaf, integrate out non-inscope traits of parent(s)
+                ϕ = marginalize(ϕ..., keep_index, be.metadata)
+            end
         end
         mult!(be, factorind, ϕ...)
     end
