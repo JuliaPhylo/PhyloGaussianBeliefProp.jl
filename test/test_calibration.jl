@@ -112,11 +112,21 @@ end
         tbl_y = columntable(select(df, :y1, :y2))
         m = PGBP.MvDiagBrownianMotion((1,1), (0,0))
         b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m)
-        @test_broken PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
-        #= assignfactors! should NOT throw BPPosDefException after this bug (concerning how
-        we marginalize out variables with no data below, as mentioned in comments for
-        assignfactors!) is fixed =#
-        @test_throws PGBP.BPPosDefException PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
+        PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
+        ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
+        spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+        PGBP.calibrate!(ctb, [spt])
+        #=
+        Σnet = kron(Matrix(vcv(net)[!,[:A,:B,:C,:D]]), [1 0.0; 0.0 1])
+        Σnet_y2ABCmissing = Σnet[[1,3,5,7,8],[1,3,5,7,8]]; invΣ = inv(Σnet_y2ABCmissing)
+        yvec = [df[1,:y1], df[2,:y1], df[3,:y1], df[4,:y1], df[4,:y2]]
+        -0.5*transpose(yvec)*invΣ*yvec - 0.5*logdet(2π*Σnet_y2ABCmissing) # -7.578343735986344
+        =#
+        llscore = -7.578343735986344
+        for i in eachindex(ctb.belief)
+            _, tmp = PGBP.integratebelief!(ctb, i)
+            @test tmp ≈ llscore
+        end
     end
     @testset "level-3, 2 tips, 2 traits, 1 missing unscoped in 2 nodes. Join-graph, regularize by node subtree" begin
         netstr = "((#H1:0.1::0.4,#H2:0.1::0.4)I1:1.0,(((A:1.0)#H1:0.1::0.6,#H3:0.1::0.4)#H2:0.1::0.6,(B:1.0)#H3:0.1::0.6)I2:1.0)I3;"
@@ -139,9 +149,9 @@ end
         @test (@test_logs (:info, "calibration reached: iteration 4, schedule tree 1") PGBP.calibrate!(cgb, sch, 10; auto=true, info=true))
         #= Compare posterior means against clique tree estimates:
         ct = PGBP.clustergraph!(net, PGBP.Cliquetree());
-        b_ct, c2f = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m);
-        PGBP.assignfactors!(b_ct, m, tbl_y, df.taxon, net.nodes_changed, c2f);
-        ctb = PGBP.ClusterGraphBelief(b_ct, c2f);
+        b_ct, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m);
+        PGBP.assignfactors!(b_ct, m, tbl_y, df.taxon, net.nodes_changed, n2c, n2fam, n2fix);
+        ctb = PGBP.ClusterGraphBelief(b_ct, n2c, n2fam, n2fix, c2n);
         PGBP.calibrate!(ctb, [PGBP.spanningtree_clusterlist(ct, net.nodes_changed)]);
         PGBP.integratebelief!(b_ct[6]) # cluster I1I2I3: PGBP.clusterindex(:I1I2I3, ctb)
         # ([2.121105154896223, 30.005552577448075, 2.1360649504455984, 30.013032475222563, 2.128585052670908, 30.00929252633532], -1.39059577242449)
@@ -149,10 +159,10 @@ end
         # ([2.125583120364, 30.007791560181964, 2.129918967774073, 30.009959483886966, 2.121105154896214, 30.00555257744811], -1.390595772423012)
         =#
         tmp = PGBP.integratebelief!(b[6]) # 6: PGBP.clusterindex(:I1I2I3, cgb)
-        @test tmp[2] ≈ -1.390595772423
+        @test tmp[2] ≈ -1.390595772423 # -1.390595772422671
         @test all(tmp[1] .≈ [2.121105154896223, 30.005552577448075, 2.1360649504455984, 30.013032475222563, 2.128585052670943, 30.00929252633547])
         tmp = PGBP.integratebelief!(b[2]) # cluster 2: H1H2I1
-        @test tmp[2] ≈ -1.390595772423
+        @test tmp[2] ≈ -1.390595772423 # -1.3905957724256268
         @test all(tmp[1] .≈ [2.125583120364, 30.007791560181964, 2.129918967774073, 30.009959483886966, 2.121105154896214, 30.00555257744811])
         #= likelihood using PN.vcv and matrix inversion
         Σnet = kron(Matrix(vcv(net)[!,[:A,:B]]), [1 0.5; 0.5 1])
@@ -170,7 +180,7 @@ end
         PGBP.regularizebeliefs_bynodesubtree!(cgb, cg)
         @test (@test_logs PGBP.calibrate!(cgb, sch, 10; auto=true, info=false))
         tmp = PGBP.integratebelief!(b[6]) # I3 un-scoped bc fixed root, same posterior mean for I1 and I2
-        @test tmp[2] ≈ -3.3498677834866997
+        @test tmp[2] ≈ -3.3498677834866997 # -3.3498677834895716
         @test all(tmp[1] .≈ [2.121105154896223, 30.005552577448075, 2.1360649504455984, 30.013032475222563])
     end
 end
