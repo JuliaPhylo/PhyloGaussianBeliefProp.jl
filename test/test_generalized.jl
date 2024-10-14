@@ -15,9 +15,13 @@
     # In [H1, d, b, c, e], d is a parent of H1, and b, c are grandparents of H1
     clusters = [[6,2,1], [7,6,4,3,2], [7,6,5,4,3], [8,7]]
     cg = PGBP.clustergraph!(net, PGBP.LTRIP(clusters, net))
+    # [[net.nodes_changed[i].name for i in c] for c in clusters]
     m = PGBP.UnivariateBrownianMotion(1, 0)
     b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, cg, m)
-    cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
+    @test PGBP.isdegenerate_extendedfamily_covered([7,6,5,4,3], n2fam, n2d, n2fix)
+    @test PGBP.isdegenerate_extendedfamily_covered([6,2,1], n2fam, n2d, n2fix)
+    tmp = (@test_logs (:error, r"^cluster H1dbce is missing") PGBP.isdegenerate_extendedfamily_covered(cg, n2fam, n2d, n2fix))
+    @test !tmp
 end
 
 @testset "Univariate BM. Clique tree" begin

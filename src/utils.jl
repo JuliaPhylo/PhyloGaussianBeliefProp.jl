@@ -171,13 +171,17 @@ function isdegenerate_extendedfamily_covered(
 end
 
 """
-    isdegenerate_extendedfamily_covered(clusterindex,
-        node2family, node2degen, node2fixed)
+    isdegenerate_extendedfamily_covered(clustermembers, args...)
+    isdegenerate_extendedfamily_covered(cluster2nodes, args...)
 
 Boolean:
-`true` if for each node `v` in the input cluster `C` (represented by its index),
-    `C` contains all intermediate nodes in the degenerate extended family of `v`.
+`true` if for each node `v` in the input cluster `C`,
+`C` contains all intermediate nodes in the degenerate extended family of `v`.
 `false` if this property fails for one or more node `v` in `C`.
+
+The first method considers a single cluster, containing `clustermembers`.
+The second method consider all clusters in a cluster graph,
+and returns true if *all* clusters meet the condition.
 
 We say that `C` contains all intermediate ancestors for `v` in `v`'s degenerate
 extended family if:
@@ -189,20 +193,29 @@ extended family if:
 We check that this condition holds for all nodes `v` in `C` by checking,
 more simply, that for any `v` degenerate given its ancestors in `C`,
 all of `v`'s parents are in `C`.
+
+positional arguments `args...`: `node2family, node2degen, node2fixed`.
 """
 function isdegenerate_extendedfamily_covered(
     clustermembers::Vector{<:Integer},
-    node2family,
-    node2degen,
-    node2fixed,
+    args...
 )
-    for ni in clustermembers
-        _, b2 = isdegenerate_extendedfamily_covered(ni, clustermembers,
-                    node2family, node2degen, node2fixed)
+    for ni in reverse(clustermembers) # loop through nodes in pre-order
+        _, b2 = isdegenerate_extendedfamily_covered(ni, clustermembers, args...)
         b2 || return false
     end
     return true
 end
-
-# fixit: 3rd method to check that *all* clusters are good.
-# clustermembers = cluster2nodes[clusterindex]
+function isdegenerate_extendedfamily_covered(
+    cgraph::MetaGraph,
+    args...
+)
+    for lab in labels(cgraph)
+        clustermembers = cgraph[lab][2] # nodes listed by their preorder index
+        if !isdegenerate_extendedfamily_covered(clustermembers, args...)
+            @error "cluster $lab is missing an intermediate ancestor in a generate family"
+            return false
+        end
+    end
+    return true
+end
