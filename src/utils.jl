@@ -152,7 +152,7 @@ function isdegenerate_extendedfamily_covered(
     node2degen,
     node2fixed,
 )
-    b1 = node2degen[nodeindex]  # or should we use node2fixed[nodeindex]?
+    b1 = node2degen[nodeindex]
     b2 = true
     b1 || return (b1,b2) # node is not degenerate
     # if we get here: degenerate given its parents

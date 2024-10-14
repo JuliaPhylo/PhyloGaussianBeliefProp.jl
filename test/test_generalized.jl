@@ -18,6 +18,12 @@
     # [[net.nodes_changed[i].name for i in c] for c in clusters]
     m = PGBP.UnivariateBrownianMotion(1, 0)
     b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, cg, m)
+    @test PGBP.isdegenerate_extendedfamily_covered(7, [8,7], n2fam, n2d, n2fix) == (false, true) # hybrid, no parent in cluster
+    @test PGBP.isdegenerate_extendedfamily_covered(8, [8,7], n2fam, n2d, n2fix) == (false, true) # leaf
+    @test PGBP.isdegenerate_extendedfamily_covered(1, [6,2,1], n2fam, n2d, n2fix) == (true, true) # fixed root
+    @test PGBP.isdegenerate_extendedfamily_covered(5, [4,3,2], n2fam, n2d, n2fix) == (true, true)
+    @test PGBP.isdegenerate_extendedfamily_covered(7, [4,3,2], n2fam, n2d, n2fix) == (false, true)
+    @test PGBP.isdegenerate_extendedfamily_covered(7, [7,6,4,3], n2fam, n2d, n2fix) == (true, false)
     @test PGBP.isdegenerate_extendedfamily_covered([7,6,5,4,3], n2fam, n2d, n2fix)
     @test PGBP.isdegenerate_extendedfamily_covered([6,2,1], n2fam, n2d, n2fix)
     tmp = (@test_logs (:error, r"^cluster H1dbce is missing") PGBP.isdegenerate_extendedfamily_covered(cg, n2fam, n2d, n2fix))
