@@ -134,18 +134,63 @@ If a vector `U` is provided, it is used as the Upper cholesky factor of R=U'U,
 vectorized, so U should be of length p(p+1)/2 where p is the number of traits
 (also the length of μ).
 """
-function MvFullBrownianMotion(Uvec::AbstractVector{T}, μ, v=nothing) where T
-    # TODO: tested, but not used anywhere
-    numt = length(μ)
-    (numt*(1+numt)) ÷ 2 == length(Uvec) || error("Uvec and μ have conflicting sizes")
-    R = zeros(T, numt, numt)
-    for (k, (i,j)) in enumerate(((i,j) for i in 1:numt for j in i:numt))
-        R[i,j] = Uvec[k]
-    end
-    R .= R' * R
-    MvFullBrownianMotion(R, μ, v)
-end
+# function MvFullBrownianMotion(Uvec::AbstractVector{T}, μ, v=nothing) where T
+#     # TODO: tested, but not used anywhere
+#     numt = length(μ)
+#     (numt*(1+numt)) ÷ 2 == length(Uvec) || error("Uvec and μ have conflicting sizes")
+#     R = zeros(T, numt, numt)
+#     for (k, (i,j)) in enumerate(((i,j) for i in 1:numt for j in i:numt))
+#         R[i,j] = Uvec[k]
+#     end
+#     R .= R' * R
+#     MvFullBrownianMotion(R, μ, v)
+# end
 params(m::MvFullBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v)
+function params_optimize(m::MvFullBrownianMotion)
+    numt = dimension(m)
+    σ = sqrt.(LA.diag(m.R)) # vector of standard deviations
+    # upper cholesky factor of correlation matrix
+    ρchol = LA.cholesky(LA.Diagonal(1 ./ σ)*m.R*LA.Diagonal(1 ./ σ)).U
+    # store coordinates in unconstrained space that coordinates in ρchol are mapped to
+    ρcholtrans = zeros(binomial(numt, 2))
+    k = 1
+    for i in 2:numt
+        #= multiply by h2b to get from ρchol[i,j] ∈ S^{pos}_n (half Euclidean sphere) to
+        x ∈ B^{inf}_{n-1} (infinite norm ball) =#
+        h2b = 1
+        for j in 1:(i-1)
+            x = ρchol[i,j] * h2b # coordinate in B^{inf}_{n-1}
+            ρcholtrans[k] = atanh(x) # coordinate in R^{n-1}
+            h2b = (x / sqrt(1 - x^2)) / ρchol[i,j] # update h2b to transform next ρ[i,j]
+            k += 1
+        end
+    end
+    return [ρcholtrans..., log.(σ)..., m.μ...]
+end
+function params_original(m::MvFullBrownianMotion{T}, ρσμ::AbstractArray) where T
+    numt = dimension(m)
+    R = zeros(T, numt, numt); R[1,1] = 1
+    numρ = binomial(numt, 2)
+    ρcholtrans = ρσμ[1:numρ] # ρ (i.e. correlation) related parameters
+    σ = exp.(ρσμ[numρ+1:numρ+numt]) # standard deviations of R
+    k = 1
+    for i in 2:numt
+        #= multiply by e2inf to get from tanh(ρcholtrans[k]) ∈ B_{n-1} (Euclidean ball) to
+        B^{inf}_{n-1} (infinite norm ball) =#
+        e2inf = 1
+        norm = 0
+        for j in 1:(i-1)
+            x = tanh(ρcholtrans[k]) # R^{n-1} → B^{inf}_{n-1}
+            R[i,j] = x*e2inf # B^{inf}_{n-1} → B_{n-1}
+            e2inf *= sqrt(1 - x^2)
+            norm += R[i,j]^2
+            k += 1
+        end
+        R[i,i] = sqrt(1 - norm) # B_{n-1} → S^{pos}_n
+    end
+    R .= LA.Diagonal(σ)*(R' * R)*LA.Diagonal(σ)
+    return (LA.Symmetric(R), ρσμ[numρ+numt+1:end], m.v)
+end
 
 #= TODO: implement params_optimize and params_original for MvFullBrownianMotion
 - optimize variances with a log transformation
