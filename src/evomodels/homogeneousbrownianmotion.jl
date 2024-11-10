@@ -150,18 +150,18 @@ function params_optimize(m::MvFullBrownianMotion)
     numt = dimension(m)
     σ = sqrt.(LA.diag(m.R)) # vector of standard deviations
     # upper cholesky factor of correlation matrix
-    ρchol = LA.cholesky(LA.Diagonal(1 ./ σ)*m.R*LA.Diagonal(1 ./ σ)).U
+    ρchol = LA.cholesky(LA.symmetric(LA.Diagonal(1 ./ σ)*m.R*LA.Diagonal(1 ./ σ))).U
     # store coordinates in unconstrained space that coordinates in ρchol are mapped to
     ρcholtrans = zeros(binomial(numt, 2))
     k = 1
     for i in 2:numt
         #= multiply by h2b to get from ρchol[i,j] ∈ S^{pos}_n (half Euclidean sphere) to
         x ∈ B^{inf}_{n-1} (infinite norm ball) =#
-        h2b = 1
+        inf2e = 1
         for j in 1:(i-1)
-            x = ρchol[i,j] * h2b # coordinate in B^{inf}_{n-1}
+            x = ρchol[j,i] / inf2e # coordinate in B^{inf}_{n-1}
             ρcholtrans[k] = atanh(x) # coordinate in R^{n-1}
-            h2b = (x / sqrt(1 - x^2)) / ρchol[i,j] # update h2b to transform next ρ[i,j]
+            inf2e *= sqrt(1 - x^2)
             k += 1
         end
     end
@@ -169,26 +169,28 @@ function params_optimize(m::MvFullBrownianMotion)
 end
 function params_original(m::MvFullBrownianMotion{T}, ρσμ::AbstractArray) where T
     numt = dimension(m)
-    R = zeros(T, numt, numt); R[1,1] = 1
+    C = zeros(T, numt, numt); C[1,1] = 1
     numρ = binomial(numt, 2)
     ρcholtrans = ρσμ[1:numρ] # ρ (i.e. correlation) related parameters
     σ = exp.(ρσμ[numρ+1:numρ+numt]) # standard deviations of R
     k = 1
     for i in 2:numt
-        #= multiply by e2inf to get from tanh(ρcholtrans[k]) ∈ B_{n-1} (Euclidean ball) to
-        B^{inf}_{n-1} (infinite norm ball) =#
-        e2inf = 1
+        #= multiply by inf2e to get from tanh(ρcholtrans[k]) ∈ B^{inf}_{n-1} (infinite norm
+        ball) to B_{n-1} (Euclidean ball) =#
+        inf2e = 1
         norm = 0
         for j in 1:(i-1)
             x = tanh(ρcholtrans[k]) # R^{n-1} → B^{inf}_{n-1}
-            R[i,j] = x*e2inf # B^{inf}_{n-1} → B_{n-1}
-            e2inf *= sqrt(1 - x^2)
-            norm += R[i,j]^2
+            l = x * inf2e # B^{inf}_{n-1} → B_{n-1}
+            C[j,i] = l
+            norm += l^2
+            inf2e *= sqrt(1-x^2)
             k += 1
         end
-        R[i,i] = sqrt(1 - norm) # B_{n-1} → S^{pos}_n
+        C[i,i] = sqrt(1 - norm) # B_{n-1} → S^{pos}_n
     end
-    R .= LA.Diagonal(σ)*(R' * R)*LA.Diagonal(σ)
+    C .= LA.Diagonal(σ)*C
+    R = transpose(C)*C
     return (LA.Symmetric(R), ρσμ[numρ+numt+1:end], m.v)
 end
 
