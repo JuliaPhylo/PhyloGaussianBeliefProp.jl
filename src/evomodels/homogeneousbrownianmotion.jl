@@ -122,82 +122,93 @@ function MvFullBrownianMotion(R::AbstractMatrix, μ, v=nothing)
     J = inv(R) # uses cholesky. fails if not symmetric positive definite
     MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, branch_logdet_variance(numt, R))
 end
-"""
-    MvFullBrownianMotion(R::AbstractMatrix, μ, v=nothing)
-    MvFullBrownianMotion(U::AbstractVector, μ, v=nothing)
-
-Constructor for a full multivariate Brownian motion (homogeneous) with
-variance rate matrix `V` and prior mean vector `μ` at the root.
-If not provided, the prior variance matrix at the root `v` is set to 0.
-
-If a vector `U` is provided, it is used as the Upper cholesky factor of R=U'U,
-vectorized, so U should be of length p(p+1)/2 where p is the number of traits
-(also the length of μ).
-"""
-# function MvFullBrownianMotion(Uvec::AbstractVector{T}, μ, v=nothing) where T
-#     # TODO: tested, but not used anywhere
-#     numt = length(μ)
-#     (numt*(1+numt)) ÷ 2 == length(Uvec) || error("Uvec and μ have conflicting sizes")
-#     R = zeros(T, numt, numt)
-#     for (k, (i,j)) in enumerate(((i,j) for i in 1:numt for j in i:numt))
-#         R[i,j] = Uvec[k]
-#     end
-#     R .= R' * R
-#     MvFullBrownianMotion(R, μ, v)
-# end
 params(m::MvFullBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v)
 function params_optimize(m::MvFullBrownianMotion)
+    #=
+    Based on log-cholesky parametrization.
+    See https://mc-stan.org/docs/reference-manual/transforms.html#cholesky-factors-of-covariance-matrices
+    =#
     numt = dimension(m)
-    σ = sqrt.(LA.diag(m.R)) # vector of standard deviations
-    # upper cholesky factor of correlation matrix
-    ρchol = LA.cholesky(LA.symmetric(LA.Diagonal(1 ./ σ)*m.R*LA.Diagonal(1 ./ σ))).U
-    # store coordinates in unconstrained space that coordinates in ρchol are mapped to
-    ρcholtrans = zeros(binomial(numt, 2))
+    U = LA.cholesky(m.R).U # upper cholesky factor of covariance matrix
+    idx = LinearIndices(U)
+    idx_diag = (idx[i,i] for i in 1:numt)
+    idx_abovediag = (idx[i,j] for j in 2:numt for i in 1:(j-1))
+    # log-transform the diagonal elements of U
+    return [[log.(U[k]) for k in idx_diag]..., [U[k] for k in idx_abovediag]..., m.μ...]
+end
+function params_original(m::MvFullBrownianMotion{T}, Uμ::AbstractArray) where T
+    numt = dimension(m)
+    U = zeros(T, numt, numt) # upper Cholesky factor for R
     k = 1
-    for i in 2:numt
-        #= multiply by h2b to get from ρchol[i,j] ∈ S^{pos}_n (half Euclidean sphere) to
-        x ∈ B^{inf}_{n-1} (infinite norm ball) =#
-        inf2e = 1
-        for j in 1:(i-1)
-            x = ρchol[j,i] / inf2e # coordinate in B^{inf}_{n-1}
-            ρcholtrans[k] = atanh(x) # coordinate in R^{n-1}
-            inf2e *= sqrt(1 - x^2)
+    for i in 1:numt
+        U[i,i] = exp(Uμ[k])
+        k += 1
+    end
+    for j in 2:numt
+        for i in 1:(j-1)
+            U[i,j] = Uμ[k]
             k += 1
         end
     end
-    return [ρcholtrans..., log.(σ)..., m.μ...]
+    return (LA.Symmetric(transpose(U)*U), Uμ[k:end], m.v)
 end
-function params_original(m::MvFullBrownianMotion{T}, ρσμ::AbstractArray) where T
-    numt = dimension(m)
-    C = zeros(T, numt, numt); C[1,1] = 1
-    numρ = binomial(numt, 2)
-    ρcholtrans = ρσμ[1:numρ] # ρ (i.e. correlation) related parameters
-    σ = exp.(ρσμ[numρ+1:numρ+numt]) # standard deviations of R
-    k = 1
-    for i in 2:numt
-        #= multiply by inf2e to get from tanh(ρcholtrans[k]) ∈ B^{inf}_{n-1} (infinite norm
-        ball) to B_{n-1} (Euclidean ball) =#
-        inf2e = 1
-        norm = 0
-        for j in 1:(i-1)
-            x = tanh(ρcholtrans[k]) # R^{n-1} → B^{inf}_{n-1}
-            l = x * inf2e # B^{inf}_{n-1} → B_{n-1}
-            C[j,i] = l
-            norm += l^2
-            inf2e *= sqrt(1-x^2)
-            k += 1
-        end
-        C[i,i] = sqrt(1 - norm) # B_{n-1} → S^{pos}_n
-    end
-    C .= LA.Diagonal(σ)*C
-    R = transpose(C)*C
-    return (LA.Symmetric(R), ρσμ[numρ+numt+1:end], m.v)
-end
-
-#= TODO: implement params_optimize and params_original for MvFullBrownianMotion
-- optimize variances with a log transformation
-- optimize the correlation matrix using a good parametrization
-=#
+# function params_optimize(m::MvFullBrownianMotion)
+#     #=
+#     Based on spherical parametrization (for correlation matrices), aka LKJ transformation by
+#     sampling spheres.
+#     See:
+#         - Unconstrained parametrizations for variance-covariance matrices
+#         (https://doi.org/10.1007/BF00140873), Section 2
+#         - The Spherical Parametrization for Correlation Matrices and its Computational
+#         Advantages (https://doi.org/10.1007/s10614-023-10467-3), Section 2
+#         - Efficient Bayesian inference of general Gaussian models on large phylogenetic
+#         trees (https://doi.org/10.1214/20-AOAS1419), Appendix C.1.1
+#     =#
+#     numt = dimension(m)
+#     σ = sqrt.(LA.diag(m.R)) # vector of standard deviations
+#     # upper cholesky factor of correlation matrix
+#     ρchol = LA.cholesky(LA.symmetric(LA.Diagonal(1 ./ σ)*m.R*LA.Diagonal(1 ./ σ))).U
+#     # store coordinates in unconstrained space that coordinates in ρchol are mapped to
+#     ρcholtrans = zeros(binomial(numt, 2))
+#     k = 1
+#     for i in 2:numt
+#         #= multiply by h2b to get from ρchol[i,j] ∈ S^{pos}_n (half Euclidean sphere) to
+#         x ∈ B^{inf}_{n-1} (infinite norm ball) =#
+#         inf2e = 1
+#         for j in 1:(i-1)
+#             x = ρchol[j,i] / inf2e # coordinate in B^{inf}_{n-1}
+#             ρcholtrans[k] = atanh(x) # coordinate in R^{n-1}
+#             inf2e *= sqrt(1 - x^2)
+#             k += 1
+#         end
+#     end
+#     return [ρcholtrans..., log.(σ)..., m.μ...]
+# end
+# function params_original(m::MvFullBrownianMotion{T}, ρσμ::AbstractArray) where T
+#     numt = dimension(m)
+#     C = zeros(T, numt, numt); C[1,1] = 1
+#     numρ = binomial(numt, 2)
+#     ρcholtrans = ρσμ[1:numρ] # ρ (i.e. correlation) related parameters
+#     σ = exp.(ρσμ[numρ+1:numρ+numt]) # standard deviations of R
+#     k = 1
+#     for i in 2:numt
+#         #= multiply by inf2e to get from tanh(ρcholtrans[k]) ∈ B^{inf}_{n-1} (infinite norm
+#         ball) to B_{n-1} (Euclidean ball) =#
+#         inf2e = 1
+#         norm = 0
+#         for j in 1:(i-1)
+#             x = tanh(ρcholtrans[k]) # R^{n-1} → B^{inf}_{n-1}
+#             l = x * inf2e # B^{inf}_{n-1} → B_{n-1}
+#             C[j,i] = l
+#             norm += l^2
+#             inf2e *= sqrt(1-x^2)
+#             k += 1
+#         end
+#         C[i,i] = sqrt(1 - norm) # B_{n-1} → S^{pos}_n
+#     end
+#     R = LA.Diagonal(σ)*transpose(C)*C*LA.Diagonal(σ)
+#     return (LA.Symmetric(R), ρσμ[numρ+numt+1:end], m.v)
+# end
 
 ################################################################
 ## factor_treeedge
