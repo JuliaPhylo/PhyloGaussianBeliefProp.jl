@@ -150,7 +150,8 @@ function params_original(m::MvFullBrownianMotion{T}, Uμ::AbstractArray) where T
             k += 1
         end
     end
-    return (LA.Symmetric(transpose(U)*U), Uμ[k:end], m.v)
+    R = PDMat(LA.Symmetric(transpose(U)*U))
+    return (R, Uμ[k:end], m.v)
 end
 # function params_optimize(m::MvFullBrownianMotion)
 #     #=

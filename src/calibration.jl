@@ -172,15 +172,31 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     mod = evomodelfun(evomodelparams...) # model with starting values
     function score(θ) # θ: unconstrained parameters, e.g. log(σ2)
-        model = evomodelfun(params_original(mod, θ)...)
+        model = try evomodelfun(params_original(mod, θ)...)
+        catch ex # e.g. rate matrix supplied is not psd
+            if isa(ex, LA.PosDefException)
+                return Inf
+            else
+                rethrow(ex)
+            end
+        end
         # reset beliefs based on factors from new model parameters
         assignfactors!(beliefs.belief, model, tbl, taxa, prenodes,
             beliefs.node2cluster, beliefs.node2family, beliefs.node2fixed)
         # init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
         # no need to reset factors: free_energy not used on a clique tree
         init_messagecalibrationflags_reset!(beliefs, false)
+        #= TODO: terminate propagate_1traversal_postorder! the moment any message fails to
+        be computed =#
         propagate_1traversal_postorder!(beliefs, spt...)
-        _, res = integratebelief!(beliefs, rootj) # drop conditional mean
+        _, res = try integratebelief!(beliefs, rootj) # drop conditional mean
+        catch ex
+            if isa(ex, LA.PosDefException)
+                return Inf
+            else
+                rethrow(ex)
+            end
+        end
         return -res # score to be minimized (not maximized)
     end
     # autodiff does not currently work with ForwardDiff, ReverseDiff of Zygote,
@@ -190,7 +206,9 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     # https://github.com/JuliaDiff/ForwardDiff.jl/issues/136#issuecomment-237941790
     # https://juliadiff.org/ForwardDiff.jl/dev/user/limitations/
     # See PreallocationTools.jl package (below)
-    opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS())
+    # TODO: allow user to customize Optim options
+    opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS(),
+            Optim.Options(iterations=1_00, show_trace=true, extended_trace=true))
     loglikscore = -Optim.minimum(opt)
     bestθ = Optim.minimizer(opt)
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
@@ -276,16 +294,35 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
     sch = spanningtrees_clusterlist(cgraph, prenodes)
     mod = evomodelfun(evomodelparams...) # model with starting values
     function score(θ)
-        model = evomodelfun(params_original(mod, θ)...)
+        model = try evomodelfun(params_original(mod, θ)...)
+        catch ex # e.g. rate matrix supplied is not psd
+            if isa(ex, LA.PosDefException)
+                return Inf
+            else
+                rethrow(ex)
+            end
+        end
         assignfactors!(beliefs.belief, model, tbl, taxa, prenodes,
             beliefs.node2cluster, beliefs.node2family, beliefs.node2fixed)
         init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
         init_messagecalibrationflags_reset!(beliefs, true)
         regfun(beliefs, cgraph)
+        #= TODO: terminate calibrate! if non-convergence is detected early (e.g. messages
+        repeatedly fail to be computed =#
         calibrate!(beliefs, sch, maxiter, auto=true)
-        return free_energy(beliefs)[3] # to be minimized
+        freeenergy = try free_energy(beliefs)[3] # to be minimized
+        catch ex
+            if isa(ex, LA.PosDefException)
+                return Inf
+            else
+                rethrow(ex)
+            end
+        end
+        return freeenergy
     end
-    opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS())
+    # TODO: allow user to customize Optim options
+    opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS(),
+            Optim.Options(iterations=1_00, show_trace=true, extended_trace=true))
     iscalibrated_residnorm(beliefs) ||
       @warn "calibration was not reached. increase maxiter ($maxiter) or use a different cluster graph?"
     fenergy = -Optim.minimum(opt) 
