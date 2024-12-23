@@ -114,13 +114,19 @@ function CanonicalBelief(
     T::Type=Float64,
 ) where Tlabel<:Integer
     nnodes = length(nl)
-    nodelabels = SVector{nnodes}(nl)
+    # nodelabels = SVector{nnodes}(nl)
+    nodelabels = nl
     size(inscope) == (numtraits,nnodes) || error("inscope of the wrong size")
     cldim = sum(inscope)
-    μ = MVector{cldim,T}(zero(T) for _ in 1:cldim)  # zeros(T, cldim)
-    h = MVector{cldim,T}(zero(T) for _ in 1:cldim)
-    J = MMatrix{cldim,cldim,T}(zero(T) for _ in 1:(cldim*cldim))
+    # μ = MVector{cldim,T}(zero(T) for _ in 1:cldim)  # zeros(T, cldim)
+    μ = zeros(T, cldim)
+    # h = MVector{cldim,T}(zero(T) for _ in 1:cldim)
+    h = zeros(T, cldim)
+    # J = MMatrix{cldim,cldim,T}(zero(T) for _ in 1:(cldim*cldim))
+    J = zeros(T, cldim, cldim)
     g = MVector{1,T}(0)
+    # CanonicalBelief{T,typeof(nodelabels),typeof(J),typeof(h),typeof(metadata)}(
+    #     nodelabels,numtraits,inscope,μ,h,J,g,belief,metadata)
     CanonicalBelief{T,typeof(nodelabels),typeof(J),typeof(h),typeof(metadata)}(
         nodelabels,numtraits,inscope,μ,h,J,g,belief,metadata)
 end

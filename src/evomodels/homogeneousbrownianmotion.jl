@@ -78,10 +78,11 @@ function MvDiagBrownianMotion(R, μ, v=nothing)
     T = promote_type(Float64, eltype(R), eltype(μ))
     v = getrootvariancediagonal(T, numt, v)
     all(R .> 0.0) || error("evolutionary variance rates R = $R must all be positive")
-    SV = SVector{numt, T}
-    R = SV(R)
+    # SV = SVector{numt, T}
+    # R = SV(R)
     J = 1 ./R
-    MvDiagBrownianMotion{T, SV}(R, J, SV(μ), SV(v), -(numt * log2π + sum(log.(R)))/2)
+    # MvDiagBrownianMotion{T, SV}(R, J, SV(μ), SV(v), -(numt * log2π + sum(log.(R)))/2)
+    MvDiagBrownianMotion{T, typeof(R)}(R, J, μ, v, -(numt * log2π + sum(log.(R)))/2)
 end
 params(m::MvDiagBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v)
 params_optimize(m::MvDiagBrownianMotion) = [log.(m.R)..., m.μ...]
@@ -115,12 +116,13 @@ function MvFullBrownianMotion(R::AbstractMatrix, μ, v=nothing)
     numt = length(μ)
     T = promote_type(Float64, eltype(R), eltype(μ))
     v = getrootvariancemultivariate(T, numt, v)
-    SV = SVector{numt, T}
+    # SV = SVector{numt, T}
     size(R) == (numt,numt)       || error("R and μ have conflicting sizes")
     LA.issymmetric(R) || error("R should be symmetric")
     # R = PDMat(R) # todo: discuss precision issues
     J = inv(R) # uses cholesky. fails if not symmetric positive definite
-    MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, branch_logdet_variance(numt, R))
+    # MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, branch_logdet_variance(numt, R))
+    MvFullBrownianMotion{T, typeof(R), typeof(μ), typeof(v)}(R, J, μ, v, branch_logdet_variance(numt, R))
 end
 params(m::MvFullBrownianMotion) = isrootfixed(m) ? (m.R, m.μ) : (m.R, m.μ, m.v)
 function params_optimize(m::MvFullBrownianMotion)
@@ -226,8 +228,10 @@ function factor_treeedge(m::UnivariateBrownianMotion{T}, t::Real) where T
     else
         j = T(m.J / t)
         # todo: discuss not enforcing symmetry (e.g. J = LA.Symmetric(SMatrix...))
-        J = SMatrix{2,2,T}(j,-j,-j,j)
-        h = SVector{2,T}(0,0)
+        # J = SMatrix{2,2,T}(j,-j,-j,j)
+        J = T[j -j; -j j]
+        # h = SVector{2,T}(0,0)
+        h = zeros(T,2)
         g = m.g0 - dimension(m) * log(t)/2
         return(h,J,g)
     end
@@ -245,8 +249,10 @@ function factor_treeedge(m::MvDiagBrownianMotion{T,V}, t::Real) where {T,V}
         # J = [diag(j) -diag(j); -diag(j) diag(j)]
         gen = ((u,tu,v,tv) for u in 1:2 for tu in 1:numt for v in 1:2 for tv in 1:numt)
         Juv = (u,tu,v,tv) -> (tu==tv ? (u==v ? j[tu] : -j[tu]) : 0)
-        J = LA.Symmetric(SMatrix{ntot,ntot}(Juv(x...) for x in gen))
-        h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
+        # J = LA.Symmetric(SMatrix{ntot,ntot}(Juv(x...) for x in gen))
+        J = LA.Symmetric(reshape(collect(T,Juv(x...) for x in gen), (ntot,ntot)))
+        # h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
+        h = zeros(T,ntot)
         g = m.g0 - numt * log(t)/2
         return(h,J,g)
     end
@@ -264,8 +270,10 @@ function factor_treeedge(m::MvFullBrownianMotion{T,P1,V,P2}, t::Real) where {T,P
         # J = [j -j; -j j]
         gen = ((u,tu,v,tv) for u in 1:2 for tu in 1:numt for v in 1:2 for tv in 1:numt)
         Juv = (u,tu,v,tv) -> (u==v ? j[tu,tv] : -j[tu,tv])
-        J = LA.Symmetric(SMatrix{ntot,ntot}(Juv(x...) for x in gen))
-        h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
+        # J = LA.Symmetric(SMatrix{ntot,ntot}(Juv(x...) for x in gen))
+        J = LA.Symmetric(reshape(collect(T,Juv(x...) for x in gen), (ntot,ntot)))
+        # h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
+        h = zeros(T,ntot)
         g = m.g0 - numt * log(t)/2
         return(h,J,g)
     end
@@ -301,8 +309,10 @@ function factor_tree_degeneratehybrid(m::UnivariateBrownianMotion{T}, t0::Real, 
     γ .= -γ; pushfirst!(γ, 1)
     # γ .= -γ; pushfirst!(γ, one(eltype(γ)))
     # todo: discuss not enforcing symmetry (e.g. J = LA.Symmetric(SMatrix...))
-    J = SMatrix{nn,nn,T}(j*x*y for x in γ, y in γ)
-    h = SVector{nn,T}(0 for _ in 1:nn)
+    # J = SMatrix{nn,nn,T}(j*x*y for x in γ, y in γ)
+    J = collect(T,j*x*y for x in γ, y in γ)
+    # h = SVector{nn,T}(0 for _ in 1:nn)
+    h = zeros(T,nn)
     g = m.g0 - dimension(m) * log(t0)/2
     return(h,J,g)
 end
@@ -315,8 +325,10 @@ function factor_tree_degeneratehybrid(m::MvDiagBrownianMotion{T,V}, t0::Real, γ
     Juv = (u,tu,v,tv) -> (tu==tv ?
             (u==0 ? (v==0 ? j[tu] : -γ[v] * j[tu]) :
                     (v==0 ? -γ[u] * j[tu] : γ[u] * γ[v] * j[tu])) : zero(T))
-    J = LA.Symmetric(SMatrix{ntot,ntot, T}(Juv(x...) for x in gen))
-    h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
+    # J = LA.Symmetric(SMatrix{ntot,ntot, T}(Juv(x...) for x in gen))
+    J = LA.Symmetric(reshape(collect(T,Juv(x...) for x in gen), (ntot,ntot)))
+    # h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
+    h = zeros(T,ntot)
     g = m.g0 - numt * log(t0)/2
     return(h,J,g)
 end
@@ -328,8 +340,10 @@ function factor_tree_degeneratehybrid(m::MvFullBrownianMotion{T,P1,V,P2}, t0::Re
     gen = ((u,tu,v,tv) for u in 0:nparents for tu in 1:numt for v in 0:nparents for tv in 1:numt)
     Juv = (u,tu,v,tv) -> (u==0 ? (v==0 ? j[tu,tv] : -γ[v] * j[tu,tv]) :
                                  (v==0 ? -γ[u] * j[tu,tv] : γ[u] * γ[v] * j[tu,tv]))
-    J = LA.Symmetric(SMatrix{ntot,ntot, T}(Juv(x...) for x in gen))
-    h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
+    # J = LA.Symmetric(SMatrix{ntot,ntot, T}(Juv(x...) for x in gen))
+    J = LA.Symmetric(reshape(collect(T,Juv(x...) for x in gen), (ntot,ntot)))
+    # h = SVector{ntot,T}(zero(T) for _ in 1:ntot)
+    h = zeros(T,ntot)
     g = m.g0 - numt * log(t0)/2
     return(h,J,g)
 end
