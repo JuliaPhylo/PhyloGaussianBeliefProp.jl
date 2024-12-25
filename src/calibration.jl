@@ -38,24 +38,28 @@ function calibrate!(beliefs::ClusterGraphBelief, schedule::AbstractVector,
     update_residualnorm::Bool=true,
     update_residualkldiv::Bool=false,
 )
-    iscal = false
+    succ, iscal = false, false
     for i in 1:niter
         for (j, spt) in enumerate(schedule)
-            iscal = calibrate!(beliefs, spt, verbose, update_residualnorm, update_residualkldiv)
+            (succ, iscal) = calibrate!(beliefs, spt, verbose, update_residualnorm, update_residualkldiv)
+            if !succ
+                info && @info "propagation failed: iteration $i, schedule tree $j"
+                break
+            end
             if iscal
                 info && @info "calibration reached: iteration $i, schedule tree $j"
-                auto && return true
+                auto && break
             end
         end
     end
-    return iscal
+    return succ, iscal
 end
 
 """
     calibrate!(beliefs::ClusterGraphBelief, scheduletree::Tuple,
         verbose::Bool=true, up_resnorm::Bool=true, up_reskldiv::Bool=false)
 
-Propage messages along the `scheduletree`, in postorder then preorder:
+Propagate messages along the `scheduletree`, in postorder then preorder:
 see [`propagate_1traversal_postorder!`](@ref).
 
 Output: `true` if all message residuals have a small norm,
@@ -66,9 +70,11 @@ function calibrate!(beliefs::ClusterGraphBelief, spt::Tuple,
     up_resnorm::Bool=true,
     up_reskldiv::Bool=false,
 )
-    propagate_1traversal_postorder!(beliefs, spt..., verbose, up_resnorm, up_reskldiv)
-    propagate_1traversal_preorder!(beliefs, spt..., verbose, up_resnorm, up_reskldiv)
-    return iscalibrated_residnorm(beliefs)
+    possucc = propagate_1traversal_postorder!(beliefs, spt..., verbose, up_resnorm, up_reskldiv)
+    presucc = propagate_1traversal_preorder!(beliefs, spt..., verbose, up_resnorm, up_reskldiv)
+    # don't calculate residuals if propagation fails, TODO: discuss 
+    (possucc && presucc) || return (false, false)
+    return (true, iscalibrated_residnorm(beliefs)) # (terminated early, calibrated)
 end
 
 """
@@ -114,10 +120,12 @@ function propagate_1traversal_postorder!(
         if isnothing(flag)
             update_residualnorm && iscalibrated_residnorm!(mrss)
             update_residualkldiv && residual_kldiv!(mrss, sepset)
-        elseif verbose
-            @error flag.msg
+        else
+            verbose && @error flag.msg
+            return false # postorder propagation failed, TODO: discuss early termination
         end
     end
+    return true # postorder propagation succeeded
 end
 
 function propagate_1traversal_preorder!(
@@ -138,10 +146,12 @@ function propagate_1traversal_preorder!(
         if isnothing(flag)
             update_residualnorm && iscalibrated_residnorm!(mrss)
             update_residualkldiv && residual_kldiv!(mrss, sepset)
-        elseif verbose
-            @error flag.msg
+        else
+            verbose && @error flag.msg
+            return false # preorder propagation failed, TODO: discuss early termination
         end
     end
+    return true # preorder propagation succeeded
 end
 
 """
@@ -167,7 +177,9 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
         cgraph, prenodes::Vector{PN.Node},
         tbl::Tables.ColumnTable, taxa::AbstractVector,
         evomodelfun, # constructor function
-        evomodelparams)
+        evomodelparams,
+        optimoptions=Optim.Options(iterations=30, show_trace=true, extended_trace=true),
+)
     spt = spanningtree_clusterlist(cgraph, prenodes)
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     mod = evomodelfun(evomodelparams...) # model with starting values
@@ -186,9 +198,8 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
         # init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
         # no need to reset factors: free_energy not used on a clique tree
         init_messagecalibrationflags_reset!(beliefs, false)
-        #= TODO: terminate propagate_1traversal_postorder! the moment any message fails to
-        be computed =#
-        propagate_1traversal_postorder!(beliefs, spt...)
+        succ = propagate_1traversal_postorder!(beliefs, spt...)
+        succ || return Inf # terminate if any message fails to be computed (TODO: discuss)
         _, res = try integratebelief!(beliefs, rootj) # drop conditional mean
         catch ex
             if isa(ex, LA.PosDefException)
@@ -206,9 +217,7 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     # https://github.com/JuliaDiff/ForwardDiff.jl/issues/136#issuecomment-237941790
     # https://juliadiff.org/ForwardDiff.jl/dev/user/limitations/
     # See PreallocationTools.jl package (below)
-    # TODO: allow user to customize Optim options
-    opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS(),
-            Optim.Options(iterations=1_00, show_trace=true, extended_trace=true))
+    opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS(), optimoptions)
     loglikscore = -Optim.minimum(opt)
     bestθ = Optim.minimizer(opt)
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
@@ -290,7 +299,8 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
         evomodelfun, # constructor function
         evomodelparams, maxiter::Integer=100,
         regfun=regularizebeliefs_bycluster!, # regularization function
- )
+        optimoptions=Optim.Options(iterations=30, show_trace=true, extended_trace=true),
+)
     sch = spanningtrees_clusterlist(cgraph, prenodes)
     mod = evomodelfun(evomodelparams...) # model with starting values
     function score(θ)
@@ -307,9 +317,9 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
         init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
         init_messagecalibrationflags_reset!(beliefs, true)
         regfun(beliefs, cgraph)
-        #= TODO: terminate calibrate! if non-convergence is detected early (e.g. messages
-        repeatedly fail to be computed =#
-        calibrate!(beliefs, sch, maxiter, auto=true)
+        # terminate calibrate! if non-convergence is detected early (e.g. messages fail to be computed)
+        succ, _ = calibrate!(beliefs, sch, maxiter, auto=true, verbose=false) # TODO: control `verbose` from arguments
+        succ || return Inf
         freeenergy = try free_energy(beliefs)[3] # to be minimized
         catch ex
             if isa(ex, LA.PosDefException)
@@ -320,9 +330,7 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
         end
         return freeenergy
     end
-    # TODO: allow user to customize Optim options
-    opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS(),
-            Optim.Options(iterations=1_00, show_trace=true, extended_trace=true))
+    opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS(), optimoptions)
     iscalibrated_residnorm(beliefs) ||
       @warn "calibration was not reached. increase maxiter ($maxiter) or use a different cluster graph?"
     fenergy = -Optim.minimum(opt) 
