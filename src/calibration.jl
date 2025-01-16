@@ -308,6 +308,8 @@ function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
         catch ex # e.g. rate matrix supplied is not psd
             if isa(ex, LA.PosDefException)
                 return Inf
+            elseif isa(ex, DomainError) # catch PosDefException in the univariate case
+                return Inf # TODO: discuss
             else
                 rethrow(ex)
             end

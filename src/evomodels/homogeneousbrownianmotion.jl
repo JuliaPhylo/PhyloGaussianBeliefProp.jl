@@ -32,7 +32,7 @@ varianceparam(m::UnivariateBrownianMotion) = m.σ2
 function UnivariateBrownianMotion(σ2::Number, μ::Number, v=nothing)
     T = promote_type(Float64, typeof(σ2), typeof(μ))
     v = getrootvarianceunivariate(T, v)
-    σ2 > 0 || error("evolutionary variance rate σ2 = $(σ2) must be positive")
+    σ2 > 0 || DomainError(σ2, "evolutionary variance rate σ2 must be positive")
     UnivariateBrownianMotion{T}(σ2, 1/σ2, μ, v, -(log2π + log(σ2))/2)
 end
 function UnivariateBrownianMotion(σ2::Union{U1,V1}, μ::Union{U2,V2}, v=nothing) where {U1<:Number, U2<:Number, V1<:AbstractArray{U1}, V2<:AbstractArray{U2}}
