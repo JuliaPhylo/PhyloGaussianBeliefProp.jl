@@ -986,8 +986,13 @@ With `p` infinite, the max norm is used by default, meaning that
 """
 function iscalibrated_residnorm!(res::AbstractResidual{T}, atol=T(1e-5), p::Real=Inf) where T
     res.iscalibrated_resid[1] =
-        isapprox(LA.norm(res.Δh, p), zero(T), atol=atol) &&
-        isapprox(LA.norm(res.ΔJ, p), zero(T), atol=atol)
+        isapprox(LA.norm(res.Δh ./ sqrt(length(res.Δh)), p), zero(T), atol=atol) &&
+        isapprox(LA.norm(res.ΔJ ./ sqrt(length(res.ΔJ)), p), zero(T), atol=atol)
+        # isapprox(LA.norm(res.Δh, p)/sqrt(length(res.Δh)), zero(T), atol=atol) &&
+        # isapprox(LA.norm(res.ΔJ, p)/sqrt(length(res.ΔJ)), zero(T), atol=atol)
+        # isapprox(LA.norm(res.Δh, p), zero(T), atol=atol) &&
+        # isapprox(LA.norm(res.ΔJ, p), zero(T), atol=atol)
+        # TODO: discuss adjusted threshold
 end
 
 """

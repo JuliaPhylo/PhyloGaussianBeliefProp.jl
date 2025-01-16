@@ -44,11 +44,11 @@ function calibrate!(beliefs::ClusterGraphBelief, schedule::AbstractVector,
             (succ, iscal) = calibrate!(beliefs, spt, verbose, update_residualnorm, update_residualkldiv)
             if !succ
                 info && @info "propagation failed: iteration $i, schedule tree $j"
-                break
+                return succ, iscal
             end
             if iscal
                 info && @info "calibration reached: iteration $i, schedule tree $j"
-                auto && break
+                auto && return succ, iscal
             end
         end
     end
@@ -74,7 +74,7 @@ function calibrate!(beliefs::ClusterGraphBelief, spt::Tuple,
     presucc = propagate_1traversal_preorder!(beliefs, spt..., verbose, up_resnorm, up_reskldiv)
     # don't calculate residuals if propagation fails, TODO: discuss 
     (possucc && presucc) || return (false, false)
-    return (true, iscalibrated_residnorm(beliefs)) # (terminated early, calibrated)
+    return (true, iscalibrated_residnorm(beliefs)) # (did not terminate early, calibrated)
 end
 
 """
