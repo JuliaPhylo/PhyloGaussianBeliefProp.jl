@@ -98,7 +98,7 @@ end
         cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
         PGBP.regularizebeliefs_onschedule!(cgb, cg)
         sched = PGBP.spanningtrees_clusterlist(cg, net.nodes_changed)
-        @test PGBP.calibrate!(cgb, sched, 20; auto=true)
+        @test all(PGBP.calibrate!(cgb, sched, 20; auto=true))
         # [ Info: Calibration detected: iter 5, sch 1
         ind = PGBP.clusterindex(:I3, cgb)
         @test PGBP.integratebelief!(b[ind])[1][end] ≈
@@ -110,7 +110,7 @@ end
         ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
         df = DataFrame(taxon=["A","B","C","D"], y1=[1,1,1,1], y2=[missing,missing,missing,1])
         tbl_y = columntable(select(df, :y1, :y2))
-        m = PGBP.MvDiagBrownianMotion((1,1), (0,0))
+        m = PGBP.MvDiagBrownianMotion([1,1], [0,0])
         b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m)
         PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
         ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
@@ -146,7 +146,7 @@ end
             isempty(subtree[1]) && continue
             push!(sch, subtree)
         end
-        @test (@test_logs (:info, "calibration reached: iteration 4, schedule tree 1") PGBP.calibrate!(cgb, sch, 10; auto=true, info=true))
+        @test (@test_logs (:info, "calibration reached: iteration 4, schedule tree 1") all(PGBP.calibrate!(cgb, sch, 10; auto=true, info=true)))
         #= Compare posterior means against clique tree estimates:
         ct = PGBP.clustergraph!(net, PGBP.Cliquetree());
         b_ct, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m);
@@ -178,7 +178,7 @@ end
         PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, n2c, n2fam, n2fix); # todo: debug
         cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
         PGBP.regularizebeliefs_bynodesubtree!(cgb, cg)
-        @test (@test_logs PGBP.calibrate!(cgb, sch, 10; auto=true, info=false))
+        @test (@test_logs all(PGBP.calibrate!(cgb, sch, 10; auto=true, info=false)))
         tmp = PGBP.integratebelief!(b[6]) # I3 un-scoped bc fixed root, same posterior mean for I1 and I2
         @test tmp[2] ≈ -3.3498677834866997 # -3.3498677834895716
         @test all(tmp[1] .≈ [2.121105154896223, 30.005552577448075, 2.1360649504455984, 30.013032475222563])
@@ -267,12 +267,12 @@ end
         =#
 
         # x,y: 2 traits, some missing values
-        m = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0,0))
+        m = PGBP.MvDiagBrownianMotion([2,1], [3,-3], [0,0])
         b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct, m);
         PGBP.assignfactors!(b, m, tbl, df.taxon, net.nodes_changed, n2c, n2fam, n2fix);
         ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
         mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(ctb, ct, net.nodes_changed,
-            tbl, df.taxon, PGBP.MvDiagBrownianMotion, ((2,1), (1,-1)))
+            tbl, df.taxon, PGBP.MvDiagBrownianMotion, ([2,1], [1,-1]))
         @test PGBP.integratebelief!(ctb, spt[3][1])[2] ≈ llscore
         @test llscore ≈ -14.39029465611705 # -5.174720533524127 -9.215574122592923
         @test mod.μ ≈ [3.500266520382341, -0.26000871507162693]

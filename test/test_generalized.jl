@@ -187,7 +187,7 @@ ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
 df = DataFrame(taxon=["i1","i2","i3"], x=[1.0,1.0,1.0], y=[2.0,2.0,2.0])
 df_var = select(df, Not(:taxon))
 tbl = columntable(df_var)
-m_biBM_fixedroot = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0,0))
+m_biBM_fixedroot = PGBP.MvDiagBrownianMotion([2,1], [3,-3], [0,0])
 b_xy_fixedroot = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct,
     m_biBM_fixedroot)
 PGBP.assignfactors!(b_xy_fixedroot[1], m_biBM_fixedroot, tbl, df.taxon,

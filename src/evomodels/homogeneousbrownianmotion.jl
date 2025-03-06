@@ -80,6 +80,7 @@ function MvDiagBrownianMotion(R, μ, v=nothing)
     all(R .> 0.0) || error("evolutionary variance rates R = $R must all be positive")
     # SV = SVector{numt, T}
     # R = SV(R)
+    R = T.(R)
     J = 1 ./R
     # MvDiagBrownianMotion{T, SV}(R, J, SV(μ), SV(v), -(numt * log2π + sum(log.(R)))/2)
     MvDiagBrownianMotion{T, typeof(R)}(R, J, μ, v, -(numt * log2π + sum(log.(R)))/2)
@@ -121,6 +122,7 @@ function MvFullBrownianMotion(R::AbstractMatrix, μ, v=nothing)
     LA.issymmetric(R) || error("R should be symmetric")
     # R = PDMat(R) # todo: discuss precision issues
     J = inv(R) # uses cholesky. fails if not symmetric positive definite
+    μ = T.(μ)
     # MvFullBrownianMotion{T, typeof(R), SV, typeof(v)}(R, J, SV(μ), v, branch_logdet_variance(numt, R))
     MvFullBrownianMotion{T, typeof(R), typeof(μ), typeof(v)}(R, J, μ, v, branch_logdet_variance(numt, R))
 end

@@ -137,13 +137,13 @@ end # of PhyloEM
     end
 
     # x,y: 2 traits, no missing values
-    m1 = PGBP.MvDiagBrownianMotion((1,1), (0,0), (1.2,3))
+    m1 = PGBP.MvDiagBrownianMotion([1,1], [0,0], [1.2,3])
     b1, (n2c1, n2fam1, n2fix1, n2d1, c2n1) = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct, m1);
     f1 = PGBP.init_factors_allocate(b1, nv(ct))
     mess1 = PGBP.init_messageresidual_allocate(b1, nv(ct))
     PGBP.assignfactors!(b1, m1, tbl, df.taxon, net.nodes_changed, n2c1, n2fam1, n2fix1);
 
-    m2 = PGBP.MvDiagBrownianMotion((1,1), (0,0), (0,0))
+    m2 = PGBP.MvDiagBrownianMotion([1,1], [0,0], [0,0])
     b2, (n2c2, n2fam2, n2fix2, n2d2, c2n2) = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct, m2);
     mess2 = PGBP.init_messageresidual_allocate(b2, nv(ct))
     PGBP.assignfactors!(b2, m2, tbl, df.taxon, net.nodes_changed, n2c2, n2fam2, n2fix2);
@@ -213,7 +213,7 @@ end # of exact, on a tree
         =#
     
         # x,y: 2 traits, no missing values
-        m = PGBP.MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf))
+        m = PGBP.MvDiagBrownianMotion([1,1], [0,0], [Inf,Inf])
         b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct, m);
         cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
         mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, spt,
@@ -268,7 +268,7 @@ end # of exact, on a tree
       @test PGBP.varianceparam(mod) ≈ [35.385704175513084;;]
       @test llscore ≈ -6.2771970782154565
       # x,y: B1,B2 with partial data
-      m = PGBP.MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf))
+      m = PGBP.MvDiagBrownianMotion([1,1], [0,0], [Inf,Inf])
       b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct, m)
       cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
       # error: some leaf must have partial data: cluster i6i4 has partial traits in scope

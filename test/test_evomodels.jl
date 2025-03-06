@@ -5,9 +5,10 @@ par = PGBP.params_optimize(m)
 oripar = PGBP.params_original(m, par)
 @test oripar == PGBP.params(m)
 @test PGBP.dimension(m) == 2
-m = PGBP.MvFullBrownianMotion([1.0, .5, 0.8660254037844386], [-1,1]) # default 0 root variance
-@test PGBP.varianceparam(m) ≈ [1 0.5; 0.5 1]
-@test PGBP.rootpriorvariance(m) == [0 0; 0 0]
+# MvFullBrownianMotion constructor taking vectorized upper cholesky factor for rate is removed
+# m = PGBP.MvFullBrownianMotion([1.0, .5, 0.8660254037844386], [-1,1]) # default 0 root variance
+# @test PGBP.varianceparam(m) ≈ [1 0.5; 0.5 1]
+# @test PGBP.rootpriorvariance(m) == [0 0; 0 0]
 m = PGBP.MvFullBrownianMotion([1 0.5; 0.5 1], [-1,1], [10^10 0; 0 10^10])
 @test PGBP.dimension(m) == 2
 m = PGBP.UnivariateBrownianMotion(2, 3)
@@ -62,9 +63,9 @@ end
     b_y_fixedroot = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m_uniBM_fixedroot)
     m_uniBM_randroot = PGBP.UnivariateBrownianMotion(2, 3, Inf)
     b_y_randroot = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m_uniBM_randroot)
-    m_biBM_fixedroot = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0,0))
+    m_biBM_fixedroot = PGBP.MvDiagBrownianMotion([2,1], [3,-3], [0,0])
     b_xy_fixedroot = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct, m_biBM_fixedroot)
-    m_biBM_randroot = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0.1,10))
+    m_biBM_randroot = PGBP.MvDiagBrownianMotion([2,1], [3,-3], [0.1,10])
     b_xy_randroot = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct, m_biBM_randroot)
 
     @testset "homogeneous univariate BM" begin
@@ -186,7 +187,7 @@ end
         @test tmp ≈ -21.347496753649892
         end
         @testset "homogeneous, improper root" begin
-        m = PGBP.MvDiagBrownianMotion((2,1), (1,-3), (Inf,Inf))
+        m = PGBP.MvDiagBrownianMotion([2,1], [1,-3], [Inf,Inf])
         PGBP.assignfactors!(b_xy_randroot[1], m, tbl, df.taxon, net.nodes_changed,
             b_xy_randroot[2][1], b_xy_randroot[2][2], b_xy_randroot[2][3]);
         ctb = PGBP.ClusterGraphBelief(b_xy_randroot[1], b_xy_randroot[2][1],
