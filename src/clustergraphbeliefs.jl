@@ -83,8 +83,8 @@ fields constructed accordingly. New memory is allocated for these other fields,
 e.g. for factors (with data copied from cluster beliefs) and message residuals
 (with data initialized to 0 but of size matching that from sepset beliefs)
 
-To construct the input vector of beliefs, see [`init_beliefs_allocate`](@ref)
-and [`init_beliefs_assignfactors!`](@ref)
+To construct the input vector of beliefs, see [`allocatebeliefs`](@ref)
+and [`assignfactors!`](@ref)
 """
 function ClusterGraphBelief(
     beliefs::Vector{B},
@@ -121,7 +121,7 @@ end
 Reset cluster beliefs to existing factors, and sepset beliefs to h=0, J=0, g=0
 
 This is not used so far, as changing model parameters requires a reset of both
-factors and beliefs, done by [`init_beliefs_assignfactors!`](@ref).
+factors and beliefs, done by [`assignfactors!`](@ref).
 """
 function init_beliefs_reset_fromfactors!(beliefs::ClusterGraphBelief)
     nc, nb = nclusters(beliefs), length(beliefs.belief)
@@ -211,7 +211,7 @@ elements of precision matrices `J`, while preserving the full graphical model
 invariant during belief propagation) so that all beliefs are non-degenerate.
 
 This regularization could be done after initialization with
-[`init_beliefs_assignfactors!`](@ref) for example.
+[`assignfactors!`](@ref) for example.
 
 The goal is that at each later step of belief propagation, the sending cluster
 has a non-degenerate (positive definite) precision matrix for the variables to be

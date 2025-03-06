@@ -140,45 +140,45 @@ julia> df = DataFrame(taxon=tipLabels(net), # simulated using `simulate(net, Par
 
 julia> m = PGBP.UnivariateBrownianMotion(1, 0); # choose model: σ2 = 1.0, μ = 0.0 
 
-julia> fg = PGBP.clustergraph!(net, PGBP.Bethe()); # build factor graph
+julia> cg = PGBP.clustergraph!(net, PGBP.Bethe()); # build factor graph
 
 julia> tbl_x = columntable(select(df, :x)); # trait data as column table
 
-julia> b = PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, fg, m); # allocate memory for beliefs
+julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, cg, m); # allocate memory for beliefs
 
-julia> PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed); # assign factors based on model
+julia> PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix); # assign factors based on model
 
-julia> fgb = PGBP.ClusterGraphBelief(b); # wrap beliefs for message passing
+julia> cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n); # wrap beliefs for message passing
 
-julia> sched = PGBP.spanningtrees_clusterlist(fg, net.nodes_changed); # generate schedule
+julia> sched = PGBP.spanningtrees_clusterlist(cg, net.nodes_changed); # generate schedule
 ```
 
 Without regularization, errors indicating ill-defined messages (which are skipped)
 are returned when we run a single iteration of calibration:
 
 ```jldoctest regularization; filter = r"└ @ PhyloGaussianBeliefProp.*" => s""
-julia> PGBP.calibrate!(fgb, sched); # there are ill-defined messages (which are skipped)
+julia> PGBP.calibrate!(cgb, sched); # there are ill-defined messages (which are skipped)
 ┌ Error: belief H5I5I16, integrating [2, 3]
-└ @ PhyloGaussianBeliefProp ...
-┌ Error: belief H6I10I15, integrating [2, 3]
-└ @ PhyloGaussianBeliefProp ...
+└ @ PhyloGaussianBeliefProp [...]
+┌ Error: belief H10I8I15, integrating [2, 3]
+└ @ PhyloGaussianBeliefProp [...]
 ```
 
 However, with regularization, there are no ill-defined messages for a single
 iteration of calibration:
 
 ```jldoctest regularization
-julia> PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed); # reset to initial beliefs
+julia> PGBP.init_beliefs_reset_fromfactors!(cgb); # reset to initial beliefs
 
-julia> PGBP.regularizebeliefs_bynodesubtree!(fgb, fg); # regularize by node subtree
+julia> PGBP.regularizebeliefs_bynodesubtree!(cgb, cg); # regularize by node subtree
 
-julia> PGBP.calibrate!(fgb, sched); # no ill-defined messages
+julia> PGBP.calibrate!(cgb, sched); # no ill-defined messages
 
-julia> PGBP.init_beliefs_assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed); # reset to initial beliefs
+julia> PGBP.init_beliefs_reset_fromfactors!(cgb); # reset to initial beliefs
 
-julia> PGBP.regularizebeliefs_onschedule!(fgb, fg); # regularize by on schedule
+julia> PGBP.regularizebeliefs_onschedule!(cgb, cg); # regularize by on schedule
 
-julia> PGBP.calibrate!(fgb, sched); # no ill-defined messages
+julia> PGBP.calibrate!(cgb, sched); # no ill-defined messages
 ```
 Note that this does not necessarily guarantee that subsequent iterations avoid
 ill-defined messages.

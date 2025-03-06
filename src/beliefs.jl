@@ -640,7 +640,7 @@ To change the dimension of canonical parameters μ,h,J, new memory is allocated
 and initialized to 0.
 This function can be used to update beliefs when the root model changes from
 fixed to non-fixed or vice-versa.
-It re-allocates less memory than [`init_beliefs_allocate`](@ref) (which would
+It re-allocates less memory than [`allocatebeliefs`](@ref) (which would
 need to be followed by [`init_factors_allocate`](@ref))
 because clusters and sepsets that do not have the root are not modified.
 

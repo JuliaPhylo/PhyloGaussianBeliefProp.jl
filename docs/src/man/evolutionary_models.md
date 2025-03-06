@@ -94,7 +94,7 @@ homogeneous univariate Ornstein-Uhlenbeck
 ## Edge factors
 After specifying the evolutionary model
 (e.g. `m = PGBP.UnivariateBrownianMotion(1, 0)`), it is eventually passed to
-[`init_beliefs_assignfactors!`](@ref)
+[`assignfactors!`](@ref)
 (see [4\. Initialize cluster graph beliefs](@ref)), which infers the conditional
 distribution for each node and assigns it to a cluster.
 
