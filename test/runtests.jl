@@ -3,6 +3,7 @@ using PhyloGaussianBeliefProp
 using DataFrames
 using Graphs, MetaGraphsNext
 using LinearAlgebra
+using Optim
 using PhyloNetworks
 using PreallocationTools
 using Tables

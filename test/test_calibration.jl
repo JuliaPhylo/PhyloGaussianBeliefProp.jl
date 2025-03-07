@@ -196,7 +196,8 @@ end
         cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
         mod, fenergy, opt = PGBP.calibrate_optimize_clustergraph!(cgb, cg,
             net.nodes_changed, tbl_y, df.taxon,
-            PGBP.UnivariateBrownianMotion, (1,0))
+            PGBP.UnivariateBrownianMotion, (1,0), 100, PGBP.regularizebeliefs_bycluster!,
+            Optim.Options(iterations=30, show_trace=false))
         # Compare with RxInfer + Optim
         @test fenergy ≈ -3.4312133894974126 rtol=1e-4
         @test mod.μ ≈ 10.931640613828181 rtol=1e-4
@@ -272,7 +273,8 @@ end
         PGBP.assignfactors!(b, m, tbl, df.taxon, net.nodes_changed, n2c, n2fam, n2fix);
         ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
         mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(ctb, ct, net.nodes_changed,
-            tbl, df.taxon, PGBP.MvDiagBrownianMotion, ([2,1], [1,-1]))
+            tbl, df.taxon, PGBP.MvDiagBrownianMotion, ([2,1], [1,-1]),
+            Optim.Options(iterations=30, show_trace=false))
         @test PGBP.integratebelief!(ctb, spt[3][1])[2] ≈ llscore
         @test llscore ≈ -14.39029465611705 # -5.174720533524127 -9.215574122592923
         @test mod.μ ≈ [3.500266520382341, -0.26000871507162693]
