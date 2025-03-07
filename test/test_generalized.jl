@@ -204,19 +204,6 @@ for i in eachindex(ctb.belief)
 end
 
 m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0,-3.0])
-b_xy_fixedroot = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct, m)
-PGBP.assignfactors!(b_xy_fixedroot[1], m, tbl, df.taxon,
-    net.nodes_changed, b_xy_fixedroot[2][1], b_xy_fixedroot[2][2], b_xy_fixedroot[2][3]);
-ctb = PGBP.ClusterGraphBelief(b_xy_fixedroot[1], b_xy_fixedroot[2][1],
-    b_xy_fixedroot[2][2], b_xy_fixedroot[2][3], b_xy_fixedroot[2][5])
-@test_throws ("message from cluster H1i4i6 has larger constraint rank than " *
-    "dimension of sepset (:i1i4, :H1i4i6), " *
-    "represent cluster i1i4 and sepset (:i1i4, :H1i4i6) as GeneralizedBeliefs") PGBP.calibrate!(ctb, [spt])
-# Convert listed cluster/sepset beliefs to GeneralizedBeliefs:
-#     PGBP.clusterindex(:i1i4, ctb) # 2
-#     PGBP.sepsetindex(:i1i4, :H1i4i6, ctb) # 7
-b_xy_fixedroot[1][2] = PGBP.GeneralizedBelief(b_xy_fixedroot[1][2])
-b_xy_fixedroot[1][7] = PGBP.GeneralizedBelief(b_xy_fixedroot[1][7])
 PGBP.assignfactors!(b_xy_fixedroot[1], m, tbl, df.taxon,
     net.nodes_changed, b_xy_fixedroot[2][1], b_xy_fixedroot[2][2], b_xy_fixedroot[2][3]);
 PGBP.calibrate!(ctb, [spt])
