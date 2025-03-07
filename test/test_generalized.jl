@@ -175,7 +175,6 @@ end
 #         @test tmp ≈ llscore
 #     end
 #     end
-end
 
 @testset "Level-1. 3 tips" begin
 # modified net3 by setting length of tree edge (i0,i4) to 0
@@ -229,4 +228,5 @@ for i in eachindex(ctb.belief)
 end
 end
 
+end
 end
