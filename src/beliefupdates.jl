@@ -98,7 +98,7 @@ function marginalize!(cluster_from::GeneralizedBelief, keepind)
     mm = length(keepind) # dimension for marginal
     m1 = size(cluster_from.Q,1)
     k = cluster_from.k[1]
-    k == 0 && error("generalized belief should not have constraint rank 0")
+    # k == 0 && error("generalized belief $(cluster_from) should not have constraint rank 0")
     m1 < k && error("constraint rank should not exceed belief dimension")
     if m1 == mm # no/trivial marginalization
         cluster_from.kmsg[1] = cluster_from.k[1]
@@ -173,7 +173,7 @@ end
 function integratebelief!(b::GeneralizedBelief)
     m = size(b.Q,1)
     k = b.k[1]
-    m == k && error("belief is fully deterministic and not normalizable")
+    m == k && return fill(Inf, size(b.μ)), b.g[1] # todo: is μ = [Inf ...] reasonable default?
     h = view(b.h,1:(m-k))
     Λ = view(b.Λ,1:(m-k))
     any(Λ .== 0) && error("belief is not normalizable")
@@ -186,6 +186,9 @@ function integratebelief!(b::GeneralizedBelief)
 end
 function integratebelief(h,J,g)
     # Ji = PDMat(J) # fails if cholesky fails, e.g. if J=0
+    if iszero(h) && iszero(J) # constant belief, todo: use all(approx.(h, 0)) instead?
+        return fill(Inf, size(h)), g # todo: is μ = [Inf ...] reasonable default?
+    end
     Ji = PDMat(LA.Symmetric(J)) # todo: discuss enforcing symmetry
     integratebelief(h,Ji,g)
 end
@@ -686,9 +689,11 @@ function propagate_belief!(
     cluster_from::GeneralizedBelief,
 )
     marginalize!(cluster_from, sepset)
-    cluster_from.kmsg[1] > 0 && error("message from cluster $(cluster_from.metadata)
-        has positive constraint rank, represent cluster $(cluster_to.metadata)
-        and sepset $(sepset.metadata) as GeneralizedBeliefs")
+    0 < cluster_from.kmsg[1] < dimension(sepset) && error(
+        "message from cluster $(cluster_from.metadata) has larger constraint rank " *
+        "than dimension of sepset $(sepset.metadata), " *
+        "represent cluster $(cluster_to.metadata) and sepset $(sepset.metadata) as " *
+        "GeneralizedBeliefs")
     Δh, ΔJ, Δg = divide!(sepset, cluster_from)
     mult!(cluster_to, scopeindex(sepset, cluster_to), Δh, ΔJ, Δg)
     return Δh, ΔJ, Δg

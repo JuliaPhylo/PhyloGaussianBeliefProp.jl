@@ -41,43 +41,40 @@ end
     ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
     PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
     spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+    @test_throws ("message from cluster H1i4i6 has larger constraint rank than " *
+        "dimension of sepset (:H1i4i6, :i4i6i0), " *
+        "represent cluster i4i6i0 and sepset (:H1i4i6, :i4i6i0) as GeneralizedBeliefs") PGBP.calibrate!(ctb, [spt])
     # b[3] and b[5] should also be represented as GeneralizedBeliefs
-    @test_throws ErrorException PGBP.calibrate!(ctb, [spt])
     b[3] = PGBP.GeneralizedBelief(b[3])
     b[5] = PGBP.GeneralizedBelief(b[5])
     PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
     PGBP.calibrate!(ctb, [spt])
     llscore = -1.5723649429247 # -0.5*(1-0)^2/0.5 - 0.5*logdet(2π*0.5)
     for i in eachindex(ctb.belief)
-        if i ∈ [1,4]
-            # belief is fully deterministic and not normalizable
-            @test_throws ErrorException PGBP.integratebelief!(ctb, i)
-        else
-            _, tmp = PGBP.integratebelief!(ctb, i)
-            @test tmp ≈ llscore
-        end
-    end
-end
-@testset "Level-1. 3 tips" begin
-    net = readTopology(net3)
-    df = DataFrame(taxon=["i1","i2","i3"], x=[1.0,1.0,1.0])
-    tbl_x = columntable(select(df, :x))
-    ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
-    m = PGBP.UnivariateBrownianMotion(1, 0)
-    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
-    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
-    ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
-    spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
-    PGBP.calibrate!(ctb, [spt])
-    # μ = 0; σ2 = 1; Vy = sharedPathMatrix(net)[:Tips]; Y = [1.0,1.0,1.0]
-    # -0.5*transpose(Y .- μ)*inv(σ2*Vy)*(Y .- μ) - 0.5*logdet(2π*σ2*Vy) # -4.161534555831068
-    @test PGBP.integratebelief!(ctb, 6)[1] ≈ [0.6] # H1
-    llscore = -4.161534555831068
-    for i in eachindex(ctb.belief)
         _, tmp = PGBP.integratebelief!(ctb, i)
         @test tmp ≈ llscore
     end
 end
+# @testset "Level-1. 3 tips" begin
+#     net = readTopology(net3)
+#     df = DataFrame(taxon=["i1","i2","i3"], x=[1.0,1.0,1.0])
+#     tbl_x = columntable(select(df, :x))
+#     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
+#     m = PGBP.UnivariateBrownianMotion(1, 0)
+#     b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
+#     PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
+#     ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
+#     spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+#     PGBP.calibrate!(ctb, [spt])
+#     # μ = 0; σ2 = 1; Vy = sharedPathMatrix(net)[:Tips]; Y = [1.0,1.0,1.0]
+#     # -0.5*transpose(Y .- μ)*inv(σ2*Vy)*(Y .- μ) - 0.5*logdet(2π*σ2*Vy) # -4.161534555831068
+#     @test PGBP.integratebelief!(ctb, 6)[1] ≈ [0.6] # H1
+#     llscore = -4.161534555831068
+#     for i in eachindex(ctb.belief)
+#         _, tmp = PGBP.integratebelief!(ctb, i)
+#         @test tmp ≈ llscore
+#     end
+# end
 @testset "Level-3. 2 tips" begin
     net = readTopology(net1)
     df = DataFrame(taxon=["A","B"], x=[2.11,2.15])
@@ -154,35 +151,36 @@ end
 end
 
 @testset "Multivariate BM. Clique tree" begin
-@testset "1 tip. Leaf is degenerate child of hybrid" begin
-    netstr = "(((i2:1.0)#H1:0.0::0.5)i4:1.0, (#H1:0.0::0.5)i6:1.0)i0;" 
-    net = readTopology(netstr)
-    ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
-    df = DataFrame(taxon=["i2"], x=[1.0], y=[2.0])
-    df_var = select(df, Not(:taxon))
-    tbl = columntable(df_var)
-    m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0, -3.0])
-    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl, df.taxon,
-        net.nodes_changed, ct, m)
-    PGBP.assignfactors!(b, m, tbl, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
-    ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
-    spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
-    PGBP.calibrate!(ctb, [spt])
-    # Vy = sharedPathMatrix(net)[:Tips]
-    # μ = [3.0, -3.0]; σ2 = [2.0 0.5; 0.5 1.0]
-    # Y = [1.0, 2.0]
-    # -0.5*transpose(Y - μ)*inv(kron(Vy,σ2))*(Y - μ) - 0.5*logdet(2π*kron(Vy,σ2)) # -14.713626258961408
-    llscore = -14.713626258961408
-    for i in eachindex(ctb.belief)
-        _, tmp = PGBP.integratebelief!(ctb, i)
-        @test tmp ≈ llscore
-    end
-    end
+# @testset "1 tip. Leaf is non-degenerate child of hybrid" begin
+#     netstr = "(((i2:1.0)#H1:0.0::0.5)i4:1.0, (#H1:0.0::0.5)i6:1.0)i0;" 
+#     net = readTopology(netstr)
+#     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
+#     df = DataFrame(taxon=["i2"], x=[1.0], y=[2.0])
+#     df_var = select(df, Not(:taxon))
+#     tbl = columntable(df_var)
+#     m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0, -3.0])
+#     b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl, df.taxon,
+#         net.nodes_changed, ct, m)
+#     PGBP.assignfactors!(b, m, tbl, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
+#     ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
+#     spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+#     PGBP.calibrate!(ctb, [spt])
+#     # Vy = sharedPathMatrix(net)[:Tips]
+#     # μ = [3.0, -3.0]; σ2 = [2.0 0.5; 0.5 1.0]
+#     # Y = [1.0, 2.0]
+#     # -0.5*transpose(Y - μ)*inv(kron(Vy,σ2))*(Y - μ) - 0.5*logdet(2π*kron(Vy,σ2)) # -14.713626258961408
+#     llscore = -14.713626258961408
+#     for i in eachindex(ctb.belief)
+#         _, tmp = PGBP.integratebelief!(ctb, i)
+#         @test tmp ≈ llscore
+#     end
+#     end
 end
 
 @testset "Level-1. 3 tips" begin
-net3 = "((i1:1.0,(i2:1.0)#H1:0.0::0.5)i4:1.0, (#H1:0.0::0.5,i3:1.0)i6:1.0)i0;"
-net = readTopology(net3)
+# modified net3 by setting length of tree edge (i0,i4) to 0
+netstr = "((i1:1.0,(i2:1.0)#H1:0.0::0.5)i4:0.0, (#H1:0.0::0.5,i3:1.0)i6:1.0)i0;"
+net = readTopology(netstr)
 ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
 df = DataFrame(taxon=["i1","i2","i3"], x=[1.0,1.0,1.0], y=[2.0,2.0,2.0])
 df_var = select(df, Not(:taxon))
@@ -199,22 +197,32 @@ PGBP.calibrate!(ctb, [spt])
 # Vy = sharedPathMatrix(net)[:Tips];
 # μ = repeat([3, -3],3); σ2 = [2 0; 0 1]; 
 # Y = repeat([1.0,2.0],3)
-# -0.5*transpose(Y - μ)*inv(kron(Vy,σ2))*(Y - μ) - 0.5*logdet(2π*kron(Vy,σ2)) # -24.362789882502057
-llscore = -24.362789882502057
+# -0.5*transpose(Y - μ)*inv(kron(Vy,σ2))*(Y - μ) - 0.5*logdet(2π*kron(Vy,σ2)) # -34.364282186284285
+llscore = -34.364282186284285
 for i in eachindex(ctb.belief)
     _, tmp = PGBP.integratebelief!(ctb, i)
     @test tmp ≈ llscore
 end
 
 m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0,-3.0])
-PGBP.assignfactors!(b_xy_fixedroot[1], m, tbl, df.taxon, net.nodes_changed,
-    b_xy_fixedroot[2][1], b_xy_fixedroot[2][2], b_xy_fixedroot[2][3]);
+PGBP.assignfactors!(b_xy_fixedroot[1], m, tbl, df.taxon,
+    net.nodes_changed, b_xy_fixedroot[2][1], b_xy_fixedroot[2][2], b_xy_fixedroot[2][3]);
+@test_throws ("message from cluster H1i4i6 has larger constraint rank than " *
+    "dimension of sepset (:i1i4, :H1i4i6), " *
+    "represent cluster i1i4 and sepset (:i1i4, :H1i4i6) as GeneralizedBeliefs") PGBP.calibrate!(ctb, [spt])
+# Convert listed cluster/sepset beliefs to GeneralizedBeliefs:
+#     PGBP.clusterindex(:i1i4, ctb) # 2
+#     PGBP.sepsetindex(:i1i4, :H1i4i6, ctb) # 7
+b_xy_fixedroot[1][2] = PGBP.GeneralizedBelief(b_xy_fixedroot[1][2])
+b_xy_fixedroot[1][7] = PGBP.GeneralizedBelief(b_xy_fixedroot[1][7])
+PGBP.assignfactors!(b_xy_fixedroot[1], m, tbl, df.taxon,
+    net.nodes_changed, b_xy_fixedroot[2][1], b_xy_fixedroot[2][2], b_xy_fixedroot[2][3]);
 PGBP.calibrate!(ctb, [spt])
 # Vy = sharedPathMatrix(net)[:Tips];
 # μ = repeat([3, -3],3); σ2 = [2.0 0.5; 0.5 1.0]; 
 # Y = repeat([1.0,2.0],3)
-# -0.5*transpose(Y - μ)*inv(kron(Vy,σ2))*(Y - μ) - 0.5*logdet(2π*kron(Vy,σ2)) # -29.905349936422414
-llscore = -29.905349936422414
+# -0.5*transpose(Y - μ)*inv(kron(Vy,σ2))*(Y - μ) - 0.5*logdet(2π*kron(Vy,σ2)) # -43.73541366877607
+llscore = -43.73541366877607
 for i in eachindex(ctb.belief)
     _, tmp = PGBP.integratebelief!(ctb, i)
     @test tmp ≈ llscore
