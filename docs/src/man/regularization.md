@@ -18,11 +18,11 @@ Propagating a message ``\tilde{\mu}_{i\rightarrow j}`` from a cluster
 edge belief ``\mu_{i,j}``, and the result is multiplied into ``\mathcal{C}_j``'s
 belief ``\beta_j``:
 ```math
-\beta_j \leftarrow \beta_j\tilde{\mu}_{i\rightarrow j}/\mu_{i,j}
+\hspace{-1em}{\beta_j \leftarrow \beta_j\tilde{\mu}_{i\rightarrow j}/\mu_{i,j}}
 ```
 3\. The edge belief ``\mu_{i,j}`` is updated to the message just passed:
 ```math
-\mu_{i,j} \leftarrow \tilde{\mu}_{i\rightarrow j}
+\hspace{-4.29em}{\mu_{i,j} \leftarrow \tilde{\mu}_{i\rightarrow j}}
 ```
 
 In the linear Gaussian setting, where each belief has the form
@@ -80,10 +80,11 @@ similar modification to one or more associated edge beliefs. For example, if
 ``\mathcal{C}_i`` above was connected to another sepset
 ``\mathcal{S}_{i,k}=\{X_2,X_3\}`` with ``\bm{J}=\bm{0}`` then we might do:
 ```math
+\hspace{.7em}{
  \begin{matrix}x_2 \\ x_3\end{matrix}\!\!
 \begin{bmatrix}0 & 0 \\ 0 & 0\end{bmatrix} \longrightarrow
 \begin{bmatrix}0\textcolor{red}{+\epsilon} & 0 \\ 0 &
-\textcolor{red}{+\epsilon}\end{bmatrix}
+\textcolor{red}{+\epsilon}\end{bmatrix}}
 ```
 We provide several options for regularization below. A typical usage of these
 methods is after the initial assignment of factors.

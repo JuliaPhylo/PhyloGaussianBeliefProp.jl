@@ -20,6 +20,7 @@ A Markov process along the phylogeny induces a *joint distribution*
 
 ``p_\theta(x_1,\dots,x_m)`` can also be factored as the product of *conditional
 distributions* ``\phi_v`` for each node ``X_v``, where
+  
 ``\phi_v=p_\theta(x_v\mid x_{\mathrm{pa}(v)})`` is the distribution of ``X_v``
 given its parent(s) ``X_{\mathrm{pa}(v)}``, e.g.
 ``X_{\mathrm{pa}(v)}=\begin{bmatrix} X_{p_1} \\ X_{p_2}\end{bmatrix}``:
@@ -33,7 +34,7 @@ That is, for each node ``X_v``:
 \begin{aligned}
 X_v\mid X_{\mathrm{pa}(v)} &\sim \mathcal{N}(\omega_v+
 \bm{q}_v X_{\mathrm{pa}(v)},\bm{V}_v) \\
-\phi_v &= (|2\pi\bm{V}_v|)^{-1/2}\exp(-||x_v-(\omega_v+\bm{q}_v x_{\mathrm{pa}(v)})||_{\bm{V}_v^{-1}}/2)
+\phi_v = (|2\pi\bm{V}_v|)^{-1/2}&\exp(-||x_v-(\omega_v+\bm{q}_v x_{\mathrm{pa}(v)})||_{\bm{V}_v^{-1}}/2)
 \end{aligned}
 ```
 with trend vector ``\omega_v``, actualization matrix ``\bm{q}_v``, and
