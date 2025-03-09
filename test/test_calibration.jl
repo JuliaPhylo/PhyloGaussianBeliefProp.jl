@@ -22,12 +22,10 @@ end
     > KLdiv(c(1,0),c(0,1),matrix(c(2,1,1,2),nrow=2),matrix(c(1,0,0,1),nrow=2))
     [1] 1.215973
     """
-    # allocate memory for ::MessageResidual object (resid distr)
     res = PGBP.MessageResidual(zeros(2,2), zeros(2,))
     res.ΔJ .= ones(2,2)/3
     res.Δh .= [-2,4]/3
-    # allocate memory for ::Belief object (ref distr)
-    sepset = PGBP.Belief([1, 2], 1, BitArray([1 1]), PGBP.bsepsettype, (:A,:B))
+    sepset = PGBP.CanonicalBelief([1, 2], 1, BitArray([1 1]), PGBP.bsepsettype, (:A,:B))
     sepset.J .= [1 0; 0 1]
     sepset.h .= [0, 1]
     PGBP.residual_kldiv!(res, sepset)
@@ -49,9 +47,9 @@ end
         m = PGBP.UnivariateBrownianMotion(0.471474, 0, Inf) # 𝒩(0, ∞) prior on root mean
         ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
         spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
-        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b)
+        b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m);
+        PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, n2c, n2fam, n2fix);
+        ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
         PGBP.calibrate!(ctb, [spt])
         llscore = -4.877930583154144
         for i in eachindex(ctb.belief)
@@ -66,12 +64,12 @@ end
             0.33501871740664146 rtol=1e-5 # posterior root variance
         PGBP.init_beliefs_reset_fromfactors!(ctb)
         @testset "regularization by cluster" begin
-            PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+            PGBP.init_beliefs_reset_fromfactors!(ctb)
             PGBP.regularizebeliefs_bynodesubtree!(ctb, ct);
             PGBP.calibrate!(ctb, [spt]);
             _, tmp = PGBP.integratebelief!(ctb, 1)
             @test tmp ≈ llscore
-            PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+            PGBP.init_beliefs_reset_fromfactors!(ctb)
             PGBP.regularizebeliefs_bycluster!(ctb, ct);
             PGBP.calibrate!(ctb, [spt]);
             _, tmp = PGBP.integratebelief!(ctb, 1)
@@ -95,16 +93,40 @@ end
         Compare with posterior mean for I3. =#
         m = PGBP.UnivariateBrownianMotion(0.0861249, 0) # 𝒩(0, 0) prior on root mean
         cg = PGBP.clustergraph!(net, PGBP.Bethe())
-        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-        cgb = PGBP.ClusterGraphBelief(b)
+        b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, cg, m);
+        PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
+        cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
         PGBP.regularizebeliefs_onschedule!(cgb, cg)
         sched = PGBP.spanningtrees_clusterlist(cg, net.nodes_changed)
-        @test PGBP.calibrate!(cgb, sched, 20; auto=true)
+        @test all(PGBP.calibrate!(cgb, sched, 20; auto=true))
         # [ Info: Calibration detected: iter 5, sch 1
         ind = PGBP.clusterindex(:I3, cgb)
         @test PGBP.integratebelief!(b[ind])[1][end] ≈
             0.21511454631828986 rtol=1e-5 # posterior root mean
+    end
+    @testset "tree, 4 tips, 2 traits, 3 missing unscoped in 5 nodes. Clique tree" begin
+        netstr = "(((A:1.0, B:1.0)E:1.0, C:2.0)F:1.0, D:3.0)G;"
+        net = readTopology(netstr)
+        ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
+        df = DataFrame(taxon=["A","B","C","D"], y1=[1,1,1,1], y2=[missing,missing,missing,1])
+        tbl_y = columntable(select(df, :y1, :y2))
+        m = PGBP.MvDiagBrownianMotion([1,1], [0,0])
+        b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m)
+        PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
+        ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
+        spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+        PGBP.calibrate!(ctb, [spt])
+        #=
+        Σnet = kron(Matrix(vcv(net)[!,[:A,:B,:C,:D]]), [1 0.0; 0.0 1])
+        Σnet_y2ABCmissing = Σnet[[1,3,5,7,8],[1,3,5,7,8]]; invΣ = inv(Σnet_y2ABCmissing)
+        yvec = [df[1,:y1], df[2,:y1], df[3,:y1], df[4,:y1], df[4,:y2]]
+        -0.5*transpose(yvec)*invΣ*yvec - 0.5*logdet(2π*Σnet_y2ABCmissing) # -7.578343735986344
+        =#
+        llscore = -7.578343735986344
+        for i in eachindex(ctb.belief)
+            _, tmp = PGBP.integratebelief!(ctb, i)
+            @test tmp ≈ llscore
+        end
     end
     @testset "level-3, 2 tips, 2 traits, 1 missing unscoped in 2 nodes. Join-graph, regularize by node subtree" begin
         netstr = "((#H1:0.1::0.4,#H2:0.1::0.4)I1:1.0,(((A:1.0)#H1:0.1::0.6,#H3:0.1::0.4)#H2:0.1::0.6,(B:1.0)#H3:0.1::0.6)I2:1.0)I3;"
@@ -114,9 +136,9 @@ end
         tbl_y = columntable(select(df, :y1, :y2))
         m = PGBP.MvFullBrownianMotion([1 0.5; 0.5 1], [0,0], [Inf 0; 0 Inf]) # improper root
         cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3))
-        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-        cgb = PGBP.ClusterGraphBelief(b)
+        b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, cg, m);
+        PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, n2c, n2fam, n2fix);
+        cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
         PGBP.regularizebeliefs_bynodesubtree!(cgb, cg)
         sch = [] # schedule based on 1 subtree per variable
         for n in net.nodes_changed
@@ -124,12 +146,12 @@ end
             isempty(subtree[1]) && continue
             push!(sch, subtree)
         end
-        @test (@test_logs (:info, "calibration reached: iteration 4, schedule tree 1") PGBP.calibrate!(cgb, sch, 10; auto=true, info=true))
+        @test (@test_logs (:info, "calibration reached: iteration 4, schedule tree 1") all(PGBP.calibrate!(cgb, sch, 10; auto=true, info=true)))
         #= Compare posterior means against clique tree estimates:
         ct = PGBP.clustergraph!(net, PGBP.Cliquetree());
-        b_ct = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b_ct, m, tbl_y, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b_ct);
+        b_ct, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m);
+        PGBP.assignfactors!(b_ct, m, tbl_y, df.taxon, net.nodes_changed, n2c, n2fam, n2fix);
+        ctb = PGBP.ClusterGraphBelief(b_ct, n2c, n2fam, n2fix, c2n);
         PGBP.calibrate!(ctb, [PGBP.spanningtree_clusterlist(ct, net.nodes_changed)]);
         PGBP.integratebelief!(b_ct[6]) # cluster I1I2I3: PGBP.clusterindex(:I1I2I3, ctb)
         # ([2.121105154896223, 30.005552577448075, 2.1360649504455984, 30.013032475222563, 2.128585052670908, 30.00929252633532], -1.39059577242449)
@@ -137,10 +159,10 @@ end
         # ([2.125583120364, 30.007791560181964, 2.129918967774073, 30.009959483886966, 2.121105154896214, 30.00555257744811], -1.390595772423012)
         =#
         tmp = PGBP.integratebelief!(b[6]) # 6: PGBP.clusterindex(:I1I2I3, cgb)
-        @test tmp[2] ≈ -1.390595772423
+        @test tmp[2] ≈ -1.390595772423 # -1.390595772422671
         @test all(tmp[1] .≈ [2.121105154896223, 30.005552577448075, 2.1360649504455984, 30.013032475222563, 2.128585052670943, 30.00929252633547])
         tmp = PGBP.integratebelief!(b[2]) # cluster 2: H1H2I1
-        @test tmp[2] ≈ -1.390595772423
+        @test tmp[2] ≈ -1.390595772423 # -1.3905957724256268
         @test all(tmp[1] .≈ [2.125583120364, 30.007791560181964, 2.129918967774073, 30.009959483886966, 2.121105154896214, 30.00555257744811])
         #= likelihood using PN.vcv and matrix inversion
         Σnet = kron(Matrix(vcv(net)[!,[:A,:B]]), [1 0.5; 0.5 1])
@@ -152,13 +174,13 @@ end
         loglikelihood(MvNormal(μ, Σnet_y2Bmissing), yvec) # -3.3498677834866997 but not same model: fixed root here
         =#
         m = PGBP.MvFullBrownianMotion([1 0.5; 0.5 1], [2.128585052670943,30.00929252633547]) # fixed root
-        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-        cgb = PGBP.ClusterGraphBelief(b)
+        b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, cg, m);
+        PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, n2c, n2fam, n2fix); # todo: debug
+        cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
         PGBP.regularizebeliefs_bynodesubtree!(cgb, cg)
-        @test (@test_logs PGBP.calibrate!(cgb, sch, 10; auto=true, info=false))
+        @test (@test_logs all(PGBP.calibrate!(cgb, sch, 10; auto=true, info=false)))
         tmp = PGBP.integratebelief!(b[6]) # I3 un-scoped bc fixed root, same posterior mean for I1 and I2
-        @test tmp[2] ≈ -3.3498677834866997
+        @test tmp[2] ≈ -3.3498677834866997 # -3.3498677834895716
         @test all(tmp[1] .≈ [2.121105154896223, 30.005552577448075, 2.1360649504455984, 30.013032475222563])
     end
 end
@@ -170,11 +192,12 @@ end
         tbl_y = columntable(select(df, :y))
         cg = PGBP.clustergraph!(net, PGBP.Bethe())
         m = PGBP.UnivariateBrownianMotion(1, 0)
-        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m);
-        cgb = PGBP.ClusterGraphBelief(b)
+        b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, cg, m);
+        cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
         mod, fenergy, opt = PGBP.calibrate_optimize_clustergraph!(cgb, cg,
             net.nodes_changed, tbl_y, df.taxon,
-            PGBP.UnivariateBrownianMotion, (1,0))
+            PGBP.UnivariateBrownianMotion, (1,0), 100, PGBP.regularizebeliefs_bycluster!,
+            Optim.Options(iterations=30, show_trace=false))
         # Compare with RxInfer + Optim
         @test fenergy ≈ -3.4312133894974126 rtol=1e-4
         @test mod.μ ≈ 10.931640613828181 rtol=1e-4
@@ -207,8 +230,9 @@ end
 
         lbc = GeneralLazyBufferCache(function (paramOriginal)
             mo = PGBP.UnivariateBrownianMotion(paramOriginal...)
-            bel = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, mo)
-            return PGBP.ClusterGraphBelief(bel)
+            bel, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, mo)
+            # bel = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, mo)
+            return PGBP.ClusterGraphBelief(bel, n2c, n2fam, n2fix, c2n)
         end)
         mod2, llscore2, opt2 = PGBP.calibrate_optimize_cliquetree_autodiff!(lbc, ct, net.nodes_changed,
             tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (1, -2))
@@ -244,12 +268,13 @@ end
         =#
 
         # x,y: 2 traits, some missing values
-        m = PGBP.MvDiagBrownianMotion((2,1), (3,-3), (0,0))
-        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
-        ctb = PGBP.ClusterGraphBelief(b)
+        m = PGBP.MvDiagBrownianMotion([2,1], [3,-3], [0,0])
+        b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct, m);
+        PGBP.assignfactors!(b, m, tbl, df.taxon, net.nodes_changed, n2c, n2fam, n2fix);
+        ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
         mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(ctb, ct, net.nodes_changed,
-            tbl, df.taxon, PGBP.MvDiagBrownianMotion, ((2,1), (1,-1)))
+            tbl, df.taxon, PGBP.MvDiagBrownianMotion, ([2,1], [1,-1]),
+            Optim.Options(iterations=30, show_trace=false))
         @test PGBP.integratebelief!(ctb, spt[3][1])[2] ≈ llscore
         @test llscore ≈ -14.39029465611705 # -5.174720533524127 -9.215574122592923
         @test mod.μ ≈ [3.500266520382341, -0.26000871507162693]

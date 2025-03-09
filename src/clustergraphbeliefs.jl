@@ -1,5 +1,5 @@
 """
-    ClusterGraphBelief{B<:Belief, F<:FamilyFactor, M<:MessageResidual}
+    ClusterGraphBelief{B<:AbstractBelief, F<:ClusterFactor, M<:MessageResidual}
 
 Structure to hold a vector of beliefs, with cluster beliefs coming first and
 sepset beliefs coming last. Fields:
@@ -23,7 +23,7 @@ Assumptions:
 - For a cluster belief, the cluster's nodes are stored in the belief's `metadata`.
 - For a sepset belief, its incident clusters' nodes are in the belief's metadata.
 """
-struct ClusterGraphBelief{B<:Belief, F<:FamilyFactor, M<:MessageResidual}
+struct ClusterGraphBelief{B<:AbstractBelief, F<:ClusterFactor, M<:MessageResidual}
     "vector of beliefs, cluster beliefs first and sepset beliefs last"
     belief::Vector{B}
     """vector of initial factors from the graphical model, one per cluster.
@@ -42,6 +42,14 @@ struct ClusterGraphBelief{B<:Belief, F<:FamilyFactor, M<:MessageResidual}
     sdict::Dict{Set{Symbol},Int}
     "dictionary: message labels (cluster_to, cluster_from) => residual information"
     messageresidual::Dict{Tuple{Symbol,Symbol}, M}
+    "vector: node index => cluster index"
+    node2cluster::Vector{Integer}
+    "vector: node index => node family"
+    node2family::Vector{Vector{Integer}}
+    "vector: node index => node is leaf or fixed root"
+    node2fixed::BitVector
+    "vector: cluster index => node indices"
+    cluster2nodes::Vector{Vector{Integer}}
 end
 nbeliefs(obj::ClusterGraphBelief) = length(obj.belief)
 nclusters(obj::ClusterGraphBelief) = obj.nclusters
@@ -75,10 +83,17 @@ fields constructed accordingly. New memory is allocated for these other fields,
 e.g. for factors (with data copied from cluster beliefs) and message residuals
 (with data initialized to 0 but of size matching that from sepset beliefs)
 
-To construct the input vector of beliefs, see [`init_beliefs_allocate`](@ref)
-and [`init_beliefs_assignfactors!`](@ref)
+To construct the input vector of beliefs, see [`allocatebeliefs`](@ref)
+and [`assignfactors!`](@ref)
 """
-function ClusterGraphBelief(beliefs::Vector{B}) where B<:Belief
+function ClusterGraphBelief(
+    beliefs::Vector{B},
+    node2cluster::Vector,
+    node2family::Vector,
+    node2fixed::BitVector,
+    cluster2nodes::Vector,
+    # todo: more specific function signature
+) where B<:AbstractBelief
     i = findfirst(b -> b.type == bsepsettype, beliefs)
     nc = (isnothing(i) ? length(beliefs) : i - 1)
     all(beliefs[i].type == bclustertype for i in 1:nc) ||
@@ -89,7 +104,8 @@ function ClusterGraphBelief(beliefs::Vector{B}) where B<:Belief
     sdict = get_sepsetindexdictionary(beliefs, nc)
     mr = init_messageresidual_allocate(beliefs, nc)
     factors = init_factors_allocate(beliefs, nc)
-    return ClusterGraphBelief{B,eltype(factors),valtype(mr)}(beliefs,factors,nc,cdict,sdict,mr)
+    return ClusterGraphBelief{B,eltype(factors),valtype(mr)}(beliefs,factors,nc,cdict,sdict,mr,
+        node2cluster, node2family, node2fixed, cluster2nodes)
 end
 
 function get_clusterindexdictionary(beliefs, nclusters)
@@ -105,7 +121,7 @@ end
 Reset cluster beliefs to existing factors, and sepset beliefs to h=0, J=0, g=0
 
 This is not used so far, as changing model parameters requires a reset of both
-factors and beliefs, done by [`init_beliefs_assignfactors!`](@ref).
+factors and beliefs, done by [`assignfactors!`](@ref).
 """
 function init_beliefs_reset_fromfactors!(beliefs::ClusterGraphBelief)
     nc, nb = nclusters(beliefs), length(beliefs.belief)
@@ -195,7 +211,7 @@ elements of precision matrices `J`, while preserving the full graphical model
 invariant during belief propagation) so that all beliefs are non-degenerate.
 
 This regularization could be done after initialization with
-[`init_beliefs_assignfactors!`](@ref) for example.
+[`assignfactors!`](@ref) for example.
 
 The goal is that at each later step of belief propagation, the sending cluster
 has a non-degenerate (positive definite) precision matrix for the variables to be
@@ -222,7 +238,7 @@ function regularizebeliefs_bycluster!(beliefs::ClusterGraphBelief, cgraph::MetaG
     end
 end
 function regularizebeliefs_bycluster!(beliefs::ClusterGraphBelief{B},
-        cgraph::MetaGraph, clusterlab) where B<:Belief{T} where T
+        cgraph::MetaGraph, clusterlab) where B<:AbstractBelief{T} where T
     b = beliefs.belief
     cluster_to = b[clusterindex(clusterlab, beliefs)] # receiving-cluster
     ϵ = max(eps(T), maximum(abs, cluster_to.J)) # regularization constant
@@ -289,7 +305,7 @@ function regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief, cgraph::M
     end
 end
 function regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief{B},
-        cgraph::MetaGraph, node_symbol, node_ind) where B<:Belief{T} where T
+        cgraph::MetaGraph, node_symbol, node_ind) where B<:AbstractBelief{T} where T
     b = beliefs.belief
     sg, _ = nodesubtree(cgraph, node_symbol, node_ind)
     nv(sg) <= 1 && return nothing
