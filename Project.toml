@@ -4,6 +4,7 @@ authors = ["Cecile Ane <cecileane@users.noreply.github.com>", "Benjamin Teo <bst
 version = "0.0.1"
 
 [deps]
+CliqueTrees = "60701a23-6482-424a-84db-faee86b9b1f8"
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
@@ -19,6 +20,7 @@ StatsFuns = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
 Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 
 [compat]
+CliqueTrees = "0.5"
 DataStructures = "0.18"
 Distributions = "0.25"
 ForwardDiff = "0.10"
