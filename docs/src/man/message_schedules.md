@@ -55,7 +55,7 @@ Continuing with the code example from [A heuristic](@ref), we:
 - tell `calibrate!` to return once calibration is detected (`auto=true`)
 - log information on when calibration was detected (`info=true`)
 
-```jldoctest; setup = :(net = readnewick(pkgdir(PGBP, "test/example_networks", "lipson_2020b.phy")); preorder!(net); df = DataFrame(taxon=tipLabels(net), x=[0.431, 1.606, 0.72, 0.944, 0.647, 1.263, 0.46, 1.079, 0.877, 0.748, 1.529, -0.469]); m = PGBP.UnivariateBrownianMotion(1, 0); cg = PGBP.clustergraph!(net, PGBP.Bethe()); tbl_x = columntable(select(df, :x)); (b, (n2c, n2fam, n2fix, n2d, c2n)) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.vec_node, cg, m); cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n); sched = PGBP.spanningtrees_clusterlist(cg, net.vec_node);)
+```jldoctest; setup = :(net = readnewick(pkgdir(PGBP, "test/example_networks", "lipson_2020b.phy")); preorder!(net); df = DataFrame(taxon=tiplabels(net), x=[0.431, 1.606, 0.72, 0.944, 0.647, 1.263, 0.46, 1.079, 0.877, 0.748, 1.529, -0.469]); m = PGBP.UnivariateBrownianMotion(1, 0); cg = PGBP.clustergraph!(net, PGBP.Bethe()); tbl_x = columntable(select(df, :x)); (b, (n2c, n2fam, n2fix, n2d, c2n)) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.vec_node, cg, m); cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n); sched = PGBP.spanningtrees_clusterlist(cg, net.vec_node);)
 julia> PGBP.init_beliefs_reset_fromfactors!(cgb); # reset to initial beliefs
 
 julia> PGBP.regularizebeliefs_bynodesubtree!(cgb, cg); # regularize by node subtree

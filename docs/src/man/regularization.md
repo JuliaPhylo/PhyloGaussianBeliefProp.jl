@@ -136,7 +136,7 @@ julia> net = readnewick(pkgdir(PGBP, "test/example_networks", "lipson_2020b.phy"
 
 julia> preorder!(net)
 
-julia> df = DataFrame(taxon=tipLabels(net), # simulated using `simulate(net, ParamsBM(0, 1))` from PhyloNetworks
+julia> df = DataFrame(taxon=tiplabels(net), # simulated using `simulate(net, ParamsBM(0, 1))` from PhyloNetworks
                x=[0.431, 1.606, 0.72, 0.944, 0.647, 1.263, 0.46, 1.079, 0.877, 0.748, 1.529, -0.469]);
 
 julia> m = PGBP.UnivariateBrownianMotion(1, 0); # choose model: σ2 = 1.0, μ = 0.0 

@@ -57,7 +57,7 @@ examplenetdir = joinpath(dirname(Base.find_package("PhyloGaussianBeliefProp")),
         rootmean = [0.0, 0.0]; rate = [2.0 1.0; 1.0 2.0]
         sim = simulate(net, ParamsMultiBM(rootmean, rate))
         y1 = sim[:Tips][1,:]; y2 = sim[:Tips][2,:] =#
-        df = DataFrame(taxon=tipLabels(net),
+        df = DataFrame(taxon=tiplabels(net),
                 y1=[-1.001, 0.608, -3.606, -7.866, -5.977, -6.013, -7.774,
                     -5.511, -6.392, -6.471],
                 y2=[0.262, 5.124, -5.076, -6.223, -7.033, -6.062, -6.42, -6.34,

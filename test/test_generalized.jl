@@ -66,7 +66,7 @@ end
 #     ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
 #     spt = PGBP.spanningtree_clusterlist(ct, net.vec_node)
 #     PGBP.calibrate!(ctb, [spt])
-#     # μ = 0; σ2 = 1; Vy = sharedPathMatrix(net)[:Tips]; Y = [1.0,1.0,1.0]
+#     # μ = 0; σ2 = 1; Vy = sharedpathmatrix(net)[:Tips]; Y = [1.0,1.0,1.0]
 #     # -0.5*transpose(Y .- μ)*inv(σ2*Vy)*(Y .- μ) - 0.5*logdet(2π*σ2*Vy) # -4.161534555831068
 #     @test PGBP.integratebelief!(ctb, 6)[1] ≈ [0.6] # H1
 #     llscore = -4.161534555831068
@@ -126,7 +126,7 @@ end
     ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
     spt = PGBP.spanningtree_clusterlist(ct, net.vec_node)
     PGBP.calibrate!(ctb, [spt])
-    #= μ = 0; σ2 = 1; Vy = sharedPathMatrix(net)[:Tips]; Y = [-1.0,1.0]
+    #= μ = 0; σ2 = 1; Vy = sharedpathmatrix(net)[:Tips]; Y = [-1.0,1.0]
     -0.5*transpose(Y .- μ)*inv(σ2*Vy)*(Y .- μ) - 0.5*logdet(2π*σ2*Vy) # -3.4486412230145387
     ancestralStateReconstruction(net, Y, ParamsBM(0,1))
     ───────────────────────────────────────────────
@@ -165,7 +165,7 @@ end
 #     ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
 #     spt = PGBP.spanningtree_clusterlist(ct, net.vec_node)
 #     PGBP.calibrate!(ctb, [spt])
-#     # Vy = sharedPathMatrix(net)[:Tips]
+#     # Vy = sharedpathmatrix(net)[:Tips]
 #     # μ = [3.0, -3.0]; σ2 = [2.0 0.5; 0.5 1.0]
 #     # Y = [1.0, 2.0]
 #     # -0.5*transpose(Y - μ)*inv(kron(Vy,σ2))*(Y - μ) - 0.5*logdet(2π*kron(Vy,σ2)) # -14.713626258961408
@@ -193,7 +193,7 @@ ctb = PGBP.ClusterGraphBelief(b_xy_fixedroot[1], b_xy_fixedroot[2][1],
     b_xy_fixedroot[2][2], b_xy_fixedroot[2][3], b_xy_fixedroot[2][5])
 spt = PGBP.spanningtree_clusterlist(ct, net.vec_node)
 PGBP.calibrate!(ctb, [spt])
-# Vy = sharedPathMatrix(net)[:Tips];
+# Vy = sharedpathmatrix(net)[:Tips];
 # μ = repeat([3, -3],3); σ2 = [2 0; 0 1]; 
 # Y = repeat([1.0,2.0],3)
 # -0.5*transpose(Y - μ)*inv(kron(Vy,σ2))*(Y - μ) - 0.5*logdet(2π*kron(Vy,σ2)) # -34.364282186284285
@@ -207,7 +207,7 @@ m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0,-3.0])
 PGBP.assignfactors!(b_xy_fixedroot[1], m, tbl, df.taxon,
     net.vec_node, b_xy_fixedroot[2][1], b_xy_fixedroot[2][2], b_xy_fixedroot[2][3]);
 PGBP.calibrate!(ctb, [spt])
-# Vy = sharedPathMatrix(net)[:Tips];
+# Vy = sharedpathmatrix(net)[:Tips];
 # μ = repeat([3, -3],3); σ2 = [2.0 0.5; 0.5 1.0]; 
 # Y = repeat([1.0,2.0],3)
 # -0.5*transpose(Y - μ)*inv(kron(Vy,σ2))*(Y - μ) - 0.5*logdet(2π*kron(Vy,σ2)) # -43.73541366877607

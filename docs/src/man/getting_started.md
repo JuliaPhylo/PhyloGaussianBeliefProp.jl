@@ -27,7 +27,7 @@ julia> using PhyloGaussianBeliefProp
 
 julia> const PGBP = PhyloGaussianBeliefProp;
 
-julia> using PhyloNetworks # `readnewick`, `tipLabels`, `preorder!`
+julia> using PhyloNetworks # `readnewick`, `tiplabels`, `preorder!`
 
 julia> using DataFrames # `DataFrame`
 
@@ -39,7 +39,7 @@ tip labels: Mbuti, Onge, Karitiana, MA1, ...
 (Mbuti:1.0,(((Onge:1.0,#H1:0.01::0.4)EasternNorthAfrican:1.0,(((Karitiana:1.0)#H1:0.01::0.6,(MA1:1.0,#H3:0.01::0.4)ANE:1.0)AncientNorthEurasian:1.0,(((#H2:0.01::0.4)#H3:0.01::0.6,Loschbour:1.0)WHG:1.0,#H4:0.01::0.4)WestEurasian:1.0)I1:1.0)I2:1.0,((European:1.0)#H2:0.01::0.6,Stuttgart:1.0)#H4:0.01::0.6)NonAfrican:1.0)I3;
 julia> preorder!(net) # updates net.vec_node to contain network nodes listed in preorder
 
-julia> df = DataFrame(taxon=tipLabels(net), # simulated using `simulate(net, ParamsBM(0, 1))` from PhyloNetworks
+julia> df = DataFrame(taxon=tiplabels(net), # simulated using `simulate(net, ParamsBM(0, 1))` from PhyloNetworks
                x=[1.343, 0.841, -0.623, -1.483, 0.456, -0.081, 1.311])
 7×2 DataFrame
  Row │ taxon      x       
