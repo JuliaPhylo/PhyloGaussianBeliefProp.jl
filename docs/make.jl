@@ -2,6 +2,11 @@ using PhyloGaussianBeliefProp
 using Documenter
 using DocumenterCitations
 
+using DocumenterInterLinks
+links = InterLinks(
+    "PhyloNetworks" => "https://juliaphylo.github.io/PhyloNetworks.jl/stable/objects.inv",
+    "PhyloTraits" => "https://juliaphylo.github.io/PhyloTraits.jl/stable/objects.inv",
+)
 DocMeta.setdocmeta!(PhyloGaussianBeliefProp, :DocTestSetup, :(using PhyloGaussianBeliefProp); recursive=true)
 
 bib = CitationBibliography(joinpath(@__DIR__, "src", "refs.bib"))
@@ -34,7 +39,7 @@ makedocs(;
         # Ignore any digit after the 5th digit after a decimal, throughout the docs
         r"(?<=\d\.\d{5})\d+",
     ],
-    plugins=[bib],
+    plugins=[bib,links],
 )
 
 deploydocs(;
