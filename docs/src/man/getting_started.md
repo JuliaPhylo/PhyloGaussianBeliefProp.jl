@@ -145,8 +145,8 @@ julia> tbl_x = columntable(select(df, :x)) # extract x from df as a column table
 
 Next, we allocate memory for beliefs
 ```jldoctest getting_started
-julia> b, (n2c, n2fam, n2fix, n2d, c2n) =
-   PGBP.allocatebeliefs(tbl_x, df.taxon, net.vec_node, ct, m);
+julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(
+            tbl_x, df.taxon, net.vec_node, ct, m);
 julia> length(b) # no. of beliefs
 33
 ```
@@ -230,8 +230,9 @@ edges following some preorder traversal of `ct`.
 See section [Message schedules](@ref) for more details on message schedules.
 
 Since `ct` is a clique tree, there is a single spanning tree (`sched[1]`). We
-extract and display the preorder sequence of edges from `sched[1]`. In this example,
-`NonAfricanI3` is the root cluster of `ct`, and `KaritianaH1` is a leaf cluster.
+extract and display the preorder sequence of edges from `sched[1]`.
+In this example, `NonAfricanI3` is the root cluster of `ct`,
+and `KaritianaH1` is a leaf cluster.
 
 ```jldoctest getting_started
 julia> sched = PGBP.spanningtrees_clusterlist(ct, net.vec_node);
@@ -278,12 +279,12 @@ On a calibrated clique tree, there are two ways to obtain the log-likelihood:
   on loopy cluster graphs but is exact on a clique tree
 
 ```jldoctest getting_started
-julia> (_, norm) = PGBP.integratebelief!(b[1]); # `norm` is the integral of `b[1]` over its scope
+julia> (_, norm) = PGBP.integratebelief!(b[1]); # norm = integral of b[1]
 
 julia> norm
 -11.273958980921247
 
-julia> (_, _, fe) = PGBP.factored_energy(ctb); # `fe` is the factored energy from the cluster/edge beliefs
+julia> (_, _, fe) = PGBP.factored_energy(ctb); # fe = factored energy
 
 julia> fe
 -11.273958980921261
@@ -306,18 +307,18 @@ maximize the log-likelihood. There are two options:
 ```jldoctest getting_started
 julia> using Optim
 
-julia> fitted, ll, _ = PGBP.calibrate_optimize_cliquetree!( # iterative optimization
+julia> fitted, ll, _ = PGBP.calibrate_optimize_cliquetree!( # iterative
                         ctb, # beliefs
                         ct, # clique tree
                         net.vec_node, # network nodes in preorder
                         tbl_x, # trait data
                         df.taxon, # tip labels
-                        PGBP.UnivariateBrownianMotion, # type of evolutionary model
+                        PGBP.UnivariateBrownianMotion, # evolutionary model
                         (1.0, 0), # starting parameters: σ2 = 1.0, μ = 0.0
                         Optim.Options(iterations=30, show_trace=false)
                         ); 
 
-julia> fitted # ML estimates
+julia> fitted # ML estimate of parameters
 Univariate Brownian motion
 
 - evolutionary variance rate σ2 :
@@ -325,12 +326,12 @@ Univariate Brownian motion
 - root mean μ :
 1.1525789703018783
 
-julia> ll # log-likelihood for ML estimates
+julia> ll # log-likelihood at the ML estimate
 -8.656529929205751
 
-julia> fitted, _ = PGBP.calibrate_exact_cliquetree!( # exact computation
+julia> fitted, _ = PGBP.calibrate_exact_cliquetree!( # exact optimization
                      ctb,
-                     sched[1], # schedule the order to travers edges (sepsets)
+                     sched[1], # schedule the order to traverse edges (sepsets)
                      net.vec_node,
                      tbl_x,
                      df.taxon,
@@ -352,9 +353,11 @@ Strictly speaking, the estimates from the latter option do not jointly maximize
 the log-likelihood. However, the REML estimate for ``\sigma^2`` is generally
 less biased than its ML counterpart.
 In this simple model, the REML estimate is just equal to the ML estimate
-up to a factor $(n-1)/n$, with $n$ the number of tips in the network:
+up to a factor *(n-1)/n*, with *n* the number of tips in the network:
+`sigma2_REML = (n-1)/n * sigma2_ML` calculated below
+
 ```jldoctest getting_started
-julia> PGBP.varianceparam(fitted) * (net.numtaxa - 1) / net.numtaxa # sigma2_REML = (n-1)/n * sigma2_ML
+julia> PGBP.varianceparam(fitted) * (net.numtaxa - 1) / net.numtaxa
 0.31812948859631934
 ```
 
@@ -371,9 +374,10 @@ the analog of [`calibrate_optimize_cliquetree!`](@ref) from earlier:
 julia> cg = PGBP.clustergraph!(net, PGBP.Bethe()) # factor graph
 Meta graph based on a Graphs.SimpleGraphs.SimpleGraph{Int8} with vertex labels of type Symbol, vertex metadata of type Tuple{Vector{Symbol}, Vector{Int8}}, edge metadata of type Vector{Int8}, graph metadata given by :Bethe, and default weight 0
 
-julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.vec_node, cg, m); # allocate memory for beliefs
+julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(
+            tbl_x, df.taxon, net.vec_node, cg, m); # allocate memory for beliefs
 
-julia> cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n); # wrap beliefs to facilitate message passing
+julia> cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n); # wrap beliefs
 
 julia> fitted, fe, _ = PGBP.calibrate_optimize_clustergraph!(
                         cgb,
@@ -383,8 +387,8 @@ julia> fitted, fe, _ = PGBP.calibrate_optimize_clustergraph!(
                         df.taxon,
                         PGBP.UnivariateBrownianMotion,
                         (1.0, 0),
-                        100, # max no. of iterations
-                        PGBP.regularizebeliefs_bycluster!, # regularization function
+                        100, # max number of iterations within LBP
+                        PGBP.regularizebeliefs_bycluster!, # regularization fct
                         Optim.Options(iterations=30, show_trace=false)
                         );
 

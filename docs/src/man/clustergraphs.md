@@ -3,6 +3,7 @@ CurrentModule = PhyloGaussianBeliefProp
 ```
 
 # Cluster graphs
+
 A cluster graph groups the nodes ``X_1,\dots,X_m`` of the phylogeny into
 several (possibly intersecting) clusters/subsets, such that for any node:
 - there is ``\ge 1`` cluster that contains it and its parents (i.e. the clusters are (node) *family-preserving*)
@@ -22,6 +23,7 @@ follow some walk along the cluster graph, ending at that cluster. This is then
 interpreted as an estimate of its conditional distribution given the data.
 
 ## Clique tree
+
 A cluster graph whose topology is a tree is known as a clique tree. We provide
 the option to construct a clique tree, and 3 further options (below) for
 constructing (potentially) loopy cluster graphs.
@@ -33,32 +35,48 @@ greater cost than approximate inference on a loopy cluster graph.
 Below is an example using a virus recombination network from
 [Müller et al. (2022, Fig 1a)](https://doi.org/10.1038/s41467-022-31749-8)
 [muller2022bayesian](@cite), with inheritance probabilities estimated from the
-inferred recombination breakpoints (see [muller2022_nexus2newick.jl](https://github.com/bstkj/graphicalmodels_for_phylogenetics_code/blob/5f61755c4defe804fd813113e883d49445971ade/real_networks/muller2022_nexus2newick.jl)).
+inferred recombination breakpoints
+(see [muller2022_nexus2newick.jl](https://github.com/bstkj/graphicalmodels_for_phylogenetics_code/blob/5f61755c4defe804fd813113e883d49445971ade/real_networks/muller2022_nexus2newick.jl)).
+This network has 1161 edges and 801 nodes total: 40 tips, 361 hybrid nodes,
+and 400 internal tree nodes.
 
 ```jldoctest clustergraphs; setup = :(using PhyloNetworks, PhyloGaussianBeliefProp; const PGBP = PhyloGaussianBeliefProp)
-julia> net = readTopology(pkgdir(PhyloGaussianBeliefProp, "test/example_networks", "muller_2022.phy")); # 1161 edges, 801 nodes: 40 tips, 361 hybrid nodes, 400 internal tree nodes.
+julia> file = pkgdir(PhyloGaussianBeliefProp, "test/example_networks", "muller_2022.phy");
+
+julia> net = readTopology(file); # 1161 edges, 801 nodes, including 40 tips
 
 julia> preorder!(net)
 
 julia> ct = PGBP.clustergraph!(net, PGBP.Cliquetree());
 
-julia> PGBP.labels(ct) |> length # no. of vertices/clusters in clique tree
+julia> PGBP.labels(ct) |> length # number of vertices/clusters in clique tree
 664
 
-julia> PGBP.edge_labels(ct) |> length # no. of edges in clique tree, one less than no. of clusters
+julia> PGBP.edge_labels(ct) |> length # no. of edges in clique tree: 1-#clusters
 663
 
 julia> clusters = PGBP.labels(ct) |> collect; # vector of cluster labels
 
 julia> clusters[1] # cluster label is the concatenation of node labels
 :I300I301I302I189
+```
 
-julia> ct[clusters[1]] # access metadata for `cluster[1]`: (node labels, preorder indices), nodes are arranged by decreasing preorder index
+Below we access the metadata for the first cluster: its node labels,
+and these nodes' preorder indices.
+In each cluster, nodes are arranged by decreasing preorder index.
+```jldoctest clustergraphs
+julia> ct[clusters[1]] # (node labels, preorder indices)
 ([:I300, :I301, :I302, :I189], Int16[722, 719, 717, 487])
+```
 
-julia> using StatsBase # `summarystats`
+To get a sense of the various clusters' sizes, we can do this.
+We see that among the 664 clusters, sizes vary between 2 and 54 nodes,
+with a median of 5 nodes.
 
-julia> (length(ct[cl][1]) for cl in PGBP.labels(ct)) |> collect |> summarystats # distribution of cluster sizes
+```jldoctest clustergraphs
+julia> using StatsBase # to use `summarystats`
+
+julia> (length(ct[cl][1]) for cl in PGBP.labels(ct)) |> collect |> summarystats
 Summary Stats:
 Length:         664
 Missing Count:  0
@@ -72,6 +90,7 @@ Maximum:        54.000000
 ```
 
 ## Bethe / Factor graph
+
 The Bethe cluster graph has a cluster for each node family (*factor clusters*)
 and for each node (*variable clusters*). Each factor cluster is joined to the
 variable cluster for any node it contains.
@@ -79,8 +98,11 @@ variable cluster for any node it contains.
 ```jldoctest clustergraphs
 julia> fg = PGBP.clustergraph!(net, PGBP.Bethe());
 
-julia> (PGBP.labels(fg) |> length, PGBP.edge_labels(fg) |> length) # (no. of clusters, no. of edges)
-(1557, 1914)
+julia> PGBP.labels(fg) |> length # number of clusters
+1557
+
+julia> PGBP.edge_labels(fg) |> length # number of edges
+1914
 
 julia> (length(fg[cl][1]) for cl in PGBP.labels(fg)) |> collect |> summarystats
 Summary Stats:
@@ -98,6 +120,7 @@ If each hybrid node has 2 parents (as for `net`), then the maximum cluster size
 is 3.
 
 ## Join-graph structuring
+
 [Join-graph structuring](https://doi.org/10.1613/jair.2842) allows the user to
 specify the maximum cluster size ``k^*``. See [`JoinGraphStructuring`](@ref)
 for more details on the algorithm.
@@ -149,19 +172,26 @@ Median:         5.000000
 3rd Quartile:   10.000000
 Maximum:        54.000000
 ```
-then it turns out the `jg2` is a clique tree (since the number of clusters and
+then it turns out that `jg2` is a clique tree (since the number of clusters and
 edges differ by 1), though not the same one as `ct`. Generally, a cluster graph
 with larger clusters is less likely to be loopy than one with smaller clusters.
 
 ## LTRIP
-For [LTRIP](https://doi.org/10.1145/3132711.3132717), the user provides the set
+
+For [LTRIP](https://doi.org/10.1145/3132711.3132717), the user provides a set
 of clusters, which are assumed to be family-preserving (see above).
-1. For each node, the clusters that contain it are joined as a tree, prioritizing edges formed with clusters that intersect heavily with others. See [`LTRIP`](@ref) for details.
-2. The trees for each node are layered on one another (the sepsets for an edge are merged) to produce the cluster graph.
-As an example, we use the clusters from join-graph structuring:
+1. For each node, the clusters that contain it are joined as a tree,
+   prioritizing edges formed with clusters that intersect heavily with others.
+   See [`LTRIP`](@ref) for details.
+2. The trees for each node are layered on one another (the sepsets for an edge
+   are merged) to produce the cluster graph.
+
+As an example, we use the clusters from join-graph structuring to start LTRIP.
+We first collect these clusters in a vector, giving each one as a vector of
+nodes' preorder indices in decreasing order:
 
 ```jldoctest clustergraphs
-julia> clusters = (jg[cl][2] for cl in PGBP.labels(jg)) |> collect; # vector of clusters, each given as a vector of preorder indices in decreasing order
+julia> clusters = (jg[cl][2] for cl in PGBP.labels(jg)) |> collect;
 
 julia> lg = PGBP.clustergraph!(net, PGBP.LTRIP(clusters, net));
 
@@ -171,7 +201,7 @@ julia> (PGBP.labels(lg) |> length, PGBP.edge_labels(lg) |> length)
 The summary statistics would be the same as for `jg`'s clusters, though it
 appears that `lg` is more densely connected than `jg`.
 
-If the user does not provide the clusters, then the set of node families
+If the user does not provide clusters, then the set of node families
 (see [`nodefamilies`](@ref)) is used by default:
 
 ```jldoctest clustergraphs

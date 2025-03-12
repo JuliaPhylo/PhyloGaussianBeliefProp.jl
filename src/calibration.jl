@@ -32,8 +32,12 @@ See also: [`iscalibrated_residnorm`](@ref)
 and [`iscalibrated_residnorm!`](@ref) for the tolerance and norm used by default,
 to declare calibration for a given sepset message (in 1 direction).
 """
-function calibrate!(beliefs::ClusterGraphBelief, schedule::AbstractVector,
-    niter::Integer=1; auto::Bool=false, info::Bool=false,
+function calibrate!(
+    beliefs::ClusterGraphBelief,
+    schedule::AbstractVector,
+    niter::Integer=1;
+    auto::Bool=false,
+    info::Bool=false,
     verbose::Bool=true,
     update_residualnorm::Bool=true,
     update_residualkldiv::Bool=false,
@@ -65,7 +69,9 @@ see [`propagate_1traversal_postorder!`](@ref).
 Output: `true` if all message residuals have a small norm,
 based on [`iscalibrated_residnorm`](@ref), `false` otherwise.
 """
-function calibrate!(beliefs::ClusterGraphBelief, spt::Tuple,
+function calibrate!(
+    beliefs::ClusterGraphBelief,
+    spt::Tuple,
     verbose::Bool=true,
     up_resnorm::Bool=true,
     up_reskldiv::Bool=false,
@@ -173,12 +179,15 @@ at the root *without* the conditional distribution at all nodes, modifying
 an extra preorder calibration would be required.
 Warning: there is *no* check that the cluster graph is in fact a clique tree.
 """
-function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
-        cgraph, prenodes::Vector{PN.Node},
-        tbl::Tables.ColumnTable, taxa::AbstractVector,
-        evomodelfun, # constructor function
-        evomodelparams,
-        optimoptions=Optim.Options(iterations=30, show_trace=true, extended_trace=true),
+function calibrate_optimize_cliquetree!(
+    beliefs::ClusterGraphBelief,
+    cgraph,
+    prenodes::Vector{PN.Node},
+    tbl::Tables.ColumnTable,
+    taxa::AbstractVector,
+    evomodelfun, # constructor function
+    evomodelparams,
+    optimoptions=Optim.Options(iterations=30, show_trace=true, extended_trace=true),
 )
     spt = spanningtree_clusterlist(cgraph, prenodes)
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
@@ -224,11 +233,15 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     return bestmodel, loglikscore, opt
 end
 
-function calibrate_optimize_cliquetree_autodiff!(bufferbeliefs::GeneralLazyBufferCache,
-        cgraph, prenodes::Vector{PN.Node},
-        tbl::Tables.ColumnTable, taxa::AbstractVector,
-        evomodelfun, # constructor function
-        evomodelparams)
+function calibrate_optimize_cliquetree_autodiff!(
+    bufferbeliefs::GeneralLazyBufferCache,
+    cgraph,
+    prenodes::Vector{PN.Node},
+    tbl::Tables.ColumnTable,
+    taxa::AbstractVector,
+    evomodelfun, # constructor function
+    evomodelparams
+)
     spt = spanningtree_clusterlist(cgraph, prenodes)
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     mod = evomodelfun(evomodelparams...) # model with starting values
@@ -293,13 +306,17 @@ graph, and does a postorder-preorder traversal for each tree. The loop runs till
 calibration is detected or till `max_iterations` have passed, whichever occurs
 first.
 """
-function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
-        cgraph, prenodes::Vector{PN.Node},
-        tbl::Tables.ColumnTable, taxa::AbstractVector,
-        evomodelfun, # constructor function
-        evomodelparams, maxiter::Integer=100,
-        regfun=regularizebeliefs_bycluster!, # regularization function
-        optimoptions=Optim.Options(iterations=30, show_trace=true, extended_trace=true),
+function calibrate_optimize_clustergraph!(
+    beliefs::ClusterGraphBelief,
+    cgraph,
+    prenodes::Vector{PN.Node},
+    tbl::Tables.ColumnTable,
+    taxa::AbstractVector,
+    evomodelfun, # constructor function
+    evomodelparams,
+    maxiter::Integer=100,
+    regfun=regularizebeliefs_bycluster!, # regularization function
+    optimoptions=Optim.Options(iterations=30, show_trace=true, extended_trace=true),
 )
     sch = spanningtrees_clusterlist(cgraph, prenodes)
     mod = evomodelfun(evomodelparams...) # model with starting values
@@ -384,10 +401,12 @@ Steps:
 Warning: there is *no* check that the beliefs and schedule are consistent
 with each other.
 """
-function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
+function calibrate_exact_cliquetree!(
+    beliefs::ClusterGraphBelief{B},
     spt, # node2belief may be needed if pre & post calibrations are moved outside
     prenodes::Vector{PN.Node},
-    tbl::Tables.ColumnTable, taxa::AbstractVector,
+    tbl::Tables.ColumnTable,
+    taxa::AbstractVector,
     evomodelfun # constructor function
 ) where B<:AbstractBelief{T} where T
     evomodelfun ∈ (UnivariateBrownianMotion, MvFullBrownianMotion) ||

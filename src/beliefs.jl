@@ -351,7 +351,10 @@ These variables are vectorized by stacking up columns, that is,
 listing all in-scope traits of the first node, then all in-scope traits of
 the second node etc.
 """
-function scopeindex(node_labels::Union{Tuple,AbstractVector}, belief::AbstractBelief)
+function scopeindex(
+    node_labels::Union{Tuple,AbstractVector},
+    belief::AbstractBelief
+)
     binscope = inscope(belief)
     node_j = indexin(node_labels, nodelabels(belief))
     any(isnothing.(node_j)) && error("some label is not in the belief's node labels")
@@ -385,8 +388,12 @@ or if a variable in the `sepset`'s scope is not in scope in the `cluster`.
 """
 scopeindex(sep::AbstractBelief, clu::AbstractBelief) =
     scopeindex(nodelabels(sep), inscope(sep), nodelabels(clu), inscope(clu))
-function scopeindex(subset_labels::AbstractVector, subset_inscope::BitArray,
-                    belief_labels::AbstractVector, belief_inscope::BitArray)
+function scopeindex(
+    subset_labels::AbstractVector,
+    subset_inscope::BitArray,
+    belief_labels::AbstractVector,
+    belief_inscope::BitArray
+)
     node_index = indexin(subset_labels, belief_labels)
     issorted(node_index) || error("subset labels come in a different order in the belief")
     any(isnothing.(node_index)) && error("subset_labels not a subset of belief_labels")

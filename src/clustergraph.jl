@@ -166,8 +166,10 @@ Tuple `(ispreserving, isfamily_incluster)`:
 
 See also [`nodefamilies`](@ref) to get node families.
 """
-function isfamilypreserving(clusters::Vector{Vector{T}},
-                            net::HybridNetwork) where {T <: Integer}
+function isfamilypreserving(
+    clusters::Vector{Vector{T}},
+    net::HybridNetwork
+) where {T <: Integer}
     node2family = nodefamilies(net) # vectors of type vgraph_eltype(net)
     isfamilyincluster = Vector{BitVector}(undef, length(node2family))
     for nf in node2family
@@ -700,8 +702,11 @@ Output:
 - (`resulting_minibucket`, `minibucket_merged_into`) if a successful merge is found
 - (`new_minibucket`, []) otherwise
 """
-function assign!(bucket::Dict{T, Vector{Vector{T}}},
-                 new::Vector{T}, maxsize::T) where {T <: Integer}
+function assign!(
+    bucket::Dict{T, Vector{Vector{T}}},
+    new::Vector{T},
+    maxsize::T
+) where {T <: Integer}
     for sz in sort(collect(keys(bucket)), rev=true) # favor merging with large minibuckets
         minibuckets = bucket[sz] # minibuckets of size `sz`
         for (i, mb) in enumerate(minibuckets)

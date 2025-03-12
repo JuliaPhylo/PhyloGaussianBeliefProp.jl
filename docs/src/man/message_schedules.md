@@ -33,7 +33,9 @@ Returning to the last few edges of the tree schedule from
 [5. Propose a schedule from the cluster graph](@ref):
 
 ```jldoctest; setup = :(net = readnewick(pkgdir(PGBP, "test/example_networks", "lazaridis_2014.phy")); preorder!(net); ct = PGBP.clustergraph!(net, PGBP.Cliquetree()); sched = PGBP.spanningtrees_clusterlist(ct, net.vec_node);)
-julia> DataFrame(parent=sched[1][1], child=sched[1][2])[13:end,:] # last 4 edges of tree 1 in preorder
+julia> DataFrame(parent = sched[1][1],
+                 child  = sched[1][2]
+                )[13:end,:] # last 4 edges of tree 1 in preorder
 4×2 DataFrame
  Row │ parent                             child                             
      │ Symbol                             Symbol                            
