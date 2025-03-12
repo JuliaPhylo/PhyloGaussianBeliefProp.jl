@@ -48,7 +48,7 @@ hasdegenerate(net::HybridNetwork) = any(isdegenerate(v) && !unscope(v) for v in 
 """
     parentinformation(node, net)
 
-Tuple of (edge length, edge γ, index of parent node in `net.nodes_changed`)
+Tuple of (edge length, edge γ, index of parent node in `net.vec_node`)
 for all parent edges of `node`. Assumes that `net` has been preordered before.
 """
 function parentinformation(hyb::PN.Node, net::HybridNetwork)
@@ -59,7 +59,7 @@ function parentinformation(hyb::PN.Node, net::HybridNetwork)
         getchild(e)===hyb || continue
         push!(t, e.length)
         push!(γ, e.gamma)
-        push!(i_par, findfirst(isequal(getparent(e)), net.nodes_changed))
+        push!(i_par, findfirst(isequal(getparent(e)), net.vec_node))
     end
     return (t, γ, i_par)
 end
@@ -107,7 +107,7 @@ and [`hasdegenerate`](@ref) to check if `net` still has degenerate nodes.
 function addtreenode_belowdegeneratehybrid!(net::HybridNetwork)
     restart = true
     # find prefix for naming new nodes
-    m = match(r"(^\D+)\d+$", net.node[net.root].name)
+    m = match(r"(^\D+)\d+$", net.node[net.rooti].name)
     prefix = (isnothing(m) ? "I" : m.captures[1])
     while restart
         for hyb in net.hybrid
@@ -118,7 +118,7 @@ function addtreenode_belowdegeneratehybrid!(net::HybridNetwork)
             _,newe = PN.breakedge!(che, net) # hyb --newe--> newv --che--> hybridchild
             newe.length = t
             che.length = 0.0 # the hybrid child may now be degenerate, so restart
-            preprocessnet!(net, prefix) # name new node, update net.nodes_changed
+            preprocessnet!(net, prefix) # name new node, update net.vec_node
             break
         end
         restart=false

@@ -10,14 +10,14 @@ tbl = columntable(df_var)
 tbl_y = columntable(select(df, :y)) # 1 trait, for univariate models
 
 @testset "basics" begin
-net = readTopology(netstr)
+net = readnewick(netstr)
 @test_throws ErrorException PGBP.shrinkdegenerate_treeedges(net)
 net.edge[8].length=0.0 # external edge
 @test_throws ErrorException PGBP.shrinkdegenerate_treeedges(net)
 net.edge[8].length=0.1
 net.edge[4].length=0.0 # tree edge below hybrid
 net_polytomy = PGBP.shrinkdegenerate_treeedges(net)
-@test writeTopology(net_polytomy) == "((A:4.0,(B1:1.0,B2:1.0)#H5:1.1::0.9)i4:0.5,(#H5:2.0::0.1,C:0.1)i2:1.0)i1;"
+@test writenewick(net_polytomy) == "((A:4.0,(B1:1.0,B2:1.0)#H5:1.1::0.9)i4:0.5,(#H5:2.0::0.1,C:0.1)i2:1.0)i1;"
 @test PGBP.isdegenerate.(net.node) == [0,0,0, 1,0,0,0,0,0]
 @test PGBP.hasdegenerate(net)
 for i in [5,7] net.edge[i].length=0.0; end # hybrid edge: makes the hybrid degenerate
@@ -35,7 +35,7 @@ b1 = PGBP.CanonicalBelief(Int8[5,6], 3, nm, PGBP.bclustertype, 1)
 end # of basic testset
 
 @testset "degenerate hybrid: complex case" begin
-net = readTopology(netstr)
+net = readnewick(netstr)
 net.edge[8].length=0.1 # was missing
 for i in [5,7] net.edge[i].length=0.0; end # hybrid edge: makes the hybrid degenerate
 
@@ -46,26 +46,26 @@ ct = PGBP.cliquetree(g) # 6 sepsets, 7 cliques
 ne(ct), nv(ct)
 [ct[lab] for lab in labels(ct)]
 [ct[lab...] for lab in edge_labels(ct)]
-[(n.name, n.number) for n in net.nodes_changed]
+[(n.name, n.number) for n in net.vec_node]
 =#
 
 # fixit: one clique should have both the child & parents of the degenerate hybrid
 
-b, _ = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct, PGBP.UnivariateBrownianMotion(1,0,1))
+b, _ = PGBP.allocatebeliefs(tbl, df.taxon, net.vec_node, ct, PGBP.UnivariateBrownianMotion(1,0,1))
 beliefnodelabels = [[6,5], [7,6], [8,6], [5,4,2], [4,2,1], [3,2], [9,4], [6], [6], [5], [4,2], [2], [4]]
 @test [PGBP.nodelabels(be) for be in b] == beliefnodelabels
 @test PGBP.inscope(b[5]) == trues(2,3)
 @test !isempty(PGBP.scopeindex([5], b[1]))
 @test PGBP.scopeindex([6], b[1]) == [1,2]
 @test_throws ErrorException PGBP.scopeindex([2], b[1])
-b, _ = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct, PGBP.UnivariateBrownianMotion(1,0,0))
+b, _ = PGBP.allocatebeliefs(tbl, df.taxon, net.vec_node, ct, PGBP.UnivariateBrownianMotion(1,0,0))
 @test [PGBP.nodelabels(be) for be in b] == beliefnodelabels
 @test PGBP.inscope(b[5]) == [true true false; true true false] # root not in scope
 
 end # of degenerate testset
 
 @testset "non-degenerate hybrid: simpler case" begin
-net = readTopology(netstr)
+net = readnewick(netstr)
 net.edge[8].length=0.1 # was missing
 
 g = PGBP.moralize!(net)
@@ -73,8 +73,8 @@ PGBP.triangulate_minfill!(g)
 ct = PGBP.cliquetree(g)
 
 m = PGBP.UnivariateBrownianMotion(2, 3, 0) # 0 root prior variance: fixed root
-b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.nodes_changed, ct, m);
-PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed, n2c, n2fam, n2fix);
+b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.vec_node, ct, m);
+PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.vec_node, n2c, n2fam, n2fix);
 # ["$(be.type): $(be.nodelabel)" for be in b]
 @test b[1].J ≈ m.J/net.edge[4].length .* [1 -1; -1 1]
 @test b[1].h == [0,0]

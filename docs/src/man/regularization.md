@@ -132,7 +132,7 @@ julia> using DataFrames, Tables, PhyloNetworks, PhyloGaussianBeliefProp
 
 julia> const PGBP = PhyloGaussianBeliefProp;
 
-julia> net = readTopology(pkgdir(PGBP, "test/example_networks", "lipson_2020b.phy")); #  54 edges; 44 nodes: 12 tips, 11 hybrid nodes, 21 internal tree nodes.
+julia> net = readnewick(pkgdir(PGBP, "test/example_networks", "lipson_2020b.phy")); #  54 edges; 44 nodes: 12 tips, 11 hybrid nodes, 21 internal tree nodes.
 
 julia> preorder!(net)
 
@@ -145,13 +145,13 @@ julia> cg = PGBP.clustergraph!(net, PGBP.Bethe()); # build factor graph
 
 julia> tbl_x = columntable(select(df, :x)); # trait data as column table
 
-julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, cg, m); # allocate memory for beliefs
+julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.vec_node, cg, m); # allocate memory for beliefs
 
-julia> PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix); # assign factors based on model
+julia> PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.vec_node, n2c, n2fam, n2fix); # assign factors based on model
 
 julia> cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n); # wrap beliefs for message passing
 
-julia> sched = PGBP.spanningtrees_clusterlist(cg, net.nodes_changed); # generate schedule
+julia> sched = PGBP.spanningtrees_clusterlist(cg, net.vec_node); # generate schedule
 ```
 
 Without regularization, errors indicating ill-defined messages (which are skipped)

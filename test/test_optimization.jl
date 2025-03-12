@@ -3,7 +3,7 @@
 examplenetdir = joinpath(dirname(Base.find_package("PhyloGaussianBeliefProp")),
     "..", "test","example_networks")
     @testset "univariate, no missing, fixed root" begin
-        net = readTopology(joinpath(examplenetdir, "mateescu_2010.phy"))
+        net = readnewick(joinpath(examplenetdir, "mateescu_2010.phy"))
         # 9 nodes: 2 tips, 4 hybrids
         # level-4, not tree-child, has hybrid ladder, has deg-4 hybrid
         df = DataFrame(taxon=["d","g"], y=[1.0,-1.0])
@@ -17,7 +17,7 @@ examplenetdir = joinpath(dirname(Base.find_package("PhyloGaussianBeliefProp")),
         refσ2 = 0.5932930079336234
         refll = -3.2763180687070053
         mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(ctb, ct,
-            net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
+            net.vec_node, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
             (1.0,0.0))
         @test mod.μ ≈ refμ
         @test mod.σ2 ≈ refσ2
@@ -29,7 +29,7 @@ examplenetdir = joinpath(dirname(Base.find_package("PhyloGaussianBeliefProp")),
             return PGBP.ClusterGraphBelief(bel)
         end)
         mod, llscore, opt = PGBP.calibrate_optimize_cliquetree_autodiff!(lbc, ct,
-            net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
+            net.vec_node, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
             (1.0,0,0))
         @test mod.μ ≈ refμ rtol=4e-10
         @test mod.σ2 ≈ refσ2 rtol=3e-11
@@ -39,7 +39,7 @@ examplenetdir = joinpath(dirname(Base.find_package("PhyloGaussianBeliefProp")),
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, cg, m)
         cgb = PGBP.ClusterGraphBelief(b)
         mod, fenergy, opt = PGBP.calibrate_optimize_clustergraph!(cgb, cg,
-                net.nodes_changed, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
+                net.vec_node, tbl_y, df.taxon, PGBP.UnivariateBrownianMotion,
                 (1.0,0.0))
         @test mod.μ ≈ refμ rtol=2e-5
         @test mod.σ2 ≈ refσ2 rtol=2e-6
@@ -50,7 +50,7 @@ examplenetdir = joinpath(dirname(Base.find_package("PhyloGaussianBeliefProp")),
     # norm(fenergy+refll)/max(norm(fenergy),norm(refll))
     # norm(llscore-refll)/max(norm(llscore),norm(refll))
     @testset "bivariate, no missing, improper root" begin
-        net = readTopology(joinpath(examplenetdir, "sun_2023.phy"))
+        net = readnewick(joinpath(examplenetdir, "sun_2023.phy"))
         # 42 nodes: 10 tips, 6 hybrids
         # level-6, not tree-child, has hybrid ladder, has deg-4 hybrid
         #= tip data simulated from ParamsMultiBM():
@@ -68,11 +68,11 @@ examplenetdir = joinpath(dirname(Base.find_package("PhyloGaussianBeliefProp")),
         # min cluster size: 2, max cluster size: 5
         m = PGBP.MvFullBrownianMotion([2.0 1.0; 1.0 2.0], [0.0 0.0], [Inf 0.0; 0.0 Inf])
         b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.nodes_changed);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl, df.taxon, net.vec_node);
         ctb = PGBP.ClusterGraphBelief(b)
         # note: reaches max iterations before converging, so just save results for now
         # mod, llscore, opt = PGBP.calibrate_optimize_cliquetree!(ctb, ct,
-        #     net.nodes_changed, tbl, df.taxon, PGBP.MvFullBrownianMotion,
+        #     net.vec_node, tbl, df.taxon, PGBP.MvFullBrownianMotion,
         #     ([2.0 1.0; 1.0 2.0], [0.0 0.0], [Inf 0.0; 0.0 Inf]))
         
         # Multivariate Brownian motion
@@ -103,11 +103,11 @@ examplenetdir = joinpath(dirname(Base.find_package("PhyloGaussianBeliefProp")),
         cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(4));
         # min cluster size: 1, max cluster size: 4
         b_jg = PGBP.init_beliefs_allocate(tbl, df.taxon, net, cg, m);
-        PGBP.init_beliefs_assignfactors!(b_jg, m, tbl, df.taxon, net.nodes_changed);
+        PGBP.init_beliefs_assignfactors!(b_jg, m, tbl, df.taxon, net.vec_node);
         cgb = PGBP.ClusterGraphBelief(b_jg)
         # note: reaches max iterations before converging, so just save results for now
         # mod, fenergy, opt = PGBP.calibrate_optimize_clustergraph!(cgb, cg,
-        #     net.nodes_changed, tbl, df.taxon, PGBP.MvFullBrownianMotion,
+        #     net.vec_node, tbl, df.taxon, PGBP.MvFullBrownianMotion,
         #     ([2.0 1.0; 1.0 2.0], [0.0 0.0], [Inf 0.0; 0.0 Inf]))
         # Multivariate Brownian motion
         # - evolutionary variance rate matrix: R:

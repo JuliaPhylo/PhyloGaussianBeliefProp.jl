@@ -27,17 +27,17 @@ julia> using PhyloGaussianBeliefProp
 
 julia> const PGBP = PhyloGaussianBeliefProp;
 
-julia> using PhyloNetworks # `readTopology`, `tipLabels`, `preorder!`
+julia> using PhyloNetworks # `readnewick`, `tipLabels`, `preorder!`
 
 julia> using DataFrames # `DataFrame`
 
-julia> net = readTopology(pkgdir(PGBP, "test/example_networks", "lazaridis_2014.phy"))
+julia> net = readnewick(pkgdir(PGBP, "test/example_networks", "lazaridis_2014.phy"))
 PhyloNetworks.HybridNetwork, Rooted Network
 23 edges
 20 nodes: 7 tips, 4 hybrid nodes, 9 internal tree nodes.
 tip labels: Mbuti, Onge, Karitiana, MA1, ...
 (Mbuti:1.0,(((Onge:1.0,#H1:0.01::0.4)EasternNorthAfrican:1.0,(((Karitiana:1.0)#H1:0.01::0.6,(MA1:1.0,#H3:0.01::0.4)ANE:1.0)AncientNorthEurasian:1.0,(((#H2:0.01::0.4)#H3:0.01::0.6,Loschbour:1.0)WHG:1.0,#H4:0.01::0.4)WestEurasian:1.0)I1:1.0)I2:1.0,((European:1.0)#H2:0.01::0.6,Stuttgart:1.0)#H4:0.01::0.6)NonAfrican:1.0)I3;
-julia> preorder!(net) # updates net.nodes_changed to contain network nodes listed in preorder
+julia> preorder!(net) # updates net.vec_node to contain network nodes listed in preorder
 
 julia> df = DataFrame(taxon=tipLabels(net), # simulated using `simulate(net, ParamsBM(0, 1))` from PhyloNetworks
                x=[1.343, 0.841, -0.623, -1.483, 0.456, -0.081, 1.311])
@@ -131,7 +131,7 @@ julia> using Tables # `columntable`
 julia> tbl_x = columntable(select(df, :x)) # extract trait `x` from `df` as a column table
 (x = [1.343, 0.841, -0.623, -1.483, 0.456, -0.081, 1.311],)
 
-julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m); # allocate memory for beliefs
+julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.vec_node, ct, m); # allocate memory for beliefs
 
 julia> length(b) # no. of beliefs
 33
@@ -147,7 +147,7 @@ h: [0.0, 0.0, 0.0]
 J: [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
 g: 0.0
 
-julia> PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix); # initialize beliefs from evolutionary model
+julia> PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.vec_node, n2c, n2fam, n2fix); # initialize beliefs from evolutionary model
 
 julia> b[1] # belief for cluster {H1, EasternNorthAfrican, AncientNorthEurasian} after factor assignment
 canonical belief for Cluster H1EasternNorthAfricanAncientNorthEurasian, 1 traits × 3 nodes, dimension 3.
@@ -203,7 +203,7 @@ extract and display the preorder sequence of edges from `sched[1]`. In this exam
 `NonAfricanI3` is the root cluster of `ct`, and `KaritianaH1` is a leaf cluster.
 
 ```jldoctest getting_started
-julia> sched = PGBP.spanningtrees_clusterlist(ct, net.nodes_changed);
+julia> sched = PGBP.spanningtrees_clusterlist(ct, net.vec_node);
 
 julia> DataFrame(parent=sched[1][1], child=sched[1][2]) # edges of tree 1 in preorder
 16×2 DataFrame
@@ -274,7 +274,7 @@ julia> using Optim
 julia> fitted, ll, _ = PGBP.calibrate_optimize_cliquetree!( # iterative optimization
                         ctb, # beliefs
                         ct, # clique tree
-                        net.nodes_changed, # network nodes in preorder
+                        net.vec_node, # network nodes in preorder
                         tbl_x, # trait data
                         df.taxon, # tip labels
                         PGBP.UnivariateBrownianMotion, # type of evolutionary model
@@ -296,7 +296,7 @@ julia> ll # log-likelihood for ML estimates
 julia> fitted, _ = PGBP.calibrate_exact_cliquetree!( # exact computation
                      ctb,
                      sched[1], # schedule the order in which edges (sepsets) are traversed
-                     net.nodes_changed,
+                     net.vec_node,
                      tbl_x,
                      df.taxon,
                      PGBP.UnivariateBrownianMotion);
@@ -319,7 +319,7 @@ less biased than its ML counterpart.
 In this simple model, the REML estimate is just equal to the ML estimate
 up to a factor $(n-1)/n$, with $n$ the number of tips in the network:
 ```jldoctest getting_started
-julia> PGBP.varianceparam(fitted) * (net.numTaxa - 1) / net.numTaxa # sigma2_REML = (n-1)/n * sigma2_ML
+julia> PGBP.varianceparam(fitted) * (net.numtaxa - 1) / net.numtaxa # sigma2_REML = (n-1)/n * sigma2_ML
 0.31812948859631934
 ```
 
@@ -335,14 +335,14 @@ the analog of [`calibrate_optimize_cliquetree!`](@ref) from earlier:
 julia> cg = PGBP.clustergraph!(net, PGBP.Bethe()) # factor graph
 Meta graph based on a Graphs.SimpleGraphs.SimpleGraph{Int8} with vertex labels of type Symbol, vertex metadata of type Tuple{Vector{Symbol}, Vector{Int8}}, edge metadata of type Vector{Int8}, graph metadata given by :Bethe, and default weight 0
 
-julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, cg, m); # allocate memory for beliefs
+julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.vec_node, cg, m); # allocate memory for beliefs
 
 julia> cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n); # wrap beliefs to facilitate message passing
 
 julia> fitted, fe, _ = PGBP.calibrate_optimize_clustergraph!(
                         cgb,
                         cg,
-                        net.nodes_changed,
+                        net.vec_node,
                         tbl_x,
                         df.taxon,
                         PGBP.UnivariateBrownianMotion,

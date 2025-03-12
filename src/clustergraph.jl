@@ -52,7 +52,7 @@ function moralize(net::HybridNetwork)
         zero(T))
     # add vertices in preorder, which saves their index to access them in net.
     sym2code = Dict{Symbol,T}()
-    for (code,n) in enumerate(net.nodes_changed)
+    for (code,n) in enumerate(net.vec_node)
         ns = Symbol(n.name)
         vt = T(code)
         push!(sym2code, ns => vt)
@@ -124,7 +124,7 @@ end
     nodefamilies(net)
 
 Vector `v` with elements of type `Vector{T}`.
-`v[i]` first lists `i`, the preorder index of node `net.nodes_changed[i]`,
+`v[i]` first lists `i`, the preorder index of node `net.vec_node[i]`,
 followed by the preorder index of all of this node's parents in `net`,
 sorted in decreasing order. Due to pre-ordering,
 all of the parents' indices are listed after the node (their child) index.
@@ -135,7 +135,7 @@ A given node and its parents is called a "node family".
 """
 function nodefamilies(net::HybridNetwork)
     T = vgraph_eltype(net)
-    prenodes = net.nodes_changed
+    prenodes = net.vec_node
     node2family = Vector{Vector{T}}(undef, length(prenodes))
     for (code, n) in enumerate(prenodes)
         o = sort!(indexin(getparents(n), prenodes), rev=true)
@@ -154,7 +154,7 @@ Tuple `(ispreserving, isfamily_incluster)`:
    in `net` is contained in at least 1 cluster in `clusters`.
    `clusters` should be a vector, where each element describes one cluster,
    given as a vector of preorder indices. Index `i` corresponds to node number `i`
-   in `net` according the node pre-ordering: `net.nodes_changed[i]`.
+   in `net` according the node pre-ordering: `net.vec_node[i]`.
 2. `isfamily_incluster`: vector of `BitVector`s. `isfamily_incluster[i][j]` is
    true (false) if the family of node `i` is (is not) fully contained in cluster [j].
    `i` is taken as the preorder index of a node in `net`.
@@ -197,7 +197,7 @@ contain the node: see [`nodesubtree`](@ref).
 """
 function check_runningintersection(clustergraph::MetaGraph, net::HybridNetwork)
     res = Tuple{Symbol, Bool}[]
-    for (nod_ind, n) in enumerate(net.nodes_changed)
+    for (nod_ind, n) in enumerate(net.vec_node)
         nodelab = Symbol(n.name)
         sg, _ = nodesubtree(clustergraph, nodelab, nod_ind)
         push!(res, (nodelab, is_tree(sg)))
@@ -475,7 +475,7 @@ function betheclustergraph(net::HybridNetwork)
     node2cluster = Dict{T, Tuple{Symbol, Vector{Symbol}}}() # for joining clusters later
     node2code = Dict{T,T}() # node preorder index -> code of family(node) in cluster graph
     code = zero(T)
-    prenodes = net.nodes_changed
+    prenodes = net.vec_node
     prenodes_names = [Symbol(n.name) for n in prenodes]
     # add a factor-cluster for each non-root node
     for noi in reverse(eachindex(prenodes)) # postorder: see fam(h) before fam(p) in case fam(p) ⊆ fam(h)
@@ -538,7 +538,7 @@ function ltripclustergraph(net::HybridNetwork, method::LTRIP)
 
     node2cluster = Dict{T, Vector{T}}() # for joining clusters later
     clusters = getclusters(method)
-    prenodes_names = [Symbol(n.name) for n in net.nodes_changed]
+    prenodes_names = [Symbol(n.name) for n in net.vec_node]
     # build nodes in clustg and in auxiliary cg
     for (code, nodeindlist) in enumerate(clusters) # nodeindlist assumed sorted, decreasing
         cdat = prenodes_names[nodeindlist]
@@ -1012,7 +1012,7 @@ then one is chosen with the smallest number of taxa (leaves in the network).
 For cluster with label `:lab`, its property `clustergraph[:lab][2]`
 should list the nodes in the cluster, by the index of each node in
 `nodevector_preordered` such that `1` corresponds to the network's root.
-Typically, this vector is `net.nodes_changed` after the network is preordered.
+Typically, this vector is `net.vec_node` after the network is preordered.
 """
 function default_rootcluster(cgraph::MetaGraph, prenodes::Vector{PN.Node})
     hasroot = lab -> begin   # Inf if the cluster does not contain the root 1

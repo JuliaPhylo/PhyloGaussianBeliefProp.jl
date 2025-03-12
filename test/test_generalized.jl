@@ -8,16 +8,16 @@
 
 @testset "degenerate extended family" begin
     netstr = "(((a:1.0)#H1:0.0::0.5)d:1.0, (((#H1:0.0::0.5)#H2:0.0::0.5)b:1.0, (#H2:0.0::0.5)c:1.0)e:1.0)f;"
-    net = readTopology(netstr)
+    net = readnewick(netstr)
     df = DataFrame(taxon="a", x=[1.0])
     tbl_x = columntable(select(df, :x))
     # clusters: [[d, e, f], [H1, d, b, c, e], [H1, d, H2, b, c], [a, H1]]
     # In [H1, d, b, c, e], d is a parent of H1, and b, c are grandparents of H1
     clusters = [[6,2,1], [7,6,4,3,2], [7,6,5,4,3], [8,7]]
     cg = PGBP.clustergraph!(net, PGBP.LTRIP(clusters, net))
-    # [[net.nodes_changed[i].name for i in c] for c in clusters]
+    # [[net.vec_node[i].name for i in c] for c in clusters]
     m = PGBP.UnivariateBrownianMotion(1, 0)
-    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, cg, m)
+    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.vec_node, cg, m)
     @test PGBP.isdegenerate_extendedfamily_covered(7, [8,7], n2fam, n2d, n2fix) == (false, true) # hybrid, no parent in cluster
     @test PGBP.isdegenerate_extendedfamily_covered(8, [8,7], n2fam, n2d, n2fix) == (false, true) # leaf
     @test PGBP.isdegenerate_extendedfamily_covered(1, [6,2,1], n2fam, n2d, n2fix) == (true, true) # fixed root
@@ -32,22 +32,22 @@ end
 
 @testset "Univariate BM. Clique tree" begin
 @testset "1 tip. Leaf is degenerate child of hybrid" begin
-    net = readTopology(net4)
+    net = readnewick(net4)
     df = DataFrame(taxon=["i2"], x=[1.0])
     tbl_x = columntable(select(df, :x))
     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
     m = PGBP.UnivariateBrownianMotion(1, 0)
-    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
+    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.vec_node, ct, m)
     ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
-    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
-    spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.vec_node, n2c, n2fam, n2fix)
+    spt = PGBP.spanningtree_clusterlist(ct, net.vec_node)
     @test_throws ("message from cluster H1i4i6 has larger constraint rank than " *
         "dimension of sepset (:H1i4i6, :i4i6i0), " *
         "represent cluster i4i6i0 and sepset (:H1i4i6, :i4i6i0) as GeneralizedBeliefs") PGBP.calibrate!(ctb, [spt])
     # b[3] and b[5] should also be represented as GeneralizedBeliefs
     b[3] = PGBP.GeneralizedBelief(b[3])
     b[5] = PGBP.GeneralizedBelief(b[5])
-    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
+    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.vec_node, n2c, n2fam, n2fix)
     PGBP.calibrate!(ctb, [spt])
     llscore = -1.5723649429247 # -0.5*(1-0)^2/0.5 - 0.5*logdet(2π*0.5)
     for i in eachindex(ctb.belief)
@@ -56,15 +56,15 @@ end
     end
 end
 # @testset "Level-1. 3 tips" begin
-#     net = readTopology(net3)
+#     net = readnewick(net3)
 #     df = DataFrame(taxon=["i1","i2","i3"], x=[1.0,1.0,1.0])
 #     tbl_x = columntable(select(df, :x))
 #     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
 #     m = PGBP.UnivariateBrownianMotion(1, 0)
-#     b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
-#     PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
+#     b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.vec_node, ct, m)
+#     PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.vec_node, n2c, n2fam, n2fix)
 #     ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
-#     spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+#     spt = PGBP.spanningtree_clusterlist(ct, net.vec_node)
 #     PGBP.calibrate!(ctb, [spt])
 #     # μ = 0; σ2 = 1; Vy = sharedPathMatrix(net)[:Tips]; Y = [1.0,1.0,1.0]
 #     # -0.5*transpose(Y .- μ)*inv(σ2*Vy)*(Y .- μ) - 0.5*logdet(2π*σ2*Vy) # -4.161534555831068
@@ -76,15 +76,15 @@ end
 #     end
 # end
 @testset "Level-3. 2 tips" begin
-    net = readTopology(net1)
+    net = readnewick(net1)
     df = DataFrame(taxon=["A","B"], x=[2.11,2.15])
     tbl_x = columntable(select(df, :x))
     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
     m = PGBP.UnivariateBrownianMotion(0.000325097529258775, 2.128439531859558)
-    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
+    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.vec_node, ct, m)
     ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
-    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
-    spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.vec_node, n2c, n2fam, n2fix)
+    spt = PGBP.spanningtree_clusterlist(ct, net.vec_node)
     PGBP.calibrate!(ctb, [spt])
     #= using StatsModels
     fitx_ml = phylolm(@formula(x ~ 1), df, net; tipnames=:taxon, reml=false)
@@ -116,15 +116,15 @@ end
 @testset "Level-4. 2 tips" begin
     #= root node is a parent of a degenerate hybrid, and also a parent of its
     coparent (for the hybrid) =#
-    net = readTopology(net2)
+    net = readnewick(net2)
     df = DataFrame(taxon=["d","g"], x=[1.0,-1.0])
     tbl_x = columntable(select(df, :x))
     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
     m = PGBP.UnivariateBrownianMotion(1, 0)
-    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m)
-    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
+    b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.vec_node, ct, m)
+    PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.vec_node, n2c, n2fam, n2fix)
     ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
-    spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+    spt = PGBP.spanningtree_clusterlist(ct, net.vec_node)
     PGBP.calibrate!(ctb, [spt])
     #= μ = 0; σ2 = 1; Vy = sharedPathMatrix(net)[:Tips]; Y = [-1.0,1.0]
     -0.5*transpose(Y .- μ)*inv(σ2*Vy)*(Y .- μ) - 0.5*logdet(2π*σ2*Vy) # -3.4486412230145387
@@ -153,17 +153,17 @@ end
 @testset "Multivariate BM. Clique tree" begin
 # @testset "1 tip. Leaf is non-degenerate child of hybrid" begin
 #     netstr = "(((i2:1.0)#H1:0.0::0.5)i4:1.0, (#H1:0.0::0.5)i6:1.0)i0;" 
-#     net = readTopology(netstr)
+#     net = readnewick(netstr)
 #     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
 #     df = DataFrame(taxon=["i2"], x=[1.0], y=[2.0])
 #     df_var = select(df, Not(:taxon))
 #     tbl = columntable(df_var)
 #     m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0, -3.0])
 #     b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl, df.taxon,
-#         net.nodes_changed, ct, m)
-#     PGBP.assignfactors!(b, m, tbl, df.taxon, net.nodes_changed, n2c, n2fam, n2fix)
+#         net.vec_node, ct, m)
+#     PGBP.assignfactors!(b, m, tbl, df.taxon, net.vec_node, n2c, n2fam, n2fix)
 #     ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
-#     spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+#     spt = PGBP.spanningtree_clusterlist(ct, net.vec_node)
 #     PGBP.calibrate!(ctb, [spt])
 #     # Vy = sharedPathMatrix(net)[:Tips]
 #     # μ = [3.0, -3.0]; σ2 = [2.0 0.5; 0.5 1.0]
@@ -179,19 +179,19 @@ end
 @testset "Level-1. 3 tips" begin
 # modified net3 by setting length of tree edge (i0,i4) to 0
 netstr = "((i1:1.0,(i2:1.0)#H1:0.0::0.5)i4:0.0, (#H1:0.0::0.5,i3:1.0)i6:1.0)i0;"
-net = readTopology(netstr)
+net = readnewick(netstr)
 ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
 df = DataFrame(taxon=["i1","i2","i3"], x=[1.0,1.0,1.0], y=[2.0,2.0,2.0])
 df_var = select(df, Not(:taxon))
 tbl = columntable(df_var)
 m_biBM_fixedroot = PGBP.MvDiagBrownianMotion([2,1], [3,-3], [0,0])
-b_xy_fixedroot = PGBP.allocatebeliefs(tbl, df.taxon, net.nodes_changed, ct,
+b_xy_fixedroot = PGBP.allocatebeliefs(tbl, df.taxon, net.vec_node, ct,
     m_biBM_fixedroot)
 PGBP.assignfactors!(b_xy_fixedroot[1], m_biBM_fixedroot, tbl, df.taxon,
-    net.nodes_changed, b_xy_fixedroot[2][1], b_xy_fixedroot[2][2], b_xy_fixedroot[2][3]);
+    net.vec_node, b_xy_fixedroot[2][1], b_xy_fixedroot[2][2], b_xy_fixedroot[2][3]);
 ctb = PGBP.ClusterGraphBelief(b_xy_fixedroot[1], b_xy_fixedroot[2][1],
     b_xy_fixedroot[2][2], b_xy_fixedroot[2][3], b_xy_fixedroot[2][5])
-spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+spt = PGBP.spanningtree_clusterlist(ct, net.vec_node)
 PGBP.calibrate!(ctb, [spt])
 # Vy = sharedPathMatrix(net)[:Tips];
 # μ = repeat([3, -3],3); σ2 = [2 0; 0 1]; 
@@ -205,7 +205,7 @@ end
 
 m = PGBP.MvFullBrownianMotion([2.0 0.5; 0.5 1.0], [3.0,-3.0])
 PGBP.assignfactors!(b_xy_fixedroot[1], m, tbl, df.taxon,
-    net.nodes_changed, b_xy_fixedroot[2][1], b_xy_fixedroot[2][2], b_xy_fixedroot[2][3]);
+    net.vec_node, b_xy_fixedroot[2][1], b_xy_fixedroot[2][2], b_xy_fixedroot[2][3]);
 PGBP.calibrate!(ctb, [spt])
 # Vy = sharedPathMatrix(net)[:Tips];
 # μ = repeat([3, -3],3); σ2 = [2.0 0.5; 0.5 1.0]; 
