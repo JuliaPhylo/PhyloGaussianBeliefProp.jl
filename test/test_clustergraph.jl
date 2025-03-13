@@ -4,10 +4,10 @@ netstr = "(((A:4.0,(B:1.0)#H1:1.1::0.9):0.5,((#H1:1.0::0.1,C:0.6):1.0,C2):1.0):3
 mateescu = "((((g:1)#H4:1)#H2:2.04,(d:1,(#H2:0.01::0.5,#H4:1::0.5)#H3:1)D:1,(#H3:1::0.5)#H1:0.01)B:1,#H1:1.01::0.5)A;"
 
 @testset "Utilities" begin
-    net = readTopology(netstr)
+    net = readnewick(netstr)
     g = PhyloGaussianBeliefProp.moralize!(net)
-    @test nv(g) == net.numNodes
-    @test ne(g) == net.numEdges + 1 # 1 extra: moralized
+    @test nv(g) == net.numnodes
+    @test ne(g) == net.numedges + 1 # 1 extra: moralized
     @test PhyloGaussianBeliefProp.triangulate_minfill!(g) ==
     [:A,:B,:H1,:C,:C2,:D,:I5,:I1,:I2,:I3,:I4]
     @test ne(g) == 13 # 1 extra fill edge
@@ -16,11 +16,11 @@ mateescu = "((((g:1)#H4:1)#H2:2.04,(d:1,(#H2:0.01::0.5,#H4:1::0.5)#H3:1)D:1,(#H3
     @test PGBP.parentinformation(net.hybrid[1], net) == ([1.1,1.], [.9,.1], [8,6])
 
     # hybrid ladder H2 -> H1; and H2 child of root
-    net6 = readTopology("(#H2:0::0.2,((C:1,((B:1)#H1:100::0.6)#H2:0::0.8),(#H1:0,(A1:0.1,A2:0.1):0.2):0.3):0.1,O:3);")
+    net6 = readnewick("(#H2:0::0.2,((C:1,((B:1)#H1:100::0.6)#H2:0::0.8),(#H1:0,(A1:0.1,A2:0.1):0.2):0.3):0.1,O:3);")
     PGBP.preprocessnet!(net6, "i")
     PGBP.addtreenode_belowdegeneratehybrid!(net6)
     @test net6.node[13].name == "i6"
-    @test length(net6.nodes_changed) == 13
+    @test length(net6.vec_node) == 13
 end
 
 #=
@@ -32,14 +32,14 @@ metaplot(ct)
 =#
 
 @testset "Bethe cluster graph" begin
-    net = readTopology(netstr)
+    net = readnewick(netstr)
     cg = PGBP.clustergraph!(net, PGBP.Bethe())
     #= number of clusters:
     1. factor clusters:   1 / node family = 1 per non-root node, except when a family is a subset of another
     2. variable clusters: 1 / internal node (including the root, excluding leaves)
     =#
-    numfactorclusters = net.numNodes-1
-    numvarclusters = net.numNodes-net.numTaxa
+    numfactorclusters = net.numnodes-1
+    numvarclusters = net.numnodes-net.numtaxa
     @test nv(cg) == numfactorclusters + numvarclusters
     #= number of edges in the cluster graph, assuming
         * leaves are not hybrids
@@ -48,8 +48,8 @@ metaplot(ct)
     2. internal tree edge in net, e.g. internal tree node → 2 edges in graph
     3. hybrid node family, 1 per hybrid node in net → 3 edges in graph
     =#
-    ninternal_tree = sum(!e.hybrid for e in net.edge) - net.numTaxa
-    @test ne(cg) == (net.numTaxa + 2*ninternal_tree + 3*net.numHybrids)
+    ninternal_tree = sum(!e.hybrid for e in net.edge) - net.numtaxa
+    @test ne(cg) == (net.numtaxa + 2*ninternal_tree + 3*net.numhybrids)
     @test length(connected_components(cg)) == 1 # check for 1 connected component
     @test all(t[2] for t in PGBP.check_runningintersection(cg, net))
     cluster_properties = cg.vertex_properties
@@ -70,7 +70,7 @@ metaplot(ct)
 end
 
 @testset "LTRIP cluster graph" begin
-    net = readTopology(netstr)
+    net = readnewick(netstr)
     clusters = Vector{Int8}[ # node families, nodes specified as preorder indices
         [11, 8], [10, 9], [7, 6], [5, 4], [2, 1],
         [9, 8, 6], [8, 3], [6, 4], [4, 3], [3, 1]]
@@ -93,7 +93,7 @@ end
 end
 
 @testset "Join-graph structuring" begin
-    net = readTopology(mateescu)
+    net = readnewick(mateescu)
     # Mateescu network: 1 bucket has multiple minibuckets
     cg = PGBP.clustergraph!(net, PGBP.JoinGraphStructuring(3))
     @test all(t[2] for t in PGBP.check_runningintersection(cg, net))
@@ -110,7 +110,7 @@ end
 end
 
 @testset "Clique tree" begin
-    net = readTopology(netstr)
+    net = readnewick(netstr)
     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
     
     @test ne(ct) == 8
@@ -122,20 +122,20 @@ end
     cliques = [v[2][2] for v in values(ct.vertex_properties)]
     @test PGBP.isfamilypreserving(cliques, net)[1]
 
-    net = readTopology(mateescu)
+    net = readnewick(mateescu)
     ct = PGBP.clustergraph!(net, PGBP.Cliquetree())
     @test is_tree(ct)
     @test ct[:H3DH1B][2] == [5,4,3,2] # largest clique
 end
 
 @testset "Traversal" begin
-    net = readTopology(netstr)
+    net = readnewick(netstr)
     cg = PGBP.clustergraph!(net, PGBP.Bethe())
     clusterlabs = Set(labels(cg))
     n = length(clusterlabs) - 1 # number of edges in each spanning tree
     c_edges = Set(MetaGraphsNext.arrange(cg, e...) for e in edge_labels(cg))
     s_edges = Set{eltype(c_edges)}() # edges covered by schedule
-    sched = PGBP.spanningtrees_clusterlist(cg, net.nodes_changed)
+    sched = PGBP.spanningtrees_clusterlist(cg, net.vec_node)
     for spt in sched # check: spt is a tree spanning all clusters
         @test length(spt[1]) == n
         spt_edgecodes = [Edge(code_for(cg, spt[1][i]), code_for(cg, spt[2][i])) for i in 1:n]

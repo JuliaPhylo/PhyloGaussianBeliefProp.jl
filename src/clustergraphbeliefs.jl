@@ -261,7 +261,11 @@ Used by
 [`regularizebeliefs_bycluster!`](@ref) and
 [`regularizebeliefs_onschedule!`](@ref).
 """
-function regularizebeliefs_1clustersepset!(cluster::AbstractBelief, sepset::AbstractBelief, ϵ)
+function regularizebeliefs_1clustersepset!(
+    cluster::AbstractBelief,
+    sepset::AbstractBelief,
+    ϵ,
+)
     upind = scopeindex(sepset, cluster)  # indices to be updated
     isempty(upind) && return
     ΔJ = ϵ*LA.I(length(upind))
@@ -299,13 +303,20 @@ For each node (or variable) v:
 6. Check that graphical model invariant is preserved, that is: for each trait j,
    ϵ was added to the same number of clusters as number of sepsets.
 """
-function regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief, cgraph::MetaGraph)
+function regularizebeliefs_bynodesubtree!(
+    beliefs::ClusterGraphBelief,
+    cgraph::MetaGraph,
+)
     for (node_symbol, node_ind) in get_nodesymbols2index(cgraph)
         regularizebeliefs_bynodesubtree!(beliefs, cgraph, node_symbol, node_ind)
     end
 end
-function regularizebeliefs_bynodesubtree!(beliefs::ClusterGraphBelief{B},
-        cgraph::MetaGraph, node_symbol, node_ind) where B<:AbstractBelief{T} where T
+function regularizebeliefs_bynodesubtree!(
+    beliefs::ClusterGraphBelief{B},
+    cgraph::MetaGraph,
+    node_symbol,
+    node_ind,
+) where B<:AbstractBelief{T} where T
     b = beliefs.belief
     sg, _ = nodesubtree(cgraph, node_symbol, node_ind)
     nv(sg) <= 1 && return nothing

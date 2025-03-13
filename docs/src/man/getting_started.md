@@ -22,24 +22,31 @@ with branch lengths arbitrarily set to 1 and inheritance probabilities
 ## Exact likelihood for fixed parameters
 
 ### 1\. Read in the network and the tip data
+
 ```jldoctest getting_started
 julia> using PhyloGaussianBeliefProp
 
 julia> const PGBP = PhyloGaussianBeliefProp;
 
-julia> using PhyloNetworks # `readTopology`, `tipLabels`, `preorder!`
+julia> using PhyloNetworks # `readnewick`, `tiplabels`, `preorder!`
 
 julia> using DataFrames # `DataFrame`
 
-julia> net = readTopology(pkgdir(PGBP, "test/example_networks", "lazaridis_2014.phy"))
+julia> net = readnewick(pkgdir(PGBP, "test/example_networks", "lazaridis_2014.phy"))
 PhyloNetworks.HybridNetwork, Rooted Network
 23 edges
 20 nodes: 7 tips, 4 hybrid nodes, 9 internal tree nodes.
 tip labels: Mbuti, Onge, Karitiana, MA1, ...
 (Mbuti:1.0,(((Onge:1.0,#H1:0.01::0.4)EasternNorthAfrican:1.0,(((Karitiana:1.0)#H1:0.01::0.6,(MA1:1.0,#H3:0.01::0.4)ANE:1.0)AncientNorthEurasian:1.0,(((#H2:0.01::0.4)#H3:0.01::0.6,Loschbour:1.0)WHG:1.0,#H4:0.01::0.4)WestEurasian:1.0)I1:1.0)I2:1.0,((European:1.0)#H2:0.01::0.6,Stuttgart:1.0)#H4:0.01::0.6)NonAfrican:1.0)I3;
-julia> preorder!(net) # updates net.nodes_changed to contain network nodes listed in preorder
+julia> preorder!(net) # updates net.vec_node to contain network nodes listed in preorder
+```
 
-julia> df = DataFrame(taxon=tipLabels(net), # simulated using `simulate(net, ParamsBM(0, 1))` from PhyloNetworks
+The following data were originally simulated along the network from
+a univariate Brownian motion process with mean 0 and variance rate 1
+(see [Continuous trait simulation](@extref PhyloTraits))
+
+```jldoctest getting_started
+julia> df = DataFrame(taxon=tiplabels(net),
                x=[1.343, 0.841, -0.623, -1.483, 0.456, -0.081, 1.311])
 7×2 DataFrame
  Row │ taxon      x       
@@ -63,7 +70,9 @@ Many internals in the package assume that this information is available,
 and so it is important that this be called immediately after reading in the network!
 
 ### 2\. Choose an evolutionary model
-At the moment, models available are: [`UnivariateBrownianMotion`](@ref), [`UnivariateOrnsteinUhlenbeck`](@ref),
+
+At the moment, models available are: [`UnivariateBrownianMotion`](@ref),
+[`UnivariateOrnsteinUhlenbeck`](@ref),
 [`MvDiagBrownianMotion`](@ref), [`MvFullBrownianMotion`](@ref).
 
 Note however that not all methods may be implemented across all models.
@@ -83,6 +92,7 @@ We specify a univariate Brownian motion with mean ``\mu=0`` and variance rate
 though other values may better fit the data.
 
 ### 3\. Build a cluster graph from the network
+
 Methods available are: [`Bethe`](@ref), [`LTRIP`](@ref),
 [`JoinGraphStructuring`](@ref), [`Cliquetree`](@ref).
 
@@ -119,6 +129,7 @@ See that each cluster's label is derived by concatenating the labels of the
 nodes it contains.
 
 ### 4\. Initialize cluster graph beliefs
+
 `ct` describes the topology of our cluster graph, but does not track the beliefs
 for each cluster. Next, we:
 - allocate memory for these beliefs
@@ -126,17 +137,27 @@ for each cluster. Next, we:
 - wrap them within another data structure to facilitate message passing.
 
 ```jldoctest getting_started
-julia> using Tables # `columntable`
+julia> using Tables # to use `columntable`
 
-julia> tbl_x = columntable(select(df, :x)) # extract trait `x` from `df` as a column table
+julia> tbl_x = columntable(select(df, :x)) # extract x from df as a column table
 (x = [1.343, 0.841, -0.623, -1.483, 0.456, -0.081, 1.311],)
+```
 
-julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, ct, m); # allocate memory for beliefs
+Next, we allocate memory for beliefs
+```jldoctest getting_started
+julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(
+            tbl_x, df.taxon, net.vec_node, ct, m);
 
 julia> length(b) # no. of beliefs
 33
+```
 
-julia> b[1] # belief for cluster {H1, EasternNorthAfrican, AncientNorthEurasian} before factor assignment
+We can take a peek at the first belief, before factor assignment.
+This belief is for cluster `{H1, EasternNorthAfrican, AncientNorthEurasian}`,
+based on earlier output.
+
+```jldoctest getting_started
+julia> b[1] # first belief. 0s before any factor assignment
 canonical belief for Cluster H1EasternNorthAfricanAncientNorthEurasian, 1 traits × 3 nodes, dimension 3.
 Node labels: Int8[17, 16, 10]
 trait × node matrix of non-degenerate beliefs:
@@ -146,10 +167,16 @@ exponential quadratic belief, parametrized by
 h: [0.0, 0.0, 0.0]
 J: [0.0 0.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
 g: 0.0
+```
 
-julia> PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix); # initialize beliefs from evolutionary model
+Next we assign each factor (conditional distribution of a node given its
+parents) to a belief that has both the node and all of its parents.
+These factors depend on the chosen evolutionary model.
 
-julia> b[1] # belief for cluster {H1, EasternNorthAfrican, AncientNorthEurasian} after factor assignment
+```jldoctest getting_started
+julia> PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.vec_node,n2c,n2fam,n2fix);
+
+julia> b[1] # after factor assignment: non-zero belief
 canonical belief for Cluster H1EasternNorthAfricanAncientNorthEurasian, 1 traits × 3 nodes, dimension 3.
 Node labels: Int8[17, 16, 10]
 trait × node matrix of non-degenerate beliefs:
@@ -159,8 +186,12 @@ exponential quadratic belief, parametrized by
 h: [0.0, 0.0, 0.0]
 J: [192.30769230769232 -76.92307692307693 -115.38461538461539; -76.92307692307693 30.769230769230774 46.15384615384616; -115.38461538461539 46.15384615384616 69.23076923076923]
 g: 1.7106097934927051
+```
 
-julia> ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n); # wrap beliefs to facilitate message passing
+Finally, we wrap the beliefs and other objects into a `ClusterGraphBelief`
+to facilitate message passing later.
+```jldoctest getting_started
+julia> ctb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n);
 
 julia> PGBP.nclusters(ctb) # no. of cluster beliefs
 17
@@ -187,6 +218,7 @@ their corresponding cluster/edge labels in `ct`, and added storage to log
 information during message passing.
 
 ### 5\. Propose a schedule from the cluster graph
+
 A message schedule can be described by a sequence of cluster pairs.
 Each pairing tells us to send a message between these clusters (which must be
 neighbors), while the order within the pair indicates the sender and the
@@ -199,11 +231,12 @@ edges following some preorder traversal of `ct`.
 See section [Message schedules](@ref) for more details on message schedules.
 
 Since `ct` is a clique tree, there is a single spanning tree (`sched[1]`). We
-extract and display the preorder sequence of edges from `sched[1]`. In this example,
-`NonAfricanI3` is the root cluster of `ct`, and `KaritianaH1` is a leaf cluster.
+extract and display the preorder sequence of edges from `sched[1]`.
+In this example, `NonAfricanI3` is the root cluster of `ct`,
+and `KaritianaH1` is a leaf cluster.
 
 ```jldoctest getting_started
-julia> sched = PGBP.spanningtrees_clusterlist(ct, net.nodes_changed);
+julia> sched = PGBP.spanningtrees_clusterlist(ct, net.vec_node);
 
 julia> DataFrame(parent=sched[1][1], child=sched[1][2]) # edges of tree 1 in preorder
 16×2 DataFrame
@@ -229,6 +262,7 @@ julia> DataFrame(parent=sched[1][1], child=sched[1][2]) # edges of tree 1 in pre
 ```
 
 ### 6\. Calibrate beliefs with the schedule
+
 We apply one iteration of belief propagation on `ctb` following the schedule
 `sched`. Since `ct` is a clique tree, the resulting beliefs are guaranteed to be
 *calibrated* (i.e. the beliefs of neighbor clusters agree marginally over the
@@ -239,17 +273,19 @@ julia> PGBP.calibrate!(ctb, sched);
 ```
 
 ### 7\. Extract the log-likelihood
+
 On a calibrated clique tree, there are two ways to obtain the log-likelihood:
 - integrate any belief over its scope to get its normalization constant (`norm`)
-- compute the [`factored_energy`](@ref), which approximates the log-likelihood on loopy cluster graphs but is exact on a clique tree
+- compute the [`factored_energy`](@ref), which approximates the log-likelihood
+  on loopy cluster graphs but is exact on a clique tree
 
 ```jldoctest getting_started
-julia> (_, norm) = PGBP.integratebelief!(b[1]); # `norm` is the integral of `b[1]` over its scope
+julia> (_, norm) = PGBP.integratebelief!(b[1]); # norm = integral of b[1]
 
 julia> norm
 -11.273958980921247
 
-julia> (_, _, fe) = PGBP.factored_energy(ctb); # `fe` is the factored energy from the cluster/edge beliefs
+julia> (_, _, fe) = PGBP.factored_energy(ctb); # fe = factored energy
 
 julia> fe
 -11.273958980921261
@@ -261,6 +297,7 @@ belief from a calibrated loopy cluster graph cannot be similarly interpreted.
 We see that both approaches return the same value, modulo rounding error.
 
 ## Exact inference
+
 In the section above, we computed the log-likelihood for ``\mu=0``, ``\sigma^2=1``.
 
 Now we find ``\mu=\widehat{\mu}`` and ``\sigma^2=\widehat{\sigma}^2`` that
@@ -271,18 +308,18 @@ maximize the log-likelihood. There are two options:
 ```jldoctest getting_started
 julia> using Optim
 
-julia> fitted, ll, _ = PGBP.calibrate_optimize_cliquetree!( # iterative optimization
+julia> fitted, ll, _ = PGBP.calibrate_optimize_cliquetree!( # iterative
                         ctb, # beliefs
                         ct, # clique tree
-                        net.nodes_changed, # network nodes in preorder
+                        net.vec_node, # network nodes in preorder
                         tbl_x, # trait data
                         df.taxon, # tip labels
-                        PGBP.UnivariateBrownianMotion, # type of evolutionary model
+                        PGBP.UnivariateBrownianMotion, # evolutionary model
                         (1.0, 0), # starting parameters: σ2 = 1.0, μ = 0.0
                         Optim.Options(iterations=30, show_trace=false)
                         ); 
 
-julia> fitted # ML estimates
+julia> fitted # ML estimate of parameters
 Univariate Brownian motion
 
 - evolutionary variance rate σ2 :
@@ -290,13 +327,13 @@ Univariate Brownian motion
 - root mean μ :
 1.1525789703018783
 
-julia> ll # log-likelihood for ML estimates
+julia> ll # log-likelihood at the ML estimate
 -8.656529929205751
 
-julia> fitted, _ = PGBP.calibrate_exact_cliquetree!( # exact computation
+julia> fitted, _ = PGBP.calibrate_exact_cliquetree!( # exact optimization
                      ctb,
-                     sched[1], # schedule the order in which edges (sepsets) are traversed
-                     net.nodes_changed,
+                     sched[1], # schedule the order to traverse edges (sepsets)
+                     net.vec_node,
                      tbl_x,
                      df.taxon,
                      PGBP.UnivariateBrownianMotion);
@@ -317,13 +354,16 @@ Strictly speaking, the estimates from the latter option do not jointly maximize
 the log-likelihood. However, the REML estimate for ``\sigma^2`` is generally
 less biased than its ML counterpart.
 In this simple model, the REML estimate is just equal to the ML estimate
-up to a factor $(n-1)/n$, with $n$ the number of tips in the network:
+up to a factor *(n-1)/n*, with *n* the number of tips in the network:
+`sigma2_REML = (n-1)/n * sigma2_ML` calculated below
+
 ```jldoctest getting_started
-julia> PGBP.varianceparam(fitted) * (net.numTaxa - 1) / net.numTaxa # sigma2_REML = (n-1)/n * sigma2_ML
+julia> PGBP.varianceparam(fitted) * (net.numtaxa - 1) / net.numtaxa
 0.31812948859631934
 ```
 
 ## Approximate inference
+
 Suppose now that we use a loopy cluster graph instead of a clique tree. We choose `Bethe` to
 construct a Bethe cluster graph (also known as factor graph) `fg`.
 
@@ -335,20 +375,21 @@ the analog of [`calibrate_optimize_cliquetree!`](@ref) from earlier:
 julia> cg = PGBP.clustergraph!(net, PGBP.Bethe()) # factor graph
 Meta graph based on a Graphs.SimpleGraphs.SimpleGraph{Int8} with vertex labels of type Symbol, vertex metadata of type Tuple{Vector{Symbol}, Vector{Int8}}, edge metadata of type Vector{Int8}, graph metadata given by :Bethe, and default weight 0
 
-julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, cg, m); # allocate memory for beliefs
+julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(
+            tbl_x, df.taxon, net.vec_node, cg, m); # allocate memory for beliefs
 
-julia> cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n); # wrap beliefs to facilitate message passing
+julia> cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n); # wrap beliefs
 
 julia> fitted, fe, _ = PGBP.calibrate_optimize_clustergraph!(
                         cgb,
                         cg,
-                        net.nodes_changed,
+                        net.vec_node,
                         tbl_x,
                         df.taxon,
                         PGBP.UnivariateBrownianMotion,
                         (1.0, 0),
-                        100, # max no. of iterations
-                        PGBP.regularizebeliefs_bycluster!, # regularization function
+                        100, # max number of iterations within LBP
+                        PGBP.regularizebeliefs_bycluster!, # regularization fct
                         Optim.Options(iterations=30, show_trace=false)
                         );
 

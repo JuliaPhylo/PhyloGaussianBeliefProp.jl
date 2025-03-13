@@ -5,6 +5,7 @@ CurrentModule = PhyloGaussianBeliefProp
 # Regularization
 
 ## Ill-defined messages
+
 Propagating a message ``\tilde{\mu}_{i\rightarrow j}`` from a cluster
 ``\mathcal{C}_i`` to its neighbor ``\mathcal{C}_j`` involves 3 steps:
 
@@ -57,6 +58,7 @@ This is a problem since a loopy cluster graph typically requires multiple
 traversals to reach convergence.
 
 ## A heuristic
+
 One approach to deal with ill-defined messages is to skip their computation and
 proceed on with the schedule.
 
@@ -90,6 +92,7 @@ We provide several options for regularization below. A typical usage of these
 methods is after the initial assignment of factors.
 
 ### By cluster
+
 [`regularizebeliefs_bycluster!`](@ref) performs regularization separately from
 message passing.
 
@@ -101,6 +104,7 @@ Currently, [`calibrate_optimize_clustergraph!`](@ref) calls
 `regularizebeliefs_bycluster!` for each set of candidate parameter values, before calibration is run. Other options are likely to be available in future versions.
 
 ### Along node subtrees
+
 [`regularizebeliefs_bynodesubtree!`](@ref) performs regularization separately
 from message passing.
 
@@ -112,53 +116,67 @@ cluster in a given node subtree, it adds ``\epsilon`` to the diagonal entries of
 the precision matrix that correspond to that node.
 
 ### On a schedule
+
 [`regularizebeliefs_onschedule!`](@ref) interleaves regularization with message
 passing.
 
 The algorithm loops over each cluster and tracks which messages have been sent:
-- Each cluster ``\mathcal{C}_i`` is regularized only if it has not received a message from ``\ge 1`` of its neighbors.
-- Regularization proceeds by adding ``\epsilon`` to the diagonal entries of ``\mathcal{C}_i``'s precision that correspond to the nodes in ``\mathcal{S}_{i,j}``, and to all diagonal entries of ``\mathcal{S}_{i,j}``'s precision, if neighbor ``\mathcal{C}_j`` has not sent a message to ``\mathcal{C}_i``.
-- After being regularized, ``\mathcal{C}_i`` sends a message to each neighbor for which it has not already done so.
+- Each cluster ``\mathcal{C}_i`` is regularized only if it has not received a
+  message from ``\ge 1`` of its neighbors.
+- Regularization proceeds by adding ``\epsilon`` to the diagonal entries of
+  ``\mathcal{C}_i``'s precision that correspond to the nodes in
+  ``\mathcal{S}_{i,j}``, and to all diagonal entries of
+  ``\mathcal{S}_{i,j}``'s precision, if neighbor ``\mathcal{C}_j`` has not sent
+  a message to ``\mathcal{C}_i``.
+- After being regularized, ``\mathcal{C}_i`` sends a message to each neighbor
+  for which it has not already done so.
 
 The example below shows how regularization methods can help to minimize
 ill-defined messages. We use here a network from
 [Lipson et al. (2020, Extended Data Fig. 4)](https://doi.org/10.1038/s41586-020-1929-1)
 [lipson2020ancient](@cite), with degree-2 nodes suppressed and any resulting
-length 0 edges assigned length 1 (see [lipson2020b_notes.jl](https://github.com/bstkj/graphicalmodels_for_phylogenetics_code/blob/5f61755c4defe804fd813113e883d49445971ade/real_networks/lipson2020b_notes.jl)),
-and follow the steps in [Exact likelihood for fixed parameters](@ref):
+length 0 edges assigned length 1
+(see [lipson2020b_notes.jl](https://github.com/bstkj/graphicalmodels_for_phylogenetics_code/blob/5f61755c4defe804fd813113e883d49445971ade/real_networks/lipson2020b_notes.jl)),
+and follow the steps in [Exact likelihood for fixed parameters](@ref).
+This network has 54 edges and 44 nodes total:
+12 tips, 11 hybrid nodes and 21 internal tree nodes.
 
 ```jldoctest regularization
 julia> using DataFrames, Tables, PhyloNetworks, PhyloGaussianBeliefProp
 
 julia> const PGBP = PhyloGaussianBeliefProp;
 
-julia> net = readTopology(pkgdir(PGBP, "test/example_networks", "lipson_2020b.phy")); #  54 edges; 44 nodes: 12 tips, 11 hybrid nodes, 21 internal tree nodes.
+julia> file = pkgdir(PGBP, "test/example_networks", "lipson_2020b.phy");
+
+julia> net = readnewick(file); #  54 edges; 44 nodes including 12 tips
 
 julia> preorder!(net)
 
-julia> df = DataFrame(taxon=tipLabels(net), # simulated using `simulate(net, ParamsBM(0, 1))` from PhyloNetworks
-               x=[0.431, 1.606, 0.72, 0.944, 0.647, 1.263, 0.46, 1.079, 0.877, 0.748, 1.529, -0.469]);
+julia> df = DataFrame( # simulated under a BM, μ=0, σ2=1
+        taxon = tiplabels(net),
+        x = [.431,1.606,.72,.944,.647,1.263,.46,1.079,.877,.748,1.529,-0.469]);
 
-julia> m = PGBP.UnivariateBrownianMotion(1, 0); # choose model: σ2 = 1.0, μ = 0.0 
+julia> m = PGBP.UnivariateBrownianMotion(1, 0); # choose model: σ2=1, μ=0
 
 julia> cg = PGBP.clustergraph!(net, PGBP.Bethe()); # build factor graph
 
 julia> tbl_x = columntable(select(df, :x)); # trait data as column table
 
-julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_x, df.taxon, net.nodes_changed, cg, m); # allocate memory for beliefs
+julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(
+        tbl_x, df.taxon, net.vec_node, cg, m); # allocate memory for beliefs
 
-julia> PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.nodes_changed, n2c, n2fam, n2fix); # assign factors based on model
+julia> PGBP.assignfactors!(b, m, tbl_x, df.taxon, net.vec_node, n2c, n2fam, n2fix); # assign factors based on model
 
-julia> cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n); # wrap beliefs for message passing
+julia> cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n); # wrap beliefs
 
-julia> sched = PGBP.spanningtrees_clusterlist(cg, net.nodes_changed); # generate schedule
+julia> sched = PGBP.spanningtrees_clusterlist(cg, net.vec_node); # generate schedule
 ```
 
 Without regularization, errors indicating ill-defined messages (which are skipped)
 are returned when we run a single iteration of calibration:
 
 ```jldoctest regularization; filter = r"└ @ PhyloGaussianBeliefProp.*" => s""
-julia> PGBP.calibrate!(cgb, sched); # there are ill-defined messages (which are skipped)
+julia> PGBP.calibrate!(cgb, sched); # there are ill-defined messages, skipped
 ┌ Error: belief H5I5I16, integrating [2, 3]
 └ @ PhyloGaussianBeliefProp [...]
 ┌ Error: belief H10I8I15, integrating [2, 3]
