@@ -147,6 +147,7 @@ Next, we allocate memory for beliefs
 ```jldoctest getting_started
 julia> b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(
             tbl_x, df.taxon, net.vec_node, ct, m);
+
 julia> length(b) # no. of beliefs
 33
 ```
