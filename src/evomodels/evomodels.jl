@@ -239,7 +239,8 @@ function _factor_treeedge_get_J(q::AbstractMatrix{T}, j::AbstractMatrix{T},
     gen = ((u,tu,v,tv) for u in 0:nparents for tu in 1:ntraits for v in 0:nparents for tv in 1:ntraits)
     Juv = (u,tu,v,tv) -> (u==0 ? (v==0 ? j[tu,tv] : jq[tu,(v-1)*ntraits+tv]) :
                 (v==0 ? jq[tv,(u-1)*ntraits+tu] : qjq[(u-1)*ntraits+tu,(v-1)*ntraits+tv]))
-    J = LA.Symmetric(SMatrix{ntot,ntot,T}(Juv(x...) for x in gen))
+    # J = LA.Symmetric(SMatrix{ntot,ntot,T}(Juv(x...) for x in gen))
+    J = LA.Symmetric(reshape(collect(T,Juv(x...) for x in gen), (ntot,ntot)))
     return(J, ntot, jq)
 end
 
@@ -293,7 +294,7 @@ where q has one block for each parent, and each block is diagonal scalar:
 ``\\gamma_k I_p``.
 More complex models could consider adding a shift ω to the conditional mean.
 
-If all the parent hybrid edges edges have length 0, then it is assumed that
+If all the parent hybrid edges have length 0, then it is assumed that
 the model gives a degenerate distribution, with 0 conditional variance.
 More complex models could consider adding a hybrid conditional variance Σ.
 
@@ -378,7 +379,8 @@ factor_root(obj::T) where {T <: EvolutionaryModel} = factor_root(UnivariateType(
 function factor_root(::IsUnivariate, m::EvolutionaryModel{T}) where T
     j = T(1/m.v) # improper prior: j=0, v=Inf, factor ≡ 1: h,J,g all 0
     g = (j == 0.0 ? zero(T) : -(log2π + log(m.v) + m.μ^2 * j)/2)
-    return(m.μ*j, j, g)
+    # return(m.μ*j, SMatrix{1,1,T}(j), g)
+    return(m.μ*j, T[j;;], g)
 end
 function factor_root(::IsMultivariate, m::EvolutionaryModel{T}) where T
     #= check if improper from m.v since inv(m.v), called by `rootpriorprecision`,

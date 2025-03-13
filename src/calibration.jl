@@ -32,43 +32,55 @@ See also: [`iscalibrated_residnorm`](@ref)
 and [`iscalibrated_residnorm!`](@ref) for the tolerance and norm used by default,
 to declare calibration for a given sepset message (in 1 direction).
 """
-function calibrate!(beliefs::ClusterGraphBelief, schedule::AbstractVector,
-    niter::Integer=1; auto::Bool=false, info::Bool=false,
+function calibrate!(
+    beliefs::ClusterGraphBelief,
+    schedule::AbstractVector,
+    niter::Integer=1;
+    auto::Bool=false,
+    info::Bool=false,
     verbose::Bool=true,
     update_residualnorm::Bool=true,
     update_residualkldiv::Bool=false,
 )
-    iscal = false
+    succ, iscal = false, false
     for i in 1:niter
         for (j, spt) in enumerate(schedule)
-            iscal = calibrate!(beliefs, spt, verbose, update_residualnorm, update_residualkldiv)
+            (succ, iscal) = calibrate!(beliefs, spt, verbose, update_residualnorm, update_residualkldiv)
+            if !succ
+                info && @info "propagation failed: iteration $i, schedule tree $j"
+                return succ, iscal
+            end
             if iscal
                 info && @info "calibration reached: iteration $i, schedule tree $j"
-                auto && return true
+                auto && return succ, iscal
             end
         end
     end
-    return iscal
+    return succ, iscal
 end
 
 """
     calibrate!(beliefs::ClusterGraphBelief, scheduletree::Tuple,
         verbose::Bool=true, up_resnorm::Bool=true, up_reskldiv::Bool=false)
 
-Propage messages along the `scheduletree`, in postorder then preorder:
+Propagate messages along the `scheduletree`, in postorder then preorder:
 see [`propagate_1traversal_postorder!`](@ref).
 
 Output: `true` if all message residuals have a small norm,
 based on [`iscalibrated_residnorm`](@ref), `false` otherwise.
 """
-function calibrate!(beliefs::ClusterGraphBelief, spt::Tuple,
+function calibrate!(
+    beliefs::ClusterGraphBelief,
+    spt::Tuple,
     verbose::Bool=true,
     up_resnorm::Bool=true,
     up_reskldiv::Bool=false,
 )
-    propagate_1traversal_postorder!(beliefs, spt..., verbose, up_resnorm, up_reskldiv)
-    propagate_1traversal_preorder!(beliefs, spt..., verbose, up_resnorm, up_reskldiv)
-    return iscalibrated_residnorm(beliefs)
+    possucc = propagate_1traversal_postorder!(beliefs, spt..., verbose, up_resnorm, up_reskldiv)
+    presucc = propagate_1traversal_preorder!(beliefs, spt..., verbose, up_resnorm, up_reskldiv)
+    # don't calculate residuals if propagation fails, TODO: discuss 
+    (possucc && presucc) || return (false, false)
+    return (true, iscalibrated_residnorm(beliefs)) # (did not terminate early, calibrated)
 end
 
 """
@@ -114,10 +126,12 @@ function propagate_1traversal_postorder!(
         if isnothing(flag)
             update_residualnorm && iscalibrated_residnorm!(mrss)
             update_residualkldiv && residual_kldiv!(mrss, sepset)
-        elseif verbose
-            @error flag.msg
+        else
+            verbose && @error flag.msg
+            return false # postorder propagation failed, TODO: discuss early termination
         end
     end
+    return true # postorder propagation succeeded
 end
 
 function propagate_1traversal_preorder!(
@@ -138,10 +152,12 @@ function propagate_1traversal_preorder!(
         if isnothing(flag)
             update_residualnorm && iscalibrated_residnorm!(mrss)
             update_residualkldiv && residual_kldiv!(mrss, sepset)
-        elseif verbose
-            @error flag.msg
+        else
+            verbose && @error flag.msg
+            return false # preorder propagation failed, TODO: discuss early termination
         end
     end
+    return true # preorder propagation succeeded
 end
 
 """
@@ -163,22 +179,44 @@ at the root *without* the conditional distribution at all nodes, modifying
 an extra preorder calibration would be required.
 Warning: there is *no* check that the cluster graph is in fact a clique tree.
 """
-function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
-        cgraph, prenodes::Vector{PN.Node},
-        tbl::Tables.ColumnTable, taxa::AbstractVector,
-        evomodelfun, # constructor function
-        evomodelparams)
+function calibrate_optimize_cliquetree!(
+    beliefs::ClusterGraphBelief,
+    cgraph,
+    prenodes::Vector{PN.Node},
+    tbl::Tables.ColumnTable,
+    taxa::AbstractVector,
+    evomodelfun, # constructor function
+    evomodelparams,
+    optimoptions=Optim.Options(iterations=30, show_trace=true, extended_trace=true),
+)
     spt = spanningtree_clusterlist(cgraph, prenodes)
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     mod = evomodelfun(evomodelparams...) # model with starting values
     function score(θ) # θ: unconstrained parameters, e.g. log(σ2)
-        model = evomodelfun(params_original(mod, θ)...)
+        model = try evomodelfun(params_original(mod, θ)...)
+        catch ex # e.g. rate matrix supplied is not psd
+            if isa(ex, LA.PosDefException)
+                return Inf
+            else
+                rethrow(ex)
+            end
+        end
         # reset beliefs based on factors from new model parameters
-        init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
+        assignfactors!(beliefs.belief, model, tbl, taxa, prenodes,
+            beliefs.node2cluster, beliefs.node2family, beliefs.node2fixed)
+        # init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
         # no need to reset factors: free_energy not used on a clique tree
         init_messagecalibrationflags_reset!(beliefs, false)
-        propagate_1traversal_postorder!(beliefs, spt...)
-        _, res = integratebelief!(beliefs, rootj) # drop conditional mean
+        succ = propagate_1traversal_postorder!(beliefs, spt...)
+        succ || return Inf # terminate if any message fails to be computed (TODO: discuss)
+        _, res = try integratebelief!(beliefs, rootj) # drop conditional mean
+        catch ex
+            if isa(ex, LA.PosDefException)
+                return Inf
+            else
+                rethrow(ex)
+            end
+        end
         return -res # score to be minimized (not maximized)
     end
     # autodiff does not currently work with ForwardDiff, ReverseDiff of Zygote,
@@ -188,18 +226,22 @@ function calibrate_optimize_cliquetree!(beliefs::ClusterGraphBelief,
     # https://github.com/JuliaDiff/ForwardDiff.jl/issues/136#issuecomment-237941790
     # https://juliadiff.org/ForwardDiff.jl/dev/user/limitations/
     # See PreallocationTools.jl package (below)
-    opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS())
+    opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS(), optimoptions)
     loglikscore = -Optim.minimum(opt)
     bestθ = Optim.minimizer(opt)
     bestmodel = evomodelfun(params_original(mod, bestθ)...)
     return bestmodel, loglikscore, opt
 end
 
-function calibrate_optimize_cliquetree_autodiff!(bufferbeliefs::GeneralLazyBufferCache,
-        cgraph, prenodes::Vector{PN.Node},
-        tbl::Tables.ColumnTable, taxa::AbstractVector,
-        evomodelfun, # constructor function
-        evomodelparams)
+function calibrate_optimize_cliquetree_autodiff!(
+    bufferbeliefs::GeneralLazyBufferCache,
+    cgraph,
+    prenodes::Vector{PN.Node},
+    tbl::Tables.ColumnTable,
+    taxa::AbstractVector,
+    evomodelfun, # constructor function
+    evomodelparams
+)
     spt = spanningtree_clusterlist(cgraph, prenodes)
     rootj = spt[3][1] # spt[3] = indices of parents. parent 1 = root
     mod = evomodelfun(evomodelparams...) # model with starting values
@@ -223,7 +265,9 @@ function calibrate_optimize_cliquetree_autodiff!(bufferbeliefs::GeneralLazyBuffe
         model = evomodelfun(paramOriginal...)
         dualBeliefs = bufferbeliefs[paramOriginal]
         # reset beliefs based on factors from new model parameters
-        init_beliefs_assignfactors!(dualBeliefs.belief, model, tbl, taxa, prenodes)
+        assignfactors!(dualBeliefs.belief, model, tbl, taxa, prenodes,
+            dualBeliefs.node2cluster, dualBeliefs.node2family, dualBeliefs.node2fixed)
+        # init_beliefs_assignfactors!(dualBeliefs.belief, model, tbl, taxa, prenodes)
         # no need to reset factors: free_energy not used on a clique tree
         init_messagecalibrationflags_reset!(dualBeliefs, false)
         propagate_1traversal_postorder!(dualBeliefs, spt...)
@@ -243,7 +287,7 @@ end
     calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief, clustergraph,
         nodevector_preordered, tbl::Tables.ColumnTable, taxa::AbstractVector,
         evolutionarymodel_name, evolutionarymodel_startingparameters,
-        max_iterations=100)
+        max_iterations=100, regularizationfunction=regularizebeliefs_bycluster!)
 
 Same as [`calibrate_optimize_cliquetree!`](@ref) above, except that the user can
 supply an arbitrary `clustergraph` (including a clique tree) for the input
@@ -254,30 +298,58 @@ When `clustergraph` is a clique tree, the factored energy approximation is exact
 equal to the ELBO and the log-likelihood.
 
 Cluster beliefs are regularized using [`regularizebeliefs_bycluster!`](@ref)
-(other options are likely to be available in future versions) before calibration.
+by default (other options include [`regularizebeliefs_bynodesubtree!`](@ref),
+[`regularizebeliefs_onschedule!`](@ref)) before calibration.
 The calibration repeatedly loops through a minimal set of spanning trees (see
 [`spanningtrees_clusterlist`](@ref)) that covers all edges in the cluster
 graph, and does a postorder-preorder traversal for each tree. The loop runs till
 calibration is detected or till `max_iterations` have passed, whichever occurs
 first.
 """
-function calibrate_optimize_clustergraph!(beliefs::ClusterGraphBelief,
-        cgraph, prenodes::Vector{PN.Node},
-        tbl::Tables.ColumnTable, taxa::AbstractVector,
-        evomodelfun, # constructor function
-        evomodelparams, maxiter::Integer=100)
+function calibrate_optimize_clustergraph!(
+    beliefs::ClusterGraphBelief,
+    cgraph,
+    prenodes::Vector{PN.Node},
+    tbl::Tables.ColumnTable,
+    taxa::AbstractVector,
+    evomodelfun, # constructor function
+    evomodelparams,
+    maxiter::Integer=100,
+    regfun=regularizebeliefs_bycluster!, # regularization function
+    optimoptions=Optim.Options(iterations=30, show_trace=true, extended_trace=true),
+)
     sch = spanningtrees_clusterlist(cgraph, prenodes)
     mod = evomodelfun(evomodelparams...) # model with starting values
     function score(θ)
-        model = evomodelfun(params_original(mod, θ)...)
-        init_beliefs_assignfactors!(beliefs.belief, model, tbl, taxa, prenodes)
+        model = try evomodelfun(params_original(mod, θ)...)
+        catch ex # e.g. rate matrix supplied is not psd
+            if isa(ex, LA.PosDefException)
+                return Inf
+            elseif isa(ex, DomainError) # catch PosDefException in the univariate case
+                return Inf # TODO: discuss
+            else
+                rethrow(ex)
+            end
+        end
+        assignfactors!(beliefs.belief, model, tbl, taxa, prenodes,
+            beliefs.node2cluster, beliefs.node2family, beliefs.node2fixed)
         init_factors_frombeliefs!(beliefs.factor, beliefs.belief)
-        init_messagecalibrationflags_reset!(beliefs)
-        regularizebeliefs_bycluster!(beliefs, cgraph)
-        calibrate!(beliefs, sch, maxiter, auto=true)
-        return free_energy(beliefs)[3] # to be minimized
+        init_messagecalibrationflags_reset!(beliefs, true)
+        regfun(beliefs, cgraph)
+        # terminate calibrate! if non-convergence is detected early (e.g. messages fail to be computed)
+        succ, _ = calibrate!(beliefs, sch, maxiter, auto=true, verbose=false) # TODO: control `verbose` from arguments
+        succ || return Inf
+        freeenergy = try free_energy(beliefs)[3] # to be minimized
+        catch ex
+            if isa(ex, LA.PosDefException)
+                return Inf
+            else
+                rethrow(ex)
+            end
+        end
+        return freeenergy
     end
-    opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS())
+    opt = Optim.optimize(score, params_optimize(mod), Optim.LBFGS(), optimoptions)
     iscalibrated_residnorm(beliefs) ||
       @warn "calibration was not reached. increase maxiter ($maxiter) or use a different cluster graph?"
     fenergy = -Optim.minimum(opt) 
@@ -329,12 +401,14 @@ Steps:
 Warning: there is *no* check that the beliefs and schedule are consistent
 with each other.
 """
-function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
+function calibrate_exact_cliquetree!(
+    beliefs::ClusterGraphBelief{B},
     spt, # node2belief may be needed if pre & post calibrations are moved outside
     prenodes::Vector{PN.Node},
-    tbl::Tables.ColumnTable, taxa::AbstractVector,
+    tbl::Tables.ColumnTable,
+    taxa::AbstractVector,
     evomodelfun # constructor function
-) where B<:Belief{T} where T
+) where B<:AbstractBelief{T} where T
     evomodelfun ∈ (UnivariateBrownianMotion, MvFullBrownianMotion) ||
         error("Exact optimization is only implemented for the univariate or full Brownian Motion.")
     p = length(tbl)
@@ -347,8 +421,12 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
     end
     ## calibrate beliefs using infinite root and identity rate variance
     calibrationparams = evomodelfun(LA.diagm(ones(p)), zeros(p), LA.diagm(repeat([Inf], p)))
-    init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual, calibrationparams) # in case root status changed
-    node2belief = init_beliefs_assignfactors!(beliefs.belief, calibrationparams, tbl, taxa, prenodes)
+    init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual,
+        calibrationparams, beliefs.node2family, beliefs.node2fixed, beliefs.cluster2nodes) # in case root status changed
+    assignfactors!(beliefs.belief, calibrationparams, tbl, taxa, prenodes,
+        beliefs.node2cluster, beliefs.node2family, beliefs.node2fixed)
+    node2belief = beliefs.node2cluster
+    # node2belief = init_beliefs_assignfactors!(beliefs.belief, calibrationparams, tbl, taxa, prenodes)
     # no need to reset factors: free_energy not used on a clique tree
     init_messagecalibrationflags_reset!(beliefs, false)
     calibrate!(beliefs, [spt])
@@ -426,8 +504,11 @@ function calibrate_exact_cliquetree!(beliefs::ClusterGraphBelief{B},
     bestmodel = evomodelfun(bestθ...)
     ## Get associated likelihood
     loglikscore = NaN
-    init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual, bestmodel)
-    init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
+    init_beliefs_allocate_atroot!(beliefs.belief, beliefs.factor, beliefs.messageresidual,
+        bestmodel, beliefs.node2family, beliefs.node2fixed, beliefs.cluster2nodes)
+    # init_beliefs_assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes)
+    assignfactors!(beliefs.belief, bestmodel, tbl, taxa, prenodes,
+        beliefs.node2cluster, beliefs.node2family, beliefs.node2fixed)
     init_messagecalibrationflags_reset!(beliefs, false)
     calibrate!(beliefs, [spt])
     _, loglikscore = integratebelief!(beliefs, rootj)

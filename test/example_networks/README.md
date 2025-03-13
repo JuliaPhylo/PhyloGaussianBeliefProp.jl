@@ -8,7 +8,8 @@ The `Source` column indicates which figure of which study the network was coded 
 | `mateescu_2010.phy` | [Fig 2a](https://doi.org/10.1613/jair.2842) |
 | `muller_2022.phy` | [Fig 1a](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9297283/) |
 | `sun_2023.phy` | [Fig 4c](https://doi.org/10.1038/s41559-023-02185-8) |
-| `maier_2023.phy` | [Fig 1e](https://doi.org/10.7554/eLife.85492)|
+| `maier_2023.phy` | [Fig 1e](https://doi.org/10.7554/eLife.85492) |
+| `teo_2023.phy` | [Fig 1](https://doi.org/10.18061/bssb.v2i3.8977) |
 
 Networks (coded in extended newick format) were preprocessed as follows:
 - `mateescu_2020.phy`, `lazaridis_2014.phy`: edge lengths and inheritance
@@ -20,3 +21,5 @@ length 0 edges assigned length 1 (see [lipson2020b_notes.jl](https://github.com/
 - `sun_2023.phy`: degree-2 nodes were not suppressed. All admixture edges
 were assigned a length of 1.0 (the minimum length among all drift edges).
 - `maier_2023.phy`: Edge lengths were set arbitrarily.
+- `teo_2023.phy`: length-0 tree edges were increased in length to the minimum
+positive length among all tree edges.

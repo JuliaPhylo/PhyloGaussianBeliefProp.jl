@@ -48,7 +48,7 @@ hasdegenerate(net::HybridNetwork) = any(isdegenerate(v) && !unscope(v) for v in 
 """
     parentinformation(node, net)
 
-Tuple of (edge length, edge γ, index of parent node in `net.nodes_changed`)
+Tuple of (edge length, edge γ, index of parent node in `net.vec_node`)
 for all parent edges of `node`. Assumes that `net` has been preordered before.
 """
 function parentinformation(hyb::PN.Node, net::HybridNetwork)
@@ -59,7 +59,7 @@ function parentinformation(hyb::PN.Node, net::HybridNetwork)
         getchild(e)===hyb || continue
         push!(t, e.length)
         push!(γ, e.gamma)
-        push!(i_par, findfirst(isequal(getparent(e)), net.nodes_changed))
+        push!(i_par, findfirst(isequal(getparent(e)), net.vec_node))
     end
     return (t, γ, i_par)
 end
@@ -107,7 +107,7 @@ and [`hasdegenerate`](@ref) to check if `net` still has degenerate nodes.
 function addtreenode_belowdegeneratehybrid!(net::HybridNetwork)
     restart = true
     # find prefix for naming new nodes
-    m = match(r"(^\D+)\d+$", net.node[net.root].name)
+    m = match(r"(^\D+)\d+$", net.node[net.rooti].name)
     prefix = (isnothing(m) ? "I" : m.captures[1])
     while restart
         for hyb in net.hybrid
@@ -118,10 +118,104 @@ function addtreenode_belowdegeneratehybrid!(net::HybridNetwork)
             _,newe = PN.breakedge!(che, net) # hyb --newe--> newv --che--> hybridchild
             newe.length = t
             che.length = 0.0 # the hybrid child may now be degenerate, so restart
-            preprocessnet!(net, prefix) # name new node, update net.nodes_changed
+            preprocessnet!(net, prefix) # name new node, update net.vec_node
             break
         end
         restart=false
     end
     return net
+end
+
+"""
+    isdegenerate_extendedfamily_covered(nodeindex, clustermembers,
+        node2family, node2degen, node2fixed)
+
+Check for the absence of an intermediate node in a degenerate extended family,
+for an input node `v` represented by its preorder index, looking at its ancestors
+in the input cluster `C` represented by its members, a vector of node preorder indices.
+
+Output: tuple of 2 booleans `(b1,b2)` where
+- `b1` is true if `v` is degenerate conditional on its ancestors that are
+  present in `C`, false otherwise (e.g. `v` is not degenerate conditional on
+  its parents, or if none of its parents are in `C`)
+- `b2` is true if `C` is a "good cover" for `v` in the following sense:
+  either `v` is not generate given its ancestors in `C`,
+  or `C` contains all of `v`'s parents.
+
+By `v` is "degenerate" we mean that its distribution is deterministic, taking as
+value a linear (or affine) combination of its ancestor(s)' value(s).
+"""
+function isdegenerate_extendedfamily_covered(
+    nodeindex::Integer,
+    clustermembers::Vector{<:Integer},
+    node2family,
+    node2degen,
+    node2fixed,
+)
+    b1 = node2degen[nodeindex]
+    b2 = true
+    b1 || return (b1,b2) # node is not degenerate
+    # if we get here: degenerate given its parents
+    for ip in Iterators.drop(node2family[nodeindex], 1)
+        node2fixed[ip] && continue # skip parents with a fixed value: not in scope
+        ip in clustermembers && continue # skip parents present in cluster
+        b1p, _ = isdegenerate_extendedfamily_covered(ip, clustermembers,
+            node2family, node2degen, node2fixed)
+        if b1p # this parent is degenerate given ancestors in cluster
+            b2 = false
+        else # parent *not* degenerate given cluster
+            return (false, true)
+        end
+    end
+    return (b1,b2)
+end
+
+"""
+    isdegenerate_extendedfamily_covered(clustermembers, args...)
+    isdegenerate_extendedfamily_covered(cluster2nodes, args...)
+
+Boolean:
+`true` if for each node `v` in the input cluster `C`,
+`C` contains all intermediate nodes in the degenerate extended family of `v`.
+`false` if this property fails for one or more node `v` in `C`.
+
+The first method considers a single cluster, containing `clustermembers`.
+The second method consider all clusters in a cluster graph,
+and returns true if *all* clusters meet the condition.
+
+We say that `C` contains all intermediate ancestors for `v` in `v`'s degenerate
+extended family if:
+- for any set of ancestors `A ⊆ C` such that `v` is degenerate conditional on `A`,
+- for any `p` intermediate between `A` and `v` (that is `p` is a descendant of
+  `A` and ancestor of `v`),
+- then we have that `p ∈ C`.
+
+We check that this condition holds for all nodes `v` in `C` by checking,
+more simply, that for any `v` degenerate given its ancestors in `C`,
+all of `v`'s parents are in `C`.
+
+positional arguments `args...`: `node2family, node2degen, node2fixed`.
+"""
+function isdegenerate_extendedfamily_covered(
+    clustermembers::Vector{<:Integer},
+    args...
+)
+    for ni in reverse(clustermembers) # loop through nodes in pre-order
+        _, b2 = isdegenerate_extendedfamily_covered(ni, clustermembers, args...)
+        b2 || return false
+    end
+    return true
+end
+function isdegenerate_extendedfamily_covered(
+    cgraph::MetaGraph,
+    args...
+)
+    for lab in labels(cgraph)
+        clustermembers = cgraph[lab][2] # nodes listed by their preorder index
+        if !isdegenerate_extendedfamily_covered(clustermembers, args...)
+            @error "cluster $lab is missing an intermediate ancestor in a generate family"
+            return false
+        end
+    end
+    return true
 end

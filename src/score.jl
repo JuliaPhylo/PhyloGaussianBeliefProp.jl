@@ -9,12 +9,13 @@ structured matrices (e.g diagonal or sparse) and has efficient methods for
 linear algebra, e.g. `\\`, `invquad`, `X_invA_Xt` etc.
 """
 function getcholesky(J::AbstractMatrix)
-    return PDMat(J) # LA.cholesky(b.J)
+    # return PDMat(J) # LA.cholesky(b.J)
+    return PDMat(LA.Symmetric(J)) # todo: discuss enforcing J to be symmetric
 end
 
 """
     getcholesky_μ(J::AbstractMatrix, h)
-    getcholesky_μ!(belief::Belief)
+    getcholesky_μ!(belief::AbstractFactor)
 
 Tuple `(Jchol, μ)` where `Jchol` is a cholesky representation of `J` or `belief.J`
 and `μ` is J⁻¹h, used to update `belief.μ` (by the second method).
@@ -25,16 +26,24 @@ function getcholesky_μ(J::AbstractMatrix, h)
     return (Jchol, μ)
 end
 @doc (@doc getcholesky_μ) getcholesky_μ!
-function getcholesky_μ!(b::Belief)
+function getcholesky_μ!(b::AbstractFactor)
     (Jchol, μ) = getcholesky_μ(b.J, b.h)
     b.μ .= μ
+    return (Jchol, μ)
+end
+function getcholesky_μ!(b::GeneralizedBelief)
+    (b.k[1] == 0) || error("belief is degenerate")
+    μ = view(b.Q,:,:)*(view(b.h,:) ./ view(b.Λ,:))
+    b.μ[:] = μ
+    up = qr(Diagonal(sqrt.(b.Λ))*transpose(b.Q)).R # upper triangular
+    Jchol = PDMat(Cholesky(LA.UpperTriangular(up)))
     return (Jchol, μ)
 end
 
 """
     entropy(J::Cholesky)
     entropy(J::AbstractMatrix)
-    entropy(belief::AbstractBelief)
+    entropy(belief::AbstractFactor)
 
 Entropy of a multivariate Gaussian distribution with precision matrix `J`,
 assumed to be square and symmetric (not checked).
@@ -49,18 +58,22 @@ and extended to Gaussian distributions in Distributions.jl around
 function entropy(J::Union{LA.Cholesky{T},PDMat{T}}) where T<:Real
     n = size(J,2)
     n == 0 && return zero(T)
-    (n * (T(log2π) + 1) - LA.logdet(J)) / 2
+    return (n * (T(log2π) + 1) - LA.logdet(J)) / 2
 end
 function entropy(J::AbstractMatrix{T}) where T<:Real
     n = size(J,2)
     n == 0 && return zero(T)
-    (n * (T(log2π) + 1) - LA.logdet(LA.Symmetric(J))) / 2
+    return (n * (T(log2π) + 1) - LA.logdet(LA.Symmetric(J))) / 2
 end
-entropy(cluster::AbstractBelief) = entropy(cluster.J)
+entropy(factor::AbstractFactor) = entropy(factor.J)
+function entropy(factor::GeneralizedBelief)
+    (factor.k[1] == 0) || error("belief is degenerate")
+    return view(factor.Q,:,:)*LA.Diagonal(view(factor.Λ,:))*transpose(view(factor.Q,:,:))
+end
 
 """
-    average_energy!(ref::Belief, target::AbstractBelief)
-    average_energy!(ref::Belief, Jₜ, hₜ, gₜ)
+    average_energy!(ref::AbstractBelief, target::AbstractFactor)
+    average_energy!(ref::AbstractBelief, Jₜ, hₜ, gₜ)
     average_energy(Jᵣ::Union{LA.Cholesky,PDMat}, μᵣ, Jₜ, hₜ, gₜ)
 
 Average energy (i.e. negative expected log) of a `target` canonical form with
@@ -89,17 +102,18 @@ target: C(x | Jₜ, hₜ, gₜ) = exp( - (1/2)x'Jₜx + hₜ'x + gₜ )
 With empty vectors and matrices (J's of dimension 0×0 and h's of length 0),
 the result is simply: - gₜ.
 """
-function average_energy!(ref::Belief, target::AbstractBelief)
+average_energy!(ref::AbstractBelief, target::AbstractFactor) =
     average_energy!(ref, target.J, target.h, target.g[1])
-end
-function average_energy!(ref::Belief, Jₜ, hₜ, gₜ)
+average_energy!(ref::AbstractBelief, target::GeneralizedBelief) =
+    error("average_energy! not implemented for target of type $(typeof(target))")
+function average_energy!(ref::AbstractBelief, Jₜ, hₜ, gₜ)
     (Jᵣ, μᵣ) = getcholesky_μ!(ref)
-    average_energy(Jᵣ, μᵣ, Jₜ, hₜ, gₜ)
+    return average_energy(Jᵣ, μᵣ, Jₜ, hₜ, gₜ)
 end
 @doc (@doc average_energy!) average_energy
 function average_energy(Jᵣ::Union{LA.Cholesky,PDMat}, μᵣ, Jₜ, hₜ, gₜ)
     isempty(Jₜ) && return -gₜ # dot(x,A,x) fails on empty x & A
-    (LA.tr(Jᵣ \ Jₜ) + LA.dot(μᵣ, Jₜ, μᵣ)) / 2 - LA.dot(hₜ, μᵣ) - gₜ
+    return (LA.tr(Jᵣ \ Jₜ) + LA.dot(μᵣ, Jₜ, μᵣ)) / 2 - LA.dot(hₜ, μᵣ) - gₜ
 end
 
 """
@@ -145,7 +159,7 @@ end
 negative [`factored_energy`](@ref) to approximate the negative log-likelihood.
 The approximation is exact on a clique tree after calibration.
 """
-function free_energy(beliefs::ClusterGraphBelief{B}) where B<:Belief{T} where T<:Real
+function free_energy(beliefs::ClusterGraphBelief{B}) where B<:AbstractBelief{T} where T<:Real
     b = beliefs.belief
     init_b = beliefs.factor
     nclu = nclusters(beliefs)

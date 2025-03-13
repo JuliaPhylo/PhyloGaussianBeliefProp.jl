@@ -9,18 +9,19 @@ tbl = columntable(df_var)
 tbl_y = columntable(select(df, :y)) # 1 trait, for univariate models
 tbl_x = columntable(select(df, :x))
 
-net = readTopology(netstr)
+net = readnewick(netstr)
 g = PGBP.moralize!(net)
 PGBP.triangulate_minfill!(g)
 ct = PGBP.cliquetree(g)
-spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+spt = PGBP.spanningtree_clusterlist(ct, net.vec_node)
 
 @testset "comparison with PhyloEM" begin # of PhyloEM
 
 m = PGBP.UnivariateBrownianMotion(1, 0, 10000000000) # "infinite" root variance to match phyloEM
-b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
-cgb = PGBP.ClusterGraphBelief(b)
+
+b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.vec_node, ct, m);
+PGBP.assignfactors!(b, m, tbl_y, df.taxon, net.vec_node, n2c, n2fam, n2fix);
+cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
 PGBP.calibrate!(cgb, [spt])
 # Test conditional expectations and variances
 @test PGBP.default_sepset1(cgb) == 9
@@ -96,19 +97,19 @@ end # of PhyloEM
 
     # y: 1 trait, no missing values
     m1 = PGBP.UnivariateBrownianMotion(1, 0, 0.9)
-    b1 = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m1);
+    b1, (n2c1, n2fam1, n2fix1, n2d1, c2n1) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.vec_node, ct, m1);
     f1 = PGBP.init_factors_allocate(b1, nv(ct))
     mess1 = PGBP.init_messageresidual_allocate(b1, nv(ct))
-    PGBP.init_beliefs_assignfactors!(b1, m1, tbl_y, df.taxon, net.nodes_changed);
+    PGBP.assignfactors!(b1, m1, tbl_y, df.taxon, net.vec_node, n2c1, n2fam1, n2fix1);
 
     m2 = PGBP.UnivariateBrownianMotion(1, 0, 0) # fixed root
-    b2 = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m2);
+    b2, (n2c2, n2fam2, n2fix2, n2d2, c2n2) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.vec_node, ct, m2);
     f2 = PGBP.init_factors_allocate(b2, nv(ct))
     mess2 = PGBP.init_messageresidual_allocate(b2, nv(ct))
-    PGBP.init_beliefs_assignfactors!(b2, m2, tbl_y, df.taxon, net.nodes_changed);
+    PGBP.assignfactors!(b2, m2, tbl_y, df.taxon, net.vec_node, n2c2, n2fam2, n2fix2);
 
-    PGBP.init_beliefs_allocate_atroot!(b1, f1, mess1, m2)
-    PGBP.init_beliefs_assignfactors!(b1, m2, tbl_y, df.taxon, net.nodes_changed);
+    PGBP.init_beliefs_allocate_atroot!(b1, f1, mess1, m2, n2fam1, n2fix1, c2n1)
+    PGBP.assignfactors!(b1, m2, tbl_y, df.taxon, net.vec_node, n2c1, n2fam1, n2fix1);
     for ind in eachindex(b1)
         @test b1[ind].nodelabel == b2[ind].nodelabel
         @test b1[ind].ntraits == b2[ind].ntraits
@@ -120,10 +121,10 @@ end # of PhyloEM
         @test b1[ind].metadata == b2[ind].metadata
     end
     
-    PGBP.init_beliefs_allocate_atroot!(b1, f1, mess1, m1)
-    PGBP.init_beliefs_assignfactors!(b1, m1, tbl_y, df.taxon, net.nodes_changed);
-    PGBP.init_beliefs_allocate_atroot!(b2, f2, mess2, m1)
-    PGBP.init_beliefs_assignfactors!(b2, m1, tbl_y, df.taxon, net.nodes_changed);
+    PGBP.init_beliefs_allocate_atroot!(b1, f1, mess1, m1, n2fam1, n2fix1, c2n1)
+    PGBP.assignfactors!(b1, m1, tbl_y, df.taxon, net.vec_node, n2c1, n2fam1, n2fix1);
+    PGBP.init_beliefs_allocate_atroot!(b2, f2, mess2, m1, n2fam2, n2fix2, c2n2)
+    PGBP.assignfactors!(b2, m1, tbl_y, df.taxon, net.vec_node, n2c2, n2fam2, n2fix2);
     for ind in eachindex(b1)
         @test b1[ind].nodelabel == b2[ind].nodelabel
         @test b1[ind].ntraits == b2[ind].ntraits
@@ -136,19 +137,19 @@ end # of PhyloEM
     end
 
     # x,y: 2 traits, no missing values
-    m1 = PGBP.MvDiagBrownianMotion((1,1), (0,0), (1.2,3))
-    b1 = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m1);
+    m1 = PGBP.MvDiagBrownianMotion([1,1], [0,0], [1.2,3])
+    b1, (n2c1, n2fam1, n2fix1, n2d1, c2n1) = PGBP.allocatebeliefs(tbl, df.taxon, net.vec_node, ct, m1);
     f1 = PGBP.init_factors_allocate(b1, nv(ct))
     mess1 = PGBP.init_messageresidual_allocate(b1, nv(ct))
-    PGBP.init_beliefs_assignfactors!(b1, m1, tbl, df.taxon, net.nodes_changed);
+    PGBP.assignfactors!(b1, m1, tbl, df.taxon, net.vec_node, n2c1, n2fam1, n2fix1);
 
-    m2 = PGBP.MvDiagBrownianMotion((1,1), (0,0), (0,0))
-    b2 = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m2);
+    m2 = PGBP.MvDiagBrownianMotion([1,1], [0,0], [0,0])
+    b2, (n2c2, n2fam2, n2fix2, n2d2, c2n2) = PGBP.allocatebeliefs(tbl, df.taxon, net.vec_node, ct, m2);
     mess2 = PGBP.init_messageresidual_allocate(b2, nv(ct))
-    PGBP.init_beliefs_assignfactors!(b2, m2, tbl, df.taxon, net.nodes_changed);
+    PGBP.assignfactors!(b2, m2, tbl, df.taxon, net.vec_node, n2c2, n2fam2, n2fix2);
 
-    PGBP.init_beliefs_allocate_atroot!(b1, f1, mess1, m2)
-    PGBP.init_beliefs_assignfactors!(b1, m2, tbl, df.taxon, net.nodes_changed);
+    PGBP.init_beliefs_allocate_atroot!(b1, f1, mess1, m2, n2fam1, n2fix1, c2n1)
+    PGBP.assignfactors!(b1, m2, tbl, df.taxon, net.vec_node, n2c1, n2fam1, n2fix1);
     
     for ind in eachindex(b1)
         @test b1[ind].nodelabel == b2[ind].nodelabel
@@ -175,19 +176,19 @@ end # of exact, on a tree
     tbl_y = columntable(select(df, :y)) # 1 trait, for univariate models
     tbl_x = columntable(select(df, :x))
     
-    net = readTopology(netstr)
+    net = readnewick(netstr)
     g = PGBP.moralize!(net)
     PGBP.triangulate_minfill!(g)
     ct = PGBP.cliquetree(g)
-    spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+    spt = PGBP.spanningtree_clusterlist(ct, net.vec_node)
     
     @testset "exact formulas (REML)" begin
         # y: 1 trait, no missing values
         m = PGBP.UnivariateBrownianMotion(1, 0, Inf) # infinite root variance
-        b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-        cgb = PGBP.ClusterGraphBelief(b)
+        b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl_y, df.taxon, net.vec_node, ct, m);
+        cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
         mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, spt,
-            net.nodes_changed,
+            net.vec_node,
             tbl_y, df.taxon, PGBP.UnivariateBrownianMotion)
 
         @test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
@@ -198,10 +199,10 @@ end # of exact, on a tree
         #= numerical optim, ML -- redundant with test_calibration
         m = PGBP.UnivariateBrownianMotion(0.5,0.5,0) 
         b = PGBP.init_beliefs_allocate(tbl_y, df.taxon, net, ct, m);
-        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.nodes_changed);
+        PGBP.init_beliefs_assignfactors!(b, m, tbl_y, df.taxon, net.vec_node);
         cgb = PGBP.ClusterGraphBelief(b)
         PGBP.calibrate!(cgb, [spt])
-        modopt, llscoreopt, opt = PGBP.calibrate_optimize_cliquetree!(cgb, ct, net.nodes_changed,
+        modopt, llscoreopt, opt = PGBP.calibrate_optimize_cliquetree!(cgb, ct, net.vec_node,
             tbl_y, df.taxon, PGBP.UnivariateBrownianMotion, (0.5,-3))
     
         @test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscoreopt
@@ -212,11 +213,11 @@ end # of exact, on a tree
         =#
     
         # x,y: 2 traits, no missing values
-        m = PGBP.MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf))
-        b = PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m);
-        cgb = PGBP.ClusterGraphBelief(b)
+        m = PGBP.MvDiagBrownianMotion([1,1], [0,0], [Inf,Inf])
+        b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl, df.taxon, net.vec_node, ct, m);
+        cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
         mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, spt,
-           net.nodes_changed,
+           net.vec_node,
            tbl, df.taxon, PGBP.MvFullBrownianMotion)
 
         #@test PGBP.integratebelief!(cgb, spt[3][1])[2] ≈ llscore
@@ -249,26 +250,29 @@ end # of exact, on a tree
 
     # new network: clade of 2 sisters below a tree node, *not* a hybrid node,
     #       fixit: calibration fails if fully missing data below hybrid node
-    net = readTopology("((((B1:1.0,B2:1.0)i6:4.0,(A:0.6)#H5:1.1::0.9)i4:0.5,(#H5:2.0::0.1,C:0.1)i2:1.0)i1:3.0);")
+    net = readnewick("((((B1:1.0,B2:1.0)i6:4.0,(A:0.6)#H5:1.1::0.9)i4:0.5,(#H5:2.0::0.1,C:0.1)i2:1.0)i1:3.0);")
     g = PGBP.moralize!(net); PGBP.triangulate_minfill!(g); ct = PGBP.cliquetree(g)
-    spt = PGBP.spanningtree_clusterlist(ct, net.nodes_changed)
+    spt = PGBP.spanningtree_clusterlist(ct, net.vec_node)
     tbl   = (x=[10,missing,missing,0], y=[1.0,.9,1,-1])
     tbl_x = (x=tbl[:x], )
 
     @testset "exact formulas, with missing values" begin
       # x: 2 sister taxa with fully-missing values. #tipswithdata=2 > #traits=1
       m = PGBP.UnivariateBrownianMotion(1, 0, 0) # wrong starting model
-      cgb = (@test_logs (:error,r"^tip") (:error,r"^tip") (:error,r"^internal") PGBP.ClusterGraphBelief(PGBP.init_beliefs_allocate(tbl_x, df.taxon, net, ct, m)))
-      mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, spt, net.nodes_changed,
+      b, (n2c, n2fam, n2fix, n2d, c2n) = (@test_logs (:error,r"^tip") (:error,r"^tip") (:error,r"^internal") PGBP.allocatebeliefs(tbl_x, df.taxon, net.vec_node, ct, m))
+      cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
+      # todo: debug
+      mod, llscore = PGBP.calibrate_exact_cliquetree!(cgb, spt, net.vec_node,
         tbl_x, df.taxon, PGBP.MvFullBrownianMotion) # mv instead of univariate
       @test mod.μ ≈ [3.538570417551306]
       @test PGBP.varianceparam(mod) ≈ [35.385704175513084;;]
       @test llscore ≈ -6.2771970782154565
       # x,y: B1,B2 with partial data
-      m = PGBP.MvDiagBrownianMotion((1,1), (0,0), (Inf,Inf))
-      cgb = PGBP.ClusterGraphBelief(PGBP.init_beliefs_allocate(tbl, df.taxon, net, ct, m))
+      m = PGBP.MvDiagBrownianMotion([1,1], [0,0], [Inf,Inf])
+      b, (n2c, n2fam, n2fix, n2d, c2n) = PGBP.allocatebeliefs(tbl, df.taxon, net.vec_node, ct, m)
+      cgb = PGBP.ClusterGraphBelief(b, n2c, n2fam, n2fix, c2n)
       # error: some leaf must have partial data: cluster i6i4 has partial traits in scope
-      @test_throws ["partial data", "partial traits in scope"] PGBP.calibrate_exact_cliquetree!(cgb, spt, net.nodes_changed,
+      @test_throws ["partial data", "partial traits in scope"] PGBP.calibrate_exact_cliquetree!(cgb, spt, net.vec_node,
         tbl, df.taxon, PGBP.MvFullBrownianMotion)
     end # of exact formulas
 end # of exact, on a network

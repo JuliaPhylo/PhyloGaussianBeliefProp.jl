@@ -72,11 +72,12 @@ This model is not implemented at the moment.
 Selection can be additionally modeled by the
 [Ornstein-Uhlenbeck](https://en.wikipedia.org/wiki/Ornstein–Uhlenbeck_process)
 (OU) process, which allows a trait to diffuse with variance rate ``\Sigma`` yet
-drift towards some optimal value ``\theta`` (with selection "strength"
-``\bm{A}``).
+drift towards some optimal value ``\theta``, with selection "strength" ``\bm{A}``.
 
+Below, we define a model with variance rate σ2=2 and selection strength α=3.
+This model has stationary variance γ2 = σ2/(2α) = 1/3:
 ```jldoctest evolutionary_models
-julia> PGBP.UnivariateOrnsteinUhlenbeck(2, 3, -2, 0, 0.4) # σ2=2, below showing γ2 = σ2/(2α)
+julia> PGBP.UnivariateOrnsteinUhlenbeck(2, 3, -2, 0, 0.4) # σ2=2, α=3, θ=-2
 homogeneous univariate Ornstein-Uhlenbeck
 
 - stationary evolutionary variance γ2 :
@@ -92,9 +93,10 @@ homogeneous univariate Ornstein-Uhlenbeck
 ```
 
 ## Edge factors
+
 After specifying the evolutionary model
 (e.g. `m = PGBP.UnivariateBrownianMotion(1, 0)`), it is eventually passed to
-[`init_beliefs_assignfactors!`](@ref)
+[`assignfactors!`](@ref)
 (see [4\. Initialize cluster graph beliefs](@ref)), which infers the conditional
 distribution for each node and assigns it to a cluster.
 
@@ -102,6 +104,7 @@ We refer to these conditional distributions as *edge factors* since they relate
 the states of a parent node and its child.
 
 ## Hybrid factors
+
 Each reticulation node ``X_h`` has multiple parents ``X_{p_1},\dots,X_{p_k}``,
 and is thus potentially associated with multiple edge factors.
 We reconcile these by modeling ``X_h`` as a weighted-average of its
