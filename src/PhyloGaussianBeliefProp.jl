@@ -1,6 +1,7 @@
 module PhyloGaussianBeliefProp
 
 import Base: show
+import CliqueTrees
 using Distributions: MvNormalCanon, MvNormal, AbstractMvNormal
 using Graphs
 import LinearAlgebra as LA

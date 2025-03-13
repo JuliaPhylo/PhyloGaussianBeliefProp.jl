@@ -120,6 +120,31 @@ function filledges!(fe, vertex_code, graph::AbstractGraph)
     return nothing # nn
 end
 
+function fast_triangulate_minfill!(graph::MetaGraph{<:Any, <:Any, L}) where L
+    # construct tree decomposition
+    perm, tree = CliqueTrees.cliquetree(graph.graph; alg=CliqueTrees.MF())
+
+    # construct chordal completion
+    filledgraph = CliqueTrees.FilledGraph(tree)
+
+    # construct ordering and append fill edges
+    ordering = Vector{L}(undef, nv(graph))
+
+    for i in vertices(graph)
+        v = ordering[i] = label_for(graph, perm[i])
+
+        for j in neighbors(filledgraph, i)
+            w = label_for(graph, perm[j])
+
+            if !haskey(graph, v, w)
+                graph[v, w] = filltype
+            end
+        end
+    end    
+
+    return ordering
+end
+
 """
     nodefamilies(net)
 
