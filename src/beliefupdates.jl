@@ -114,30 +114,32 @@ function marginalize!(cluster_from::GeneralizedBelief, keepind)
     Λ = LA.Diagonal(view(cluster_from.Λ,1:(m1-k))) # matrix, not vector
     ## compute marginal and save parameters to cluster_from message
     # constraint rank (todo: set threshold for a zero singular value)
-    U1, S1, V1 = LA.svd(Q1; full=true) # U1: mm x mm, S1: min(mm,m1-k) x 1, V1: (m1-k) x (m1-k)
-    atol = eps(eltype(S1)) # todo: discuss threshold
-    nonzeroind = findall((x -> !isapprox(x, 0; atol=atol)).(S1)) # indices for non-zero singular values
+    SVD1 = LA.svd(Q1; full=true) # U1: mm x mm, S1: min(mm,m1-k) x 1, V1: (m1-k) x (m1-k)
+    atol = getranktol(SVD1)
+    # atol = eps(eltype(SVD1.S)) # todo: discuss threshold
+    nonzeroind = findall((x -> !isapprox(x, 0; atol=atol)).(SVD1.S)) # indices for non-zero singular values
     zeroind = setdiff(1:(m1-k), nonzeroind) # indices for zero singular values
     km = mm - length(nonzeroind)
     cluster_from.kmsg[1] = km
     # constraint
-    cluster_from.Qmsg[1:mm,(mm-km+1):mm] = view(U1,:,setdiff(1:mm,nonzeroind)) # mm x km
+    cluster_from.Qmsg[1:mm,(mm-km+1):mm] = view(SVD1.U,:,setdiff(1:mm,nonzeroind)) # mm x km
     cluster_from.cmsg[1:km] = transpose(view(cluster_from.Qmsg,1:mm,(mm-km+1):mm))*R1*
         view(cluster_from.c,1:k)
     # precision
-    V = V1[:,zeroind] # nullspace(Q1): (m1-k) x (m1-k-mm+km)
+    V = SVD1.V[:,zeroind] # nullspace(Q1): (m1-k) x (m1-k-mm+km)
     W = transpose(R1)*Q1 # k x (m1-k)
-    U_R1tQ1, S_R1tQ1, _ = LA.svd(transpose(R1)*Q1)
-    firstzeroind = findfirst((x -> isapprox(x, 0; atol=atol)).(S_R1tQ1)) # todo: discuss threshold
-    W = isnothing(firstzeroind) ? U_R1tQ1 : U_R1tQ1[:,1:(firstzeroind-1)] 
+    SVD_R1tQ1 = LA.svd(transpose(R1)*Q1)
+    atol = getranktol(SVD_R1tQ1)
+    firstzeroind = findfirst((x -> isapprox(x, 0; atol=atol)).(SVD_R1tQ1.S)) # todo: discuss threshold
+    W = isnothing(firstzeroind) ? SVD_R1tQ1.U : SVD_R1tQ1.U[:,1:(firstzeroind-1)] 
     Q2 = cluster_from.Q[setdiff(1:m1,keepind),1:(m1-k)] # (m1-mm) x (m1-k)
     R2 = cluster_from.Q[setdiff(1:m1,keepind),(m1-k+1):m1] # (m1-mm) x k
     F = transpose(W*((R2*W)\Q2)) # transpose(W(R2*W)⁺Q2): (m1-k) x k
-    G = (transpose(Q1)-F*transpose(R1))*view(U1,:,nonzeroind) # (m1-k) x (mm-km)
+    G = (transpose(Q1)-F*transpose(R1))*view(SVD1.U,:,nonzeroind) # (m1-k) x (mm-km)
     S = V*((transpose(V)*Λ*V) \ transpose(V)) # (m1-k) x (m1-k)
     Z, Λm = LA.svd(transpose(G)*(Λ-Λ*S*Λ)*G)
     cluster_from.Λmsg[1:(mm-km)] = Λm
-    cluster_from.Qmsg[1:mm,1:(mm-km)] = view(U1,:,nonzeroind)*Z
+    cluster_from.Qmsg[1:mm,1:(mm-km)] = view(SVD1.U,:,nonzeroind)*Z
     # potential
     Fc = F*cluster_from.c[1:k] # (m1-k) x 1
     ΛFc = Λ*Fc # (m1-k) x 1
