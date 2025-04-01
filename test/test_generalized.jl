@@ -193,7 +193,7 @@ ctb = PGBP.ClusterGraphBelief(b_xy_fixedroot[1], b_xy_fixedroot[2][1],
     b_xy_fixedroot[2][2], b_xy_fixedroot[2][3], b_xy_fixedroot[2][5])
 spt = PGBP.spanningtree_clusterlist(ct, net.vec_node)
 PGBP.calibrate!(ctb, [spt])
-# Vy = sharedpathmatrix(net)[:Tips];
+# Vy = sharedpathmatrix(net)[:tips];
 # μ = repeat([3, -3],3); σ2 = [2 0; 0 1]; 
 # Y = repeat([1.0,2.0],3)
 # -0.5*transpose(Y - μ)*inv(kron(Vy,σ2))*(Y - μ) - 0.5*logdet(2π*kron(Vy,σ2)) # -34.364282186284285
@@ -208,7 +208,7 @@ PGBP.assignfactors!(b_xy_fixedroot[1], m, tbl, df.taxon,
     net.vec_node, b_xy_fixedroot[2][1], b_xy_fixedroot[2][2], b_xy_fixedroot[2][3]);
 try # handle platform/version-specific differences till tests are less fragile
     PGBP.calibrate!(ctb, [spt])
-    # Vy = sharedPathMatrix(net)[:Tips];
+    # Vy = sharedPathMatrix(net)[:tips];
     # μ = repeat([3, -3],3); σ2 = [2.0 0.5; 0.5 1.0]; 
     # Y = repeat([1.0,2.0],3)
     # -0.5*transpose(Y - μ)*inv(kron(Vy,σ2))*(Y - μ) - 0.5*logdet(2π*kron(Vy,σ2)) # -43.73541366877607

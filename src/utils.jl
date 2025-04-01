@@ -219,3 +219,23 @@ function isdegenerate_extendedfamily_covered(
     end
     return true
 end
+
+"""
+    getranktol(S::SVD)
+
+    Compute the tolerance for numerical rank computation using
+    `max(atol, rtol*σ₁)` where `σ₁` is the maximum between 1.0 and the largest calculated singular value.
+    This is equivalent to the default tolerance value used in [`rank(::AbstractMatrix)`](@ref)
+    and [`rank(::SVD)`](@ref).
+    `atol` and `rtol` are the absolute and relative tolerances, respectively.
+    The default relative tolerance is `n*ϵ`, where `n` is the size of the smallest dimension of UΣV'
+    and `ϵ` is the [`eps`](@ref) of the element type of `S`.
+
+"""
+function getranktol(S::LA.SVD; atol::Real = 0.0, rtol::Real = (min(size(S)...)*eps(real(float(eltype(S))))))
+    ## Modified from LA.rank(SVD1) (julia > 1.12) : https://github.com/JuliaLang/LinearAlgebra.jl/blob/16dedb5df1128278f57787ce468803ab4ba49ed4/src/svd.jl#L261
+    ## rationale for modification of `max_s`: when \sigma_1 is small, use 1.0 as standard value, otherwise use \sigma_1 as in `rank` function.
+    ## maybe should be the length of the branch, or something similar ?
+    max_s = max(1.0, S.S[1])
+    return max(atol, rtol*max_s)
+end
